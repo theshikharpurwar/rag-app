@@ -4,32 +4,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const pdfjsLib = require('pdfjs-dist');
 const { Document, Chunk } = require('./models');
+const { extractText, getDocumentProxy } = require('unpdf');
 
 const router = express.Router();
-
-const extractTextFromPDF = async (filepath) => {
-  const data = new Uint8Array(fs.readFileSync(filepath));
-  const pdfDoc = await pdfjsLib.getDocument({ data }).promise;
-  let text = '';
-
-  for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfDoc.getPage(i);
-    const content = await page.getTextContent();
-    const strings = content.items.map(item => item.str);
-    text += strings.join(' ') + '\n\n';
-  }
-  return text;
-};
-
-const extractTextFromFile = async (filepath, mimetype) => {
-  if (mimetype === 'application/pdf') {
-    return await extractTextFromPDF(filepath);
-  } else {
-    return fs.readFileSync(filepath, 'utf8');
-  }
-};
 
 const runPythonScriptJson = async (scriptPath, inputText) => {
   return new Promise((resolve, reject) => {
@@ -93,7 +71,17 @@ const uploadEndpoint = async (req, res) => {
     const { file } = req;
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
-    const text = await extractTextFromFile(file.path, file.mimetype);
+    let text;
+    if (file.mimetype === 'application/pdf') {
+      const buffer = fs.readFileSync(file.path);
+      const uint8Array = new Uint8Array(buffer); // Convert Buffer to Uint8Array
+      const pdf = await getDocumentProxy(uint8Array);
+      const { text: extractedText } = await extractText(pdf, { mergePages: true });
+      text = extractedText;
+    } else {
+      text = fs.readFileSync(file.path, 'utf8');
+    }
+
     console.log("Extracted text length:", text.length);
 
     const document = new Document({
