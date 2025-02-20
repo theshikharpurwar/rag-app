@@ -3,22 +3,21 @@ import sys
 from transformers import pipeline
 
 def main():
-    # Read the prompt text from standard input.
     prompt = sys.stdin.read().strip()
     if not prompt:
         print("No prompt provided.")
+        sys.stdout.flush()
         return
 
-    # Create a text generation pipeline using a local model (GPT-2 in this example).
-    generator = pipeline('text-generation', model='gpt2')
-    
-    # Generate text based on the prompt.
-    # max_length determines the maximum length of the generated output.
-    output = generator(prompt, max_length=200, num_return_sequences=1)
-    answer = output[0]['generated_text']
-    
-    # Print the generated answer.
-    print(answer)
+    try:
+        generator = pipeline('text-generation', model='gpt2')
+        output = generator(prompt, max_length=200, num_return_sequences=1)
+        answer = output[0]['generated_text']
+        print(answer)
+        sys.stdout.flush()
+    except Exception as e:
+        print("Error: " + str(e))
+        sys.stdout.flush()
 
 if __name__ == '__main__':
     main()

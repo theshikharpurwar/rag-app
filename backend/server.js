@@ -2,30 +2,23 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const routes = require('./routes');  // Import our routes (we’ll create this next)
+const routes = require('./routes');
 
 const app = express();
-const PORT = 5000;  // Our backend will run on port 5000
+const PORT = process.env.PORT || 5000;
 
-// Middleware setup:
-// express.json() parses incoming JSON requests so we can access req.body.
-// cors() allows our frontend (on a different port) to communicate with this server.
-app.use(express.json());
 app.use(cors());
+app.use(express.json());
 
-// Connect to MongoDB:
-// Adjust the connection string as necessary for your local MongoDB installation.
+app.use('/api', routes);
+
 mongoose.connect('mongodb://localhost:27017/rag-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-}).then(() => {
-  console.log("Connected to MongoDB");
-}).catch(err => console.error("MongoDB connection error:", err));
+})
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((err) => console.log("MongoDB connection error:", err));
 
-// Use our defined routes for handling API endpoints.
-app.use('/api', routes);
-
-// Start the server:
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on http://localhost:${PORT}`);
 });

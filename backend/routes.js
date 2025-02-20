@@ -1,39 +1,101 @@
 // backend/routes.js
 const express = require('express');
-const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { Document, Chunk } = require('./models');
 const { spawn } = require('child_process');
+const pdfjsLib = require('pdfjs-dist');
+const { Document, Chunk } = require('./models');
 
-// Set up multer for file uploads.
-// Files will be temporarily stored in the "backend/uploads" folder.
-const upload = multer({ dest: path.join(__dirname, 'uploads/') });
+const router = express.Router();
 
-// Utility function to extract text from a file.
-// For PDFs, we use the pdf-parse library; for text files, we simply read them.
+const extractTextFromPDF = async (filepath) => {
+  const data = new Uint8Array(fs.readFileSync(filepath));
+  const pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  let text = '';
+
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items.map(item => item.str);
+    text += strings.join(' ') + '\n\n';
+  }
+  return text;
+};
+
 const extractTextFromFile = async (filepath, mimetype) => {
   if (mimetype === 'application/pdf') {
-    const pdf = require('pdf-parse');
-    const dataBuffer = fs.readFileSync(filepath);
-    const data = await pdf(dataBuffer);
-    return data.text;
+    return await extractTextFromPDF(filepath);
   } else {
     return fs.readFileSync(filepath, 'utf8');
   }
 };
 
-// Upload endpoint: Handles document uploads.
-router.post('/upload', upload.single('file'), async (req, res) => {
+const runPythonScriptJson = async (scriptPath, inputText) => {
+  return new Promise((resolve, reject) => {
+    const pyProcess = spawn('python', [scriptPath]);
+    pyProcess.stdin.write(inputText);
+    pyProcess.stdin.end();
+
+    let result = '';
+    pyProcess.stdout.on('data', (data) => {
+      result += data;
+    });
+
+    pyProcess.on('close', () => {
+      if (!result) {
+        return reject(new Error('No output received from Python script.'));
+      }
+      try {
+        const parsed = JSON.parse(result);
+        if (parsed && parsed.error) {
+          return reject(new Error(parsed.error));
+        }
+        resolve(parsed);
+      } catch (error) {
+        console.error("Error parsing JSON output:", result);
+        reject(new Error('Invalid JSON output from Python script.'));
+      }
+    });
+
+    pyProcess.on('error', (err) => {
+      reject(err);
+    });
+  });
+};
+
+const runPythonScriptText = async (scriptPath, inputText) => {
+  return new Promise((resolve, reject) => {
+    const pyProcess = spawn('python', [scriptPath]);
+    pyProcess.stdin.write(inputText);
+    pyProcess.stdin.end();
+
+    let result = '';
+    pyProcess.stdout.on('data', (data) => {
+      result += data;
+    });
+
+    pyProcess.on('close', () => {
+      if (!result) {
+        return reject(new Error('No output received from Python script.'));
+      }
+      resolve(result);
+    });
+
+    pyProcess.on('error', (err) => {
+      reject(err);
+    });
+  });
+};
+
+const uploadEndpoint = async (req, res) => {
   try {
     const { file } = req;
     if (!file) return res.status(400).json({ error: "No file uploaded" });
 
-    // Extract text from the uploaded file.
     const text = await extractTextFromFile(file.path, file.mimetype);
+    console.log("Extracted text length:", text.length);
 
-    // Save document details in MongoDB.
     const document = new Document({
       filename: file.filename,
       originalName: file.originalname,
@@ -41,39 +103,30 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     });
     await document.save();
 
-    // Optionally, remove the file from the uploads folder after processing.
     fs.unlinkSync(file.path);
 
-    // Split the text into chunks. Here, we use paragraphs (separated by two newlines) as chunks.
-    const chunks = text.split('\n\n').filter(chunk => chunk.trim().length > 0);
-    
-    // For each chunk, compute its embedding by calling a Python script.
-    for (let chunk of chunks) {
-      // Call the Python script "compute_embeddings.py" and pass the chunk text via stdin.
-      const pyProcess = spawn('python', [path.join(__dirname, '../python/compute_embeddings.py')]);
-      
-      // Write the chunk text to the Python process.
-      pyProcess.stdin.write(chunk);
-      pyProcess.stdin.end();
-
-      let result = '';
-      // Gather the output from the Python process.
-      for await (const data of pyProcess.stdout) {
-        result += data;
+    const rawChunks = text.split('\n\n');
+    for (let chunk of rawChunks) {
+      const cleanedChunk = chunk.trim().replace(/\s+/g, ' ');
+      if (cleanedChunk.length < 10) {
+        console.log("Skipping chunk (too short):", cleanedChunk);
+        continue;
       }
-      // Wait for the process to finish.
-      await new Promise(resolve => pyProcess.on('close', resolve));
-
-      // The Python script returns a JSON array representing the embedding.
-      const embedding = JSON.parse(result);
-
-      // Save this chunk along with its embedding to MongoDB.
-      const chunkDoc = new Chunk({
-        documentId: document._id,
-        text: chunk,
-        embedding,
-      });
-      await chunkDoc.save();
+      try {
+        const embedding = await runPythonScriptJson(
+          path.join(__dirname, '../python/compute_embeddings.py'),
+          cleanedChunk
+        );
+        const chunkDoc = new Chunk({
+          documentId: document._id,
+          text: cleanedChunk,
+          embedding,
+        });
+        await chunkDoc.save();
+      } catch (err) {
+        console.error("Error processing chunk:", err.message);
+        continue;
+      }
     }
 
     res.json({ message: "Document uploaded and processed", documentId: document._id });
@@ -81,30 +134,22 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     console.error(error);
     res.status(500).json({ error: "Error processing document" });
   }
-});
+};
 
-// Query endpoint: Processes queries and returns generated answers.
-router.post('/query', async (req, res) => {
+router.post('/upload', multer({ dest: path.join(__dirname, 'uploads/') }).single('file'), uploadEndpoint);
+
+const queryEndpoint = async (req, res) => {
   try {
     const { query } = req.body;
     if (!query) return res.status(400).json({ error: "No query provided" });
 
-    // Compute the embedding for the query by calling the Python script.
-    const pyProcess = spawn('python', [path.join(__dirname, '../python/compute_embeddings.py')]);
-    pyProcess.stdin.write(query);
-    pyProcess.stdin.end();
+    const queryEmbedding = await runPythonScriptJson(
+      path.join(__dirname, '../python/compute_embeddings.py'),
+      query
+    );
 
-    let queryResult = '';
-    for await (const data of pyProcess.stdout) {
-      queryResult += data;
-    }
-    await new Promise(resolve => pyProcess.on('close', resolve));
-    const queryEmbedding = JSON.parse(queryResult);
-
-    // Retrieve all stored chunks from MongoDB.
     const chunks = await Chunk.find({});
 
-    // Define a function to calculate cosine similarity between two vectors.
     const cosineSim = (vecA, vecB) => {
       const dot = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
       const magA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
@@ -112,40 +157,32 @@ router.post('/query', async (req, res) => {
       return dot / (magA * magB);
     };
 
-    // Calculate similarity scores for each chunk.
     const scoredChunks = chunks.map(chunk => ({
       text: chunk.text,
       score: cosineSim(queryEmbedding, chunk.embedding),
     }));
 
-    // Sort the chunks by similarity and take the top 3.
     const topChunks = scoredChunks.sort((a, b) => b.score - a.score).slice(0, 3);
 
-    // Build a prompt that includes the retrieved context and the query.
     const prompt = `
 Your context:
-${topChunks.map((c, i) => `Chunk ${i+1}: ${c.text}`).join('\n\n')}
+${topChunks.map((c, i) => `Chunk ${i + 1}: ${c.text}`).join('\n\n')}
 
 Based on the above context, answer the query: ${query}
 `;
 
-    // Call the local language model (Python script "local_llm.py") with the prompt.
-    const llmProcess = spawn('python', [path.join(__dirname, '../python/local_llm.py')]);
-    llmProcess.stdin.write(prompt);
-    llmProcess.stdin.end();
+    const answer = await runPythonScriptText(
+      path.join(__dirname, '../python/local_llm.py'),
+      prompt
+    );
 
-    let answer = '';
-    for await (const data of llmProcess.stdout) {
-      answer += data;
-    }
-    await new Promise(resolve => llmProcess.on('close', resolve));
-
-    // Return the generated answer and the prompt (for debugging purposes).
     res.json({ answer, prompt });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Error processing query" });
   }
-});
+};
+
+router.post('/query', queryEndpoint);
 
 module.exports = router;
