@@ -12,10 +12,7 @@ app.use(express.json());
 
 app.use('/api', routes);
 
-mongoose.connect('mongodb://localhost:27017/rag-app', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect('mongodb://localhost:27017/rag-app')
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.log("MongoDB connection error:", err));
 
