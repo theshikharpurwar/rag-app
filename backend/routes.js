@@ -26,6 +26,9 @@ const runPythonScriptJson = async (scriptPath, inputText) => {
       }
       try {
         const parsed = JSON.parse(result);
+        if (parsed.error) {
+          return reject(new Error(parsed.error));
+        }
         resolve(parsed);
       } catch (error) {
         console.error("Error parsing JSON output:", result);
