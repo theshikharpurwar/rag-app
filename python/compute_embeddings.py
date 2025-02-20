@@ -22,7 +22,8 @@ def main():
         # Load the model (this may take a moment on first run).
         model = SentenceTransformer('all-MiniLM-L6-v2')
         # Pass the cleaned text directly.
-        embedding = model.encode([cleaned_text], max_length=512)  # Set max_length to a higher value
+        # Increase max_length to a higher value to avoid the warning
+        embedding = model.encode([cleaned_text], max_length=512)
         # If the embedding is a numpy array, convert it to a list.
         if hasattr(embedding, "tolist"):
             embedding = embedding.tolist()
