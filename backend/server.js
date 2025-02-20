@@ -12,9 +12,12 @@ app.use(express.json());
 
 app.use('/api', routes);
 
-mongoose.connect('mongodb://localhost:27017/rag-app')
+// Ensure your MongoDB URI is correctly formatted
+const mongoURI = 'mongodb://localhost:27017/rag-app';
+
+mongoose.connect(mongoURI)
   .then(() => console.log("Connected to MongoDB"))
-  .catch((err) => console.log("MongoDB connection error:", err));
+  .catch((err) => console.error("MongoDB connection error:", err));
 
 app.listen(PORT, () => {
   console.log(`Server is running on http://localhost:${PORT}`);
