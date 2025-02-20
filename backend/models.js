@@ -11,7 +11,7 @@ const DocumentSchema = new mongoose.Schema({
 const ChunkSchema = new mongoose.Schema({
   documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
   text: String,
-  embedding: [Number], // An array of numbers for the embedding.
+  embedding: { type: [Number], required: true }, // Ensure embedding is an array of numbers
 });
 
 const Document = mongoose.model('Document', DocumentSchema);
