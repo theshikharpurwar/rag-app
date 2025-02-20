@@ -1,21 +1,29 @@
 # python/compute_embeddings.py
 import sys
 import json
-from byaldi import RAGMultiModalModel
+import warnings
+from sentence_transformers import SentenceTransformer
 
 def main():
+    # Suppress all warnings
+    warnings.filterwarnings("ignore")
+
+    # Read input from stdin.
     raw_input = sys.stdin.read()
     input_text = str(raw_input).strip()
     cleaned_text = " ".join(input_text.split())
-    
+
     if len(cleaned_text) < 10:
         print(json.dumps([]))
         sys.stdout.flush()
         return
 
     try:
-        RAG = RAGMultiModalModel.from_pretrained("vidore/colpali")
-        embedding = RAG.encode(cleaned_text)
+        # Load the model (this may take a moment on first run).
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Pass the cleaned text directly.
+        embedding = model.encode(cleaned_text)
+        # If the embedding is a numpy array, convert it to a list.
         if hasattr(embedding, "tolist"):
             embedding = embedding.tolist()
         print(json.dumps(embedding))
