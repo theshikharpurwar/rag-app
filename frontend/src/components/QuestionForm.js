@@ -5,19 +5,28 @@ function QuestionForm({ pdfId }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
     try {
-      const response = await axios.post('http://localhost:5000/api/ask-question', {
+      // Log question attempt to terminal via backend
+      const logResponse = await axios.post('http://localhost:5000/api/log', {
+        action: `Asking question: ${question} for PDF: ${pdfId}`,
+      });
+
+      const response = await axios.post('http://localhost:5000/api/query/question', {
         question,
         pdfId,
       });
-      setAnswer(response.data.answer);
+      setAnswer(response.data.answer || 'No answer available');
     } catch (error) {
-      setAnswer(`Error: ${error.response.data.error}`);
+      setError(`Error: ${error.response?.data?.error || error.message || 'Query failed'}`);
+      setAnswer('');
+      console.error('Query Error:', error.response?.data || error.message);
     } finally {
       setLoading(false);
     }
@@ -38,6 +47,7 @@ function QuestionForm({ pdfId }) {
         </button>
       </form>
       {answer && <p>Answer: {answer}</p>}
+      {error && <p style={{ color: 'red' }}>{error}</p>}
     </div>
   );
 }

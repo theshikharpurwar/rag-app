@@ -2,42 +2,39 @@ import sys
 import json
 import torch
 from transformers import Qwen2_5_VLFoConditionalGeneration, AutoProcessor
-import pymongo
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-MONGODB_URI = os.getenv('MONGODB_URI')
-DB_NAME = 'rag_db'
-COLLECTION_NAME = 'vector_store'
-
-# Connect to MongoDB
-client = pymongo.MongoClient(MONGODB_URI)
-db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
-
-def retrieve_context(question, pdf_id):
-    # Simple cosine similarity for retrieval (replace with ANN if needed)
-    query_embedding = embed_model(question)  # Assume embed_model is defined or use a text embedder
-    vectors = collection.find({"id": {"$regex": pdf_id}})
-    
-    best_match = None
-    max_similarity = -1
-    
-    for vector in vectors:
-        similarity = cosine_similarity(query_embedding, vector['embedding'])
-        if similarity > max_similarity:
-            max_similarity = similarity
-            best_match = vector
-    
-    return best_match['metadata']['imagePath'] if best_match else None
+import os
+import numpy as np
 
 def cosine_similarity(vec1, vec2):
     # Simple cosine similarity implementation
-    dot_product = sum(a * b for a, b in zip(vec1, vec2))
-    norm1 = sum(a * a for a in vec1) ** 0.5
-    norm2 = sum(b * b for b in vec2) ** 0.5
+    dot_product = np.dot(vec1, vec2)
+    norm1 = np.linalg.norm(vec1)
+    norm2 = np.linalg.norm(vec2)
     return dot_product / (norm1 * norm2) if norm1 * norm2 != 0 else 0
+
+def retrieve_context(question, pdf_id):
+    # Load vector store
+    vector_store_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend', 'vector_store.json')
+    if not os.path.exists(vector_store_path):
+        return None
+
+    with open(vector_store_path, 'r') as f:
+        vectors = json.load(f)
+
+    # Simple text embedding for the query (you’d need a text embedder like SentenceTransformers)
+    # For this example, we’ll assume a placeholder embedding or use a simple string match
+    query_embedding = [0] * 128  # Placeholder for a 128-dimensional embedding
+    best_match = None
+    max_similarity = -1
+
+    for vector in vectors:
+        if pdf_id in vector['id']:
+            similarity = cosine_similarity(query_embedding, vector['embedding'])
+            if similarity > max_similarity:
+                max_similarity = similarity
+                best_match = vector
+
+    return best_match['metadata']['imagePath'] if best_match else None
 
 # Load Qwen 2.5-VL model
 model_path = "Qwen/Qwen2.5-VL-3B-Instruct"

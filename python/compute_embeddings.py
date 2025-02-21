@@ -3,19 +3,6 @@ import os
 import json
 from pdf2image import convert_from_path
 from colpali_engine.models import ColPali, ColPaliProcessor
-import pymongo
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-MONGODB_URI = os.getenv('MONGODB_URI')
-DB_NAME = 'rag_db'
-COLLECTION_NAME = 'vector_store'
-
-# Connect to MongoDB
-client = pymongo.MongoClient(MONGODB_URI)
-db = client[DB_NAME]
-collection = db[COLLECTION_NAME]
 
 def process_pdf(pdf_path):
     # Convert PDF to images (one per page)
@@ -32,7 +19,7 @@ def process_pdf(pdf_path):
         # Preprocess image
         processed_image = processor.process_images(image)
         # Generate embedding
-        embedding = embed_model(processed_image).tolist()  # Convert to list for JSON serialization
+        embedding = embed_model(processed_image).tolist()  # Convert to list for JSON
         embeddings.append({
             "id": f"page_{page_number}_{os.path.basename(pdf_path)}",
             "embedding": embedding,
@@ -42,8 +29,18 @@ def process_pdf(pdf_path):
             }
         })
 
-    # Store in MongoDB
-    collection.insert_many(embeddings)
+    # Read existing vectors, append new ones, and write back
+    vector_store_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend', 'vector_store.json')
+    if os.path.exists(vector_store_path):
+        with open(vector_store_path, 'r') as f:
+            existing_vectors = json.load(f)
+    else:
+        existing_vectors = []
+    
+    updated_vectors = existing_vectors + embeddings
+    with open(vector_store_path, 'w') as f:
+        json.dump(updated_vectors, f, indent=2)
+
     return json.dumps(embeddings)
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const routes = require('./routes');
-require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 
 const app = express();
 
@@ -11,17 +12,21 @@ app.use(express.json());
 app.use(cors());
 app.use('/api', routes);
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('MongoDB connected'))
-.catch(err => console.error('MongoDB connection error:', err));
+// JSON file path for vector store
+const vectorStorePath = path.join(__dirname, 'vector_store.json');
 
-// Python script execution (using child_process)
-const { spawn } = require('child_process');
-const path = require('path');
+// Helper function to read/write vector store
+const readVectorStore = () => {
+  if (fs.existsSync(vectorStorePath)) {
+    const data = fs.readFileSync(vectorStorePath, 'utf8');
+    return JSON.parse(data) || [];
+  }
+  return [];
+};
+
+const writeVectorStore = (data) => {
+  fs.writeFileSync(vectorStorePath, JSON.stringify(data, null, 2));
+};
 
 app.post('/upload-pdf', async (req, res) => {
   const { pdfPath } = req.body; // Assume PDF path is sent from frontend
@@ -49,11 +54,11 @@ app.post('/upload-pdf', async (req, res) => {
     pythonProcess.on('close', (code) => {
       if (code === 0) {
         const embeddings = JSON.parse(output);
-        // Store embeddings in MongoDB
-        const VectorStore = mongoose.model('VectorStore', vectorSchema); // Defined in model.js
-        VectorStore.insertMany(embeddings)
-          .then(() => res.json({ message: 'PDF processed and embeddings stored' }))
-          .catch(err => res.status(500).json({ error: err.message }));
+        // Read existing vectors, append new ones, and write back
+        const existingVectors = readVectorStore();
+        const updatedVectors = [...existingVectors, ...embeddings];
+        writeVectorStore(updatedVectors);
+        res.json({ message: 'PDF processed and embeddings stored' });
       } else {
         res.status(500).json({ error: 'Python script failed' });
       }

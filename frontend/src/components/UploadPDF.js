@@ -4,14 +4,17 @@ import axios from 'axios';
 function UploadPDF({ onUploadSuccess }) {
   const [file, setFile] = useState(null);
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
+    setMessage('');
+    setError('');
   };
 
   const handleUpload = async () => {
     if (!file) {
-      setMessage('Please select a PDF file');
+      setError('Please select a PDF file');
       return;
     }
 
@@ -19,13 +22,22 @@ function UploadPDF({ onUploadSuccess }) {
     formData.append('pdf', file);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/upload-pdf', formData, {
+      // Log upload attempt to terminal via backend
+      const logResponse = await axios.post('http://localhost:5000/api/log', {
+        action: `Uploading PDF: ${file.name}`,
+      });
+
+      const response = await axios.post('http://localhost:5000/api/upload/pdf', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setMessage(response.data.message);
+
+      setMessage(response.data.message || 'PDF uploaded successfully');
       onUploadSuccess(file.name); // Use filename as PDF ID for simplicity
+      setError('');
     } catch (error) {
-      setMessage(`Error: ${error.response.data.error}`);
+      setError(`Error: ${error.response?.data?.error || error.message || 'Upload failed'}`);
+      setMessage('');
+      console.error('Upload Error:', error.response?.data || error.message);
     }
   };
 
@@ -33,7 +45,8 @@ function UploadPDF({ onUploadSuccess }) {
     <div>
       <input type="file" accept=".pdf" onChange={handleFileChange} />
       <button onClick={handleUpload}>Upload PDF</button>
-      {message && <p>{message}</p>}
+      {message && <p style={{ color: 'green' }}>{message}</p>}
+      {error && <p style={{ color: 'red' }}>{error}</p>}
     </div>
   );
 }
