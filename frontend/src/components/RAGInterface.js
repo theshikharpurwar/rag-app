@@ -28,21 +28,20 @@ function RAGInterface() {
     formData.append('pdf', file);
 
     try {
-      await axios.post('http://localhost:5000/api/log', {
-        action: `Uploading PDF: ${file.name}`,
-      });
-
+      setLoading(true);
       const response = await axios.post('http://localhost:5000/api/upload/pdf', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      setMessage(response.data.message || 'PDF uploaded successfully');
-      setPdfId(file.name); // Use filename as PDF ID
+      setMessage(response.data.message);
+      setPdfId(response.data.pdfId);
       setError('');
     } catch (error) {
-      setError(`Error: ${error.response?.data?.error || error.message || 'Upload failed'}`);
+      setError(`Error: ${error.response?.data?.error || error.message}`);
       setMessage('');
-      console.error('Upload Error:', error.response?.data || error.message);
+      console.error('Upload Error:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,19 +56,15 @@ function RAGInterface() {
     setError('');
 
     try {
-      await axios.post('http://localhost:5000/api/log', {
-        action: `Asking question: ${question} for PDF: ${pdfId}`,
-      });
-
       const response = await axios.post('http://localhost:5000/api/query/question', {
         question,
         pdfId,
       });
-      setAnswer(response.data.answer || 'No answer available');
+      setAnswer(response.data.answer);
     } catch (error) {
-      setError(`Error: ${error.response?.data?.error || error.message || 'Query failed'}`);
+      setError(`Error: ${error.response?.data?.error || error.message}`);
       setAnswer('');
-      console.error('Query Error:', error.response?.data || error.message);
+      console.error('Query Error:', error);
     } finally {
       setLoading(false);
     }
@@ -80,8 +75,8 @@ function RAGInterface() {
       <h1>Local RAG Application</h1>
       <div>
         <input type="file" accept=".pdf" onChange={handleFileChange} />
-        <button onClick={handleUpload} disabled={!file}>
-          Upload PDF
+        <button onClick={handleUpload} disabled={!file || loading}>
+          {loading ? 'Processing...' : 'Upload PDF'}
         </button>
         {message && <p style={{ color: 'green' }}>{message}</p>}
         {error && <p style={{ color: 'red' }}>{error}</p>}
