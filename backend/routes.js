@@ -1,10 +1,8 @@
 const express = require('express');
 const router = express.Router();
 
-const uploadRoutes = require('./uploadRoutes');
-const queryRoutes = require('./queryRoutes');
-
-router.use('/upload', uploadRoutes);
-router.use('/query', queryRoutes);
+router.post('/upload/pdf', require('./server').uploadPdf); // Direct reference for simplicity
+router.post('/query/question', require('./server').queryQuestion);
+router.post('/log', require('./server').logAction);
 
 module.exports = router;

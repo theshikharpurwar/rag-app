@@ -3,6 +3,7 @@ const cors = require('cors');
 const routes = require('./routes');
 const fs = require('fs');
 const path = require('path');
+const fileUpload = require('express-fileupload');
 const { spawn } = require('child_process');
 
 const app = express();
@@ -10,10 +11,17 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors());
+app.use(fileUpload()); // Middleware for handling file uploads
 app.use('/api', routes);
 
 // JSON file path for vector store
 const vectorStorePath = path.join(__dirname, 'vector_store.json');
+const uploadsDir = path.join(__dirname, 'uploads');
+
+// Ensure uploads directory exists
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
 
 // Helper function to read/write vector store
 const readVectorStore = () => {
@@ -28,55 +36,80 @@ const writeVectorStore = (data) => {
   fs.writeFileSync(vectorStorePath, JSON.stringify(data, null, 2));
 };
 
-app.post('/upload-pdf', async (req, res) => {
-  const { pdfPath } = req.body; // Assume PDF path is sent from frontend
-
-  if (!pdfPath) {
-    return res.status(400).json({ error: 'PDF path is required' });
-  }
-
-  try {
-    // Call Python script to compute embeddings
-    const pythonProcess = spawn('python3', [
-      path.join(__dirname, '../python/compute_embeddings.py'),
-      pdfPath
-    ]);
-
-    let output = '';
-    pythonProcess.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      console.error(`Python Error: ${data.toString()}`);
-    });
-
-    pythonProcess.on('close', (code) => {
-      if (code === 0) {
-        const embeddings = JSON.parse(output);
-        // Read existing vectors, append new ones, and write back
-        const existingVectors = readVectorStore();
-        const updatedVectors = [...existingVectors, ...embeddings];
-        writeVectorStore(updatedVectors);
-        res.json({ message: 'PDF processed and embeddings stored' });
-      } else {
-        res.status(500).json({ error: 'Python script failed' });
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+// Log actions to terminal
+app.post('/api/log', (req, res) => {
+  const { action } = req.body;
+  if (action) {
+    console.log(`Action: ${action}`);
+    res.json({ message: 'Logged to terminal' });
+  } else {
+    res.status(400).json({ error: 'Action is required' });
   }
 });
 
-app.post('/ask-question', async (req, res) => {
-  const { question, pdfId } = req.body; // Assume PDF ID and question are sent
+app.post('/api/upload/pdf', (req, res) => {
+  const { pdf } = req.files;
+  if (!pdf) {
+    return res.status(400).json({ error: 'PDF file is required' });
+  }
+
+  const pdfPath = path.join(uploadsDir, pdf.name);
+  pdf.mv(pdfPath, async (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to save PDF' });
+    }
+
+    try {
+      // Log upload attempt
+      await axios.post('http://localhost:5000/api/log', {
+        action: `Uploading PDF: ${pdf.name}`,
+      });
+
+      const pythonProcess = spawn('python3', [
+        path.join(__dirname, '../python/compute_embeddings.py'),
+        pdfPath
+      ]);
+
+      let output = '';
+      pythonProcess.stdout.on('data', (data) => {
+        output += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        console.error(`Python Error: ${data.toString()}`);
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code === 0) {
+          const embeddings = JSON.parse(output);
+          const existingVectors = readVectorStore();
+          const updatedVectors = [...existingVectors, ...embeddings];
+          writeVectorStore(updatedVectors);
+          fs.unlinkSync(pdfPath); // Clean up temporary PDF
+          res.json({ message: 'PDF uploaded and processed successfully' });
+        } else {
+          res.status(500).json({ error: 'Python script failed' });
+        }
+      });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+});
+
+app.post('/api/query/question', (req, res) => {
+  const { question, pdfId } = req.body;
 
   if (!question || !pdfId) {
     return res.status(400).json({ error: 'Question and PDF ID are required' });
   }
 
   try {
-    // Call Python script for LLM generation
+    // Log question attempt
+    axios.post('http://localhost:5000/api/log', {
+      action: `Asking question: ${question} for PDF: ${pdfId}`,
+    });
+
     const pythonProcess = spawn('python3', [
       path.join(__dirname, '../python/local_llm.py'),
       question,
@@ -104,5 +137,11 @@ app.post('/ask-question', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
+// Catch-all for 404 errors
+app.use((req, res) => {
+  console.log(`404 - Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+const PORT = 5000; // Explicitly set port to avoid environment variable issues
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
