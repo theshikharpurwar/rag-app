@@ -1,83 +1,88 @@
-// backend/server.js
 const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const multer = require('multer');
-const { Document, Chunk } = require('./models');
-const { computeEmbeddings, generateResponse } = require('./colpali_utils');
+const { Qwen2_5_VLForConditionalGeneration, AutoProcessor } = require('transformers');
+const { ColPali, ColPaliProcessor } = require('colpali-engine');
+const { QdrantClient, models } = require('qdrant-client');
+
+require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-app.post('/api/upload', multer({ dest: 'uploads/' }).single('file'), async (req, res) => {
-  try {
-    const { file } = req.file;
-    if (!file) return res.status(400).json({ error: "No file uploaded" });
+// Initialize Qwen2.5-VL model and processor
+const modelPath = "Qwen/Qwen2.5-VL-3B-Instruct";
+const model = Qwen2_5_VLForConditionalGeneration.from_pretrained(modelPath, {
+  torch_dtype: 'bfloat16',
+  attn_implementation: 'flash_attention_2',
+  device_map: 'auto',
+  cache_dir: './cache',
+});
+const processor = AutoProcessor.from_pretrained(modelPath, {
+  cache_dir: './cache',
+});
 
-    const text = await extractTextFromFile(file.path);
-    const document = new Document({
-      filename: file.filename,
-      originalName: file.originalname,
-      text,
+// Initialize ColPali model and processor
+const colpaliModelName = "vidore/colpali-v1.2";
+const colpaliEmbedModel = ColPali.from_pretrained(colpaliModelName);
+const colpaliProcessor = ColPaliProcessor.from_pretrained(colpaliModelName);
+
+// Initialize Qdrant client
+const client = new QdrantClient({
+  url: 'http://localhost:6333',
+});
+
+const collectionName = "deepseek-colpali-multimodalRAG";
+
+// Create collection if it doesn't exist
+async function createCollection() {
+  if (!await client.collection_exists(collectionName)) {
+    await client.create_collection({
+      collection_name: collectionName,
+      on_disk_payload: true,
+      vectors_config: models.VectorParams.size(128).distance(models.Distance.COSINE).on_disk(true),
+      multivector_config: models.MultiVectorConfig.comparator(models.MultiVectorComparator.MAX_SIM),
     });
-    await document.save();
+  }
+}
 
-    fs.unlinkSync(file.path);
+createCollection();
 
-    const rawChunks = text.split('\n\n');
-    for (let chunk of rawChunks) {
-      const cleanedChunk = chunk.trim().replace(/\s+/g, ' ');
-      if (cleanedChunk.length < 10) {
-        console.log("Skipping chunk (too short):", cleanedChunk);
-        continue;
-      }
-      try {
-        const embedding = await computeEmbeddings(cleanedChunk);
-        const chunkDoc = new Chunk({
-          documentId: document._id,
-          text: cleanedChunk,
-          embedding,
-        });
-        await chunkDoc.save();
-      } catch (err) {
-        console.error("Error processing chunk:", err.message);
-        continue;
-      }
+// API endpoint to handle queries
+app.post('/api/query', async (req, res) => {
+  const { query, image } = req.body;
+
+  try {
+    // Embed query text
+    const queryEmbedding = await colpaliEmbedModel.embed_text(query);
+
+    // Search for similar image embeddings
+    const searchResult = await client.search(collectionName, queryEmbedding, {
+      limit: 1,
+    });
+
+    if (searchResult_hits.length === 0) {
+      return res.status(404).json({ message: 'No relevant images found.' });
     }
 
-    res.json({ message: "Document uploaded and processed", documentId: document._id });
+    const imageId = searchResult.hits[0].id;
+    const imagePath = searchResult.hits[0].payload.image;
+
+    // Prepare input for Qwen2.5-VL model
+    const inputText = `Answer the question: ${query} based on the following image: ${imagePath}`;
+    const inputs = processor(inputText, return_tensors="pt");
+
+    // Generate response using Qwen2.5-VL model
+    const output = await model.generate(**inputs);
+    const response = processor.decode(output[0], skip_special_tokens=True);
+
+    res.json({ response });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Error processing document" });
+    res.status(500).json({ message: 'Internal Server Error' });
   }
 });
 
-app.post('/api/query', async (req, res) => {
-  try {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ error: "No query provided" });
-
-    const queryEmbedding = await computeEmbeddings(query);
-    const topChunks = await findTopChunks(queryEmbedding);
-
-    const prompt = createPromptFromChunks(topChunks);
-    const answer = await generateResponse(prompt);
-
-    res.json({ answer, prompt });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Error processing query" });
-  }
-});
-
-mongoose.connect('mongodb://localhost:27017/rag-app')
-  .then(() => console.log("Connected to MongoDB"))
-  .catch((err) => console.error("MongoDB connection error:", err));
-
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
 });
