@@ -11,10 +11,10 @@ const DocumentSchema = new mongoose.Schema({
 const ChunkSchema = new mongoose.Schema({
   documentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Document' },
   text: String,
-  embedding: { type: [Number], required: true }, // Ensure embedding is an array of numbers
+  embedding: [Number],
 });
 
-const Document = mongoose.model('Document', DocumentSchema);
+const DocumentModel = mongoose.model('Document', DocumentSchema);
 const Chunk = mongoose.model('Chunk', ChunkSchema);
 
-module.exports = { Document, Chunk };
+module.exports = { DocumentModel, Chunk };
