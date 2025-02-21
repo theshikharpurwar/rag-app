@@ -1,88 +1,103 @@
 const express = require('express');
-const { Qwen2_5_VLForConditionalGeneration, AutoProcessor } = require('transformers');
-const { ColPali, ColPaliProcessor } = require('colpali-engine');
-const { QdrantClient, models } = require('qdrant-client');
-
+const mongoose = require('mongoose');
+const cors = require('cors');
+const routes = require('./routes');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 3000;
 
+// Middleware
 app.use(express.json());
+app.use(cors());
+app.use('/api', routes);
 
-// Initialize Qwen2.5-VL model and processor
-const modelPath = "Qwen/Qwen2.5-VL-3B-Instruct";
-const model = Qwen2_5_VLForConditionalGeneration.from_pretrained(modelPath, {
-  torch_dtype: 'bfloat16',
-  attn_implementation: 'flash_attention_2',
-  device_map: 'auto',
-  cache_dir: './cache',
-});
-const processor = AutoProcessor.from_pretrained(modelPath, {
-  cache_dir: './cache',
-});
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.error('MongoDB connection error:', err));
 
-// Initialize ColPali model and processor
-const colpaliModelName = "vidore/colpali-v1.2";
-const colpaliEmbedModel = ColPali.from_pretrained(colpaliModelName);
-const colpaliProcessor = ColPaliProcessor.from_pretrained(colpaliModelName);
+// Python script execution (using child_process)
+const { spawn } = require('child_process');
+const path = require('path');
 
-// Initialize Qdrant client
-const client = new QdrantClient({
-  url: 'http://localhost:6333',
-});
+app.post('/upload-pdf', async (req, res) => {
+  const { pdfPath } = req.body; // Assume PDF path is sent from frontend
 
-const collectionName = "deepseek-colpali-multimodalRAG";
-
-// Create collection if it doesn't exist
-async function createCollection() {
-  if (!await client.collection_exists(collectionName)) {
-    await client.create_collection({
-      collection_name: collectionName,
-      on_disk_payload: true,
-      vectors_config: models.VectorParams.size(128).distance(models.Distance.COSINE).on_disk(true),
-      multivector_config: models.MultiVectorConfig.comparator(models.MultiVectorComparator.MAX_SIM),
-    });
+  if (!pdfPath) {
+    return res.status(400).json({ error: 'PDF path is required' });
   }
-}
-
-createCollection();
-
-// API endpoint to handle queries
-app.post('/api/query', async (req, res) => {
-  const { query, image } = req.body;
 
   try {
-    // Embed query text
-    const queryEmbedding = await colpaliEmbedModel.embed_text(query);
+    // Call Python script to compute embeddings
+    const pythonProcess = spawn('python3', [
+      path.join(__dirname, '../python/compute_embeddings.py'),
+      pdfPath
+    ]);
 
-    // Search for similar image embeddings
-    const searchResult = await client.search(collectionName, queryEmbedding, {
-      limit: 1,
+    let output = '';
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
     });
 
-    if (searchResult_hits.length === 0) {
-      return res.status(404).json({ message: 'No relevant images found.' });
-    }
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`Python Error: ${data.toString()}`);
+    });
 
-    const imageId = searchResult.hits[0].id;
-    const imagePath = searchResult.hits[0].payload.image;
-
-    // Prepare input for Qwen2.5-VL model
-    const inputText = `Answer the question: ${query} based on the following image: ${imagePath}`;
-    const inputs = processor(inputText, return_tensors="pt");
-
-    // Generate response using Qwen2.5-VL model
-    const output = await model.generate(**inputs);
-    const response = processor.decode(output[0], skip_special_tokens=True);
-
-    res.json({ response });
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        const embeddings = JSON.parse(output);
+        // Store embeddings in MongoDB
+        const VectorStore = mongoose.model('VectorStore', vectorSchema); // Defined in model.js
+        VectorStore.insertMany(embeddings)
+          .then(() => res.json({ message: 'PDF processed and embeddings stored' }))
+          .catch(err => res.status(500).json({ error: err.message }));
+      } else {
+        res.status(500).json({ error: 'Python script failed' });
+      }
+    });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Internal Server Error' });
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+app.post('/ask-question', async (req, res) => {
+  const { question, pdfId } = req.body; // Assume PDF ID and question are sent
+
+  if (!question || !pdfId) {
+    return res.status(400).json({ error: 'Question and PDF ID are required' });
+  }
+
+  try {
+    // Call Python script for LLM generation
+    const pythonProcess = spawn('python3', [
+      path.join(__dirname, '../python/local_llm.py'),
+      question,
+      pdfId
+    ]);
+
+    let output = '';
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`Python Error: ${data.toString()}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        res.json({ answer: output });
+      } else {
+        res.status(500).json({ error: 'Python script failed' });
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

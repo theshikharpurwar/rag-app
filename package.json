@@ -4,18 +4,22 @@
     "description": "A local Multimodal RAG application using Qwen2.5-VL and MERN stack",
     "private": true,
     "workspaces": {
-      "packages": [
-        "backend",
-        "frontend",
-        "python"
-      ]
+        "packages": [
+            "backend",
+            "frontend",
+            "python"
+        ]
     },
     "scripts": {
-      "start": "concurrently \"cd backend && npm start\" \"cd frontend && npm start\"",
-      "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm start\"",
-      "build": "cd frontend && npm run build"
+        "start": "concurrently \"cd backend && npm start\" \"cd frontend && npm start\"",
+        "dev": "concurrently \"cd backend && npm run dev\" \"cd frontend && npm start\"",
+        "build": "cd frontend && npm run build"
     },
     "dependencies": {
-      "concurrently": "^6.2.0"
+        "axios": "^1.7.9",
+        "concurrently": "^6.2.0",
+        "cors": "^2.8.5",
+        "express": "^4.21.2",
+        "mongoose": "^8.10.1"
     }
-  }
+}
