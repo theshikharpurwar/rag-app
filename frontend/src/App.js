@@ -55,12 +55,14 @@ function App() {
   return (
     <div className="App" style={{ padding: '2rem' }}>
       <h1>Retrieval-Augmented Generator (RAG) App</h1>
+
       <section style={{ marginBottom: '2rem' }}>
         <h2>Upload Document</h2>
         <input type="file" onChange={handleFileChange} />
         <button onClick={handleUpload} style={{ marginLeft: '1rem' }}>Upload</button>
         <p>{uploadMessage}</p>
       </section>
+
       <section style={{ marginBottom: '2rem' }}>
         <h2>Ask a Question</h2>
         <textarea
@@ -73,10 +75,12 @@ function App() {
         <br />
         <button onClick={handleQuery} style={{ marginTop: '1rem' }}>Submit Query</button>
       </section>
+
       <section style={{ marginBottom: '2rem' }}>
         <h2>Answer</h2>
         <p style={{ whiteSpace: 'pre-wrap', background: '#f4f4f4', padding: '1rem' }}>{answer}</p>
       </section>
+
       <section>
         <h2>Prompt (for debugging)</h2>
         <pre style={{ background: '#eef', padding: '1rem' }}>{prompt}</pre>
