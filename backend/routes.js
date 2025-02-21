@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
 
-router.use('/upload', require('./uploadRoutes')); // Optional: Separate route for uploads
-router.use('/query', require('./queryRoutes'));   // Optional: Separate route for queries
+// Import the new route files
+const uploadRoutes = require('./uploadRoutes');
+const queryRoutes = require('./queryRoutes');
+
+// Use the routes
+router.use('/upload', uploadRoutes);
+router.use('/query', queryRoutes);
 
 module.exports = router;
