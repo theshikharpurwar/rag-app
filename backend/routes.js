@@ -1,12 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const Embedding = require('./model');
 
-// Search route
-router.get('/search', async (req, res) => {
-  const { query } = req.query;
-  const results = await Embedding.find({ vector: { $nearSphere: [query] } });
-  res.send(results);
-});
+router.use('/upload', require('./uploadRoutes')); // Optional: Separate route for uploads
+router.use('/query', require('./queryRoutes'));   // Optional: Separate route for queries
 
 module.exports = router;
