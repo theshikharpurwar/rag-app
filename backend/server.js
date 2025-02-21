@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const routes = require('./routes');
 const fs = require('fs');
 const path = require('path');
 const fileUpload = require('express-fileupload');
@@ -12,7 +11,6 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 app.use(fileUpload()); // Middleware for handling file uploads
-app.use('/api', routes);
 
 // JSON file path for vector store
 const vectorStorePath = path.join(__dirname, 'vector_store.json');
@@ -36,18 +34,8 @@ const writeVectorStore = (data) => {
   fs.writeFileSync(vectorStorePath, JSON.stringify(data, null, 2));
 };
 
-// Log actions to terminal
-app.post('/api/log', (req, res) => {
-  const { action } = req.body;
-  if (action) {
-    console.log(`Action: ${action}`);
-    res.json({ message: 'Logged to terminal' });
-  } else {
-    res.status(400).json({ error: 'Action is required' });
-  }
-});
-
-app.post('/api/upload/pdf', (req, res) => {
+// Define route handlers as functions
+const uploadPdf = (req, res) => {
   const { pdf } = req.files;
   if (!pdf) {
     return res.status(400).json({ error: 'PDF file is required' });
@@ -95,9 +83,9 @@ app.post('/api/upload/pdf', (req, res) => {
       res.status(500).json({ error: error.message });
     }
   });
-});
+};
 
-app.post('/api/query/question', (req, res) => {
+const queryQuestion = (req, res) => {
   const { question, pdfId } = req.body;
 
   if (!question || !pdfId) {
@@ -135,6 +123,24 @@ app.post('/api/query/question', (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+};
+
+const logAction = (req, res) => {
+  const { action } = req.body;
+  if (action) {
+    console.log(`Action: ${action}`);
+    res.json({ message: 'Logged to terminal' });
+  } else {
+    res.status(400).json({ error: 'Action is required' });
+  }
+};
+
+// Use routes directly in app (optional, but simplifies setup)
+app.use('/api', (req, res, next) => {
+  if (req.method === 'POST' && req.url === '/upload/pdf') return uploadPdf(req, res);
+  if (req.method === 'POST' && req.url === '/query/question') return queryQuestion(req, res);
+  if (req.method === 'POST' && req.url === '/log') return logAction(req, res);
+  next();
 });
 
 // Catch-all for 404 errors
@@ -143,5 +149,8 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
 
-const PORT = 5000; // Explicitly set port to avoid environment variable issues
+const PORT = 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+// Export route handlers for routes.js (optional, but needed if using routes.js)
+module.exports = { uploadPdf, queryQuestion, logAction };
