@@ -1,36 +1,13 @@
 # python/compute_embeddings.py
 import sys
 import json
-import warnings
 from sentence_transformers import SentenceTransformer
 
 def main():
-    # Suppress all warnings
-    warnings.filterwarnings("ignore")
-
-    # Read input from stdin.
-    raw_input = sys.stdin.read()
-    input_text = str(raw_input).strip()
-    cleaned_text = " ".join(input_text.split())
-
-    if len(cleaned_text) < 10:
-        print(json.dumps([]))
-        sys.stdout.flush()
-        return
-
-    try:
-        # Load the model (this may take a moment on first run).
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        # Pass the cleaned text directly.
-        embedding = model.encode([cleaned_text])  # Ensure input is a list
-        # If the embedding is a numpy array, convert it to a list.
-        if hasattr(embedding, "tolist"):
-            embedding = embedding.tolist()
-        print(json.dumps(embedding))
-        sys.stdout.flush()
-    except Exception as e:
-        print(json.dumps({"error": str(e)}))
-        sys.stdout.flush()
+    input_text = sys.stdin.read().strip()
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    embeddings = model.encode([input_text])
+    print(json.dumps(embeddings.tolist()))
 
 if __name__ == '__main__':
     main()
