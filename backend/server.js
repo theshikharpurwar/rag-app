@@ -3,7 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const fileUpload = require('express-fileupload');
-const { QdrantClient } = require('qdrant-client');
+const { QdrantClient } = require('@qdrant/js-client-rest');
 const { spawn } = require('child_process');
 
 const app = express();
@@ -29,16 +29,17 @@ if (!fs.existsSync(uploadsDir)) {
 // Ensure Qdrant collection exists with multivector config
 const ensureCollection = async () => {
   try {
-    const exists = await qdrantClient.getCollection(collectionName);
+    const collections = await qdrantClient.getCollections();
+    const exists = collections.collections.some(c => c.name === collectionName);
     if (!exists) {
       await qdrantClient.createCollection(collectionName, {
         vectors: {
-          size: 128, // Matches ColPali's per-patch dimension
+          size: 128,
           distance: 'Cosine',
           on_disk: true,
         },
         multivector_config: {
-          comparator: 'MaxSim', // For ColPali multivector retrieval
+          comparator: 'MaxSim',
         },
       });
       console.log(`Qdrant collection ${collectionName} created`);
@@ -50,7 +51,7 @@ const ensureCollection = async () => {
 
 ensureCollection();
 
-// Routes
+// Restored and corrected uploadPdf function
 const uploadPdf = async (req, res) => {
   const { pdf } = req.files;
   if (!pdf) {
@@ -67,11 +68,14 @@ const uploadPdf = async (req, res) => {
 
     try {
       console.log(`Uploading PDF: ${pdfName}`);
-      const pythonProcess = spawn('python3', [
+      const pythonProcess = spawn('C:\\Program Files\\Python312\\python.exe', [
         path.join(__dirname, '../python/compute_embeddings.py'),
         pdfPath,
         collectionName
-      ]);
+      ], {
+        stdio: ['pipe', 'pipe', 'pipe'], // Standard stdio configuration
+        maxBuffer: 1024 * 1024 * 10 // 10MB buffer for stdout/stderr
+      });
 
       let output = '';
       pythonProcess.stdout.on('data', (data) => {
@@ -98,6 +102,7 @@ const uploadPdf = async (req, res) => {
   });
 };
 
+// Restored and corrected queryQuestion function
 const queryQuestion = async (req, res) => {
   const { question, pdfId } = req.body;
 
@@ -107,12 +112,15 @@ const queryQuestion = async (req, res) => {
 
   try {
     console.log(`Asking question: ${question} for PDF: ${pdfId}`);
-    const pythonProcess = spawn('python3', [
+    const pythonProcess = spawn('C:\\Program Files\\Python312\\python.exe', [
       path.join(__dirname, '../python/local_llm.py'),
       question,
       pdfId,
       collectionName
-    ]);
+    ], {
+      stdio: ['pipe', 'pipe', 'pipe'], // Standard stdio configuration
+      maxBuffer: 1024 * 1024 * 10 // 10MB buffer for stdout/stderr
+    });
 
     let output = '';
     pythonProcess.stdout.on('data', (data) => {
@@ -137,9 +145,11 @@ const queryQuestion = async (req, res) => {
   }
 };
 
+// Routes
 app.post('/api/upload/pdf', uploadPdf);
 app.post('/api/query/question', queryQuestion);
 
+// Catch-all for 404 errors
 app.use((req, res) => {
   console.log(`404 - Not Found: ${req.method} ${req.url}`);
   res.status(404).json({ error: 'Endpoint not found' });
