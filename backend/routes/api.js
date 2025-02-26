@@ -67,7 +67,7 @@ router.post('/upload/pdf', async (req, res) => {
     
     // Run Python script to compute embeddings with model params
     const pythonProcess = spawn('python', [
-      path.join(process.cwd(), 'python/compute_embeddings.py'),
+      path.join(process.cwd(),'..', 'python/compute_embeddings.py'),
       pdfPath,
       config.qdrant.collectionName,
       imageDir,
@@ -168,7 +168,7 @@ router.post('/query', async (req, res) => {
     
     // Run Python script to query using the active LLM model
     const pythonProcess = spawn('python', [
-      path.join(process.cwd(), 'python/local_llm.py'),
+      path.join(process.cwd(),'..', 'python/local_llm.py'),
       question,
       document.storedName,
       config.qdrant.collectionName,
