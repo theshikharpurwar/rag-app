@@ -64,7 +64,7 @@ def store_embeddings(embeddings, collection_name, pdf_name, image_paths):
     try:
         # Connect to Qdrant
         client = QdrantClient(url="http://localhost:6333")
-        
+
         # Prepare points for insertion
         points = []
         for i, (embedding, img_path) in enumerate(zip(embeddings, image_paths)):
@@ -73,23 +73,27 @@ def store_embeddings(embeddings, collection_name, pdf_name, image_paths):
                 embedding = embedding.tolist()
             elif isinstance(embedding, torch.Tensor):
                 embedding = embedding.detach().cpu().numpy().tolist()
-            
+
+            # Use integer ID instead of string ID
+            point_id = i + 1000000  # Start from a large number to avoid conflicts
+
             points.append(models.PointStruct(
-                id=f"{pdf_name}_{i}",
+                id=point_id,  # Use integer ID
                 vector=embedding,
                 payload={
                     "pdf_name": pdf_name,
                     "page_num": i + 1,
-                    "image_path": img_path
+                    "image_path": img_path,
+                    "original_id": f"{pdf_name}_{i}"  # Store the original ID in payload
                 }
             ))
-        
+
         # Insert points into collection
         client.upsert(
             collection_name=collection_name,
             points=points
         )
-        
+
         logger.info(f"Stored {len(points)} embeddings in collection {collection_name}")
         return len(points)
     except Exception as e:
