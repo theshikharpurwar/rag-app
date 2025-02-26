@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const fileUpload = require('express-fileupload');
-const { QdrantClient } = require('qdrant-client');
+const { QdrantClient } = require('@qdrant/js-client-rest');
 const { spawn } = require('child_process');
 const config = require('./config/default.json');
 
