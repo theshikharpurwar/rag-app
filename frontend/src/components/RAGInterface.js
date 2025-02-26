@@ -3,7 +3,7 @@ import axios from 'axios';
 import PDFUploader from './PDFUploader';
 import ChatInterface from './ChatInterface';
 import ModelSelector from './ModelSelector';
-import './RAGInterface.css';
+
 
 function RAGInterface() {
   const [documents, setDocuments] = useState([]);

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import './ChatInterface.css';
+
 
 function ChatInterface({ document, llmModel }) {
   const [messages, setMessages] = useState([]);

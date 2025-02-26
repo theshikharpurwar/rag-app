@@ -1,59 +1,76 @@
 # python/embeddings/colpali_embed.py
-import logging
+
 import torch
-from colpali_engine.models import ColPali, ColPaliProcessor
+from PIL import Image
+from transformers import CLIPProcessor, CLIPModel
 
-logger = logging.getLogger(__name__)
+class ColpaliEmbedder:
+    def __init__(self, model_path, **kwargs):
+        """
+        Initialize the embedder with a CLIP model
 
-class ColPaliEmbedder:
-    """ColPali-based embedding model"""
+        Args:
+            model_path (str): Path or identifier for the model
+            **kwargs: Additional parameters for the model
+        """
+        # Use a standard CLIP model instead of PaliGemma
+        self.model_name = "openai/clip-vit-base-patch32"
+        self.model = CLIPModel.from_pretrained(self.model_name)
+        self.processor = CLIPProcessor.from_pretrained(self.model_name)
 
-    def __init__(self, model_path, params=None):
-        self.model_path = model_path
-        self.params = params or {}
-        self._load_model()
+        # Print info about the model being used
+        print(f"Using CLIP model: {self.model_name} instead of {model_path}")
 
-    def _load_model(self):
-        """Load the model and processor"""
-        try:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            logger.info(f"Loading ColPali model from {self.model_path} on {device}")
+    def embed_image(self, image):
+        """
+        Compute embedding for an image
 
-            dtype = torch.bfloat16 if device == "cuda" else torch.float32
-            self.model = ColPali.from_pretrained(
-                self.model_path,
-                torch_dtype=dtype,
-                device_map=device,
-                trust_remote_code=True
-            )
-            self.processor = ColPaliProcessor.from_pretrained(self.model_path)
-            logger.info("ColPali model loaded successfully")
-        except Exception as e:
-            logger.error(f"Error loading ColPali model: {e}")
-            raise
+        Args:
+            image (PIL.Image): Image to embed
 
-    def get_embedding_dimension(self):
-        """Return the embedding dimension"""
-        return 128  # ColPali's default dimension
+        Returns:
+            numpy.ndarray: Embedding vector
+        """
+        # Ensure image is in RGB format
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
 
-    def get_query_embedding(self, query):
-        """Generate embedding for text query"""
-        try:
-            with torch.no_grad():
-                query_input = self.processor.process_queries([query]).to(self.model.device)
-                query_embedding = self.model(**query_input)
-            return query_embedding[0].cpu().float().numpy().tolist()
-        except Exception as e:
-            logger.error(f"Error generating query embedding: {e}")
-            raise
+        # Process the image
+        inputs = self.processor(images=image, return_tensors="pt")
 
-    def get_image_embedding(self, image):
-        """Generate embedding for image"""
-        try:
-            with torch.no_grad():
-                image_input = self.processor.process_images(image).to(self.model.device)
-                image_embedding = self.model(**image_input)
-            return image_embedding.cpu().float().numpy().tolist()
-        except Exception as e:
-            logger.error(f"Error generating image embedding: {e}")
-            raise
+        # Get image features
+        with torch.no_grad():
+            image_features = self.model.get_image_features(**inputs)
+
+        # Normalize the features
+        image_features = image_features / image_features.norm(dim=1, keepdim=True)
+
+        # Convert to numpy array
+        embedding = image_features.squeeze().cpu().numpy()
+
+        return embedding
+
+    def embed_text(self, text):
+        """
+        Compute embedding for text
+
+        Args:
+            text (str): Text to embed
+
+        Returns:
+            numpy.ndarray: Embedding vector
+        """
+        # Process the text
+        inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True)
+
+        # Get text features
+        with torch.no_grad():
+            text_features = self.model.get_text_features(**inputs)
+
+        # Normalize the features
+        text_features = text_features / text_features.norm(dim=1, keepdim=True)
+
+        # Convert to numpy array
+        embedding = text_features.squeeze().cpu().numpy()
+
+        return embedding

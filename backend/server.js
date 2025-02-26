@@ -8,7 +8,8 @@ const fileUpload = require('express-fileupload');
 const { QdrantClient } = require('@qdrant/js-client-rest');
 const { spawn } = require('child_process');
 const config = require('./config/default.json');
-
+const collectionName = 'documents'; // Collection name for Qdrant
+const VECTOR_SIZE = 768;
 // Import routes
 const apiRoutes = require('./routes/api');
 const modelConfigRoutes = require('./routes/model-config');
@@ -45,16 +46,18 @@ const qdrantClient = new QdrantClient({ url: config.qdrant.url });
 const ensureCollection = async () => {
   try {
     const collections = await qdrantClient.getCollections();
-    const exists = collections.collections.some(c => c.name === config.qdrant.collectionName);
+    const exists = collections.collections.some(c => c.name === collectionName);
     
     if (!exists) {
-      await qdrantClient.createCollection(config.qdrant.collectionName, {
+      await qdrantClient.createCollection(collectionName, {
         vectors: { 
-          size: config.qdrant.vectorSize, 
-          distance: config.qdrant.distance
+          size: VECTOR_SIZE, 
+          distance: 'Cosine'
         }
       });
-      console.log(`Qdrant collection ${config.qdrant.collectionName} created`);
+      console.log(`Qdrant collection ${collectionName} created with vector size ${VECTOR_SIZE}`);
+    } else {
+      console.log(`Qdrant collection ${collectionName} already exists`);
     }
   } catch (error) {
     console.error('Qdrant collection setup error:', error);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import './PDFUploader.css';
+
 
 function PDFUploader({ onUpload, disabled }) {
   const [dragging, setDragging] = useState(false);

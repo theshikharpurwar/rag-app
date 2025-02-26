@@ -1,138 +1,164 @@
-# python/compute_embeddings.py
-import sys
+#!/usr/bin/env python
+# compute_embeddings.py
+
 import os
+import sys
 import json
 import logging
-from pdf2image import convert_from_path
+import numpy as np
 from PIL import Image
-from embeddings.embed_factory import EmbeddingModelFactory
-from qdrant_client import QdrantClient, models
+import torch
+import fitz  # PyMuPDF
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def process_pdf(pdf_path, collection_name, images_dir, model_name, model_path, model_params=None):
-    """Process a PDF file, convert to images, generate embeddings, and store in Qdrant"""
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+# Import embedding module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from python.embeddings.embed_factory import get_embedder
 
-    # Create directory for storing images
-    if not os.path.exists(images_dir):
-        os.makedirs(images_dir, exist_ok=True)
-
-    pdf_id = os.path.basename(pdf_path)
-    logger.info(f"Processing PDF: {pdf_path}")
-
+def convert_pdf_to_images(pdf_path, output_dir):
+    """Convert PDF to images using PyMuPDF"""
     try:
-        # Convert PDF to images
-        images = convert_from_path(pdf_path, dpi=200)
-        logger.info(f"Converted PDF to {len(images)} images")
+        doc = fitz.open(pdf_path)
+        image_paths = []
+        
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+            image_path = os.path.join(output_dir, f"page_{page_num+1}.png")
+            pix.save(image_path)
+            image_paths.append(image_path)
+        
+        return image_paths, len(doc)
     except Exception as e:
-        logger.error(f"Error converting PDF to images: {e}")
-        if "poppler" in str(e).lower():
-            logger.error("Error: Poppler not found. Make sure poppler is installed and in PATH")
+        logger.error(f"Error converting PDF to images: {str(e)}")
         raise
 
-    # Load embedding model using factory
-    if model_params:
-        if isinstance(model_params, str):
-            model_params = json.loads(model_params)
-    else:
-        model_params = {}
-
+def compute_embeddings(image_paths, model_name, model_path, model_params=None):
+    """Compute embeddings for images using the specified model"""
     try:
-        embedder = EmbeddingModelFactory.create_model(model_name, model_path, model_params)
-        logger.info(f"Embedding model {model_name} loaded successfully")
+        if model_params is None:
+            model_params = {}
+        
+        # Get embedder based on model name
+        embedder = get_embedder(model_name, model_path, **model_params)
+        
+        # Compute embeddings for each image
+        embeddings = []
+        for img_path in image_paths:
+            img = Image.open(img_path)
+            embedding = embedder.embed_image(img)
+            embeddings.append(embedding)
+        
+        return embeddings
     except Exception as e:
-        logger.error(f"Error loading embedding model: {e}")
+        logger.error(f"Error computing embeddings: {str(e)}")
         raise
 
-    # Connect to Qdrant
-    client = QdrantClient(url="http://localhost:6333")
-    vector_dim = embedder.get_embedding_dimension()
-
-    # Ensure collection exists with correct dimensions
+def store_embeddings(embeddings, collection_name, pdf_name, image_paths):
+    """Store embeddings in Qdrant"""
     try:
-        if not client.collection_exists(collection_name):
-            client.create_collection(
-                collection_name=collection_name,
-                vectors_config=models.VectorParams(
-                    size=vector_dim,
-                    distance=models.Distance.COSINE
-                )
-            )
-            logger.info(f"Created collection {collection_name} with dimension {vector_dim}")
-    except Exception as e:
-        logger.error(f"Error creating Qdrant collection: {e}")
-        raise
-
-    # Process each page
-    points = []
-    saved_images = []
-
-    for i, image in enumerate(images):
-        try:
-            # Save image
-            image_filename = f"page_{i}.jpg"
-            image_path = os.path.join(images_dir, image_filename)
-            image.save(image_path, "JPEG")
-            saved_images.append(image_path)
-            logger.info(f"Saved image to {image_path}")
-
-            # Generate embedding
-            embedding = embedder.get_image_embedding(image)
-
-            # Create Qdrant point
-            point = models.PointStruct(
-                id=f"{os.path.basename(images_dir)}_{i}",
+        # Connect to Qdrant
+        client = QdrantClient(url="http://localhost:6333")
+        
+        # Prepare points for insertion
+        points = []
+        for i, (embedding, img_path) in enumerate(zip(embeddings, image_paths)):
+            # Convert embedding to list if it's a numpy array or tensor
+            if isinstance(embedding, np.ndarray):
+                embedding = embedding.tolist()
+            elif isinstance(embedding, torch.Tensor):
+                embedding = embedding.detach().cpu().numpy().tolist()
+            
+            points.append(models.PointStruct(
+                id=f"{pdf_name}_{i}",
                 vector=embedding,
                 payload={
-                    "pdf_id": pdf_id,
-                    "page_num": i,
-                    "image_path": image_path
+                    "pdf_name": pdf_name,
+                    "page_num": i + 1,
+                    "image_path": img_path
                 }
-            )
-            points.append(point)
-            logger.info(f"Generated embedding for page {i}")
-        except Exception as e:
-            logger.error(f"Error processing page {i}: {e}")
+            ))
+        
+        # Insert points into collection
+        client.upsert(
+            collection_name=collection_name,
+            points=points
+        )
+        
+        logger.info(f"Stored {len(points)} embeddings in collection {collection_name}")
+        return len(points)
+    except Exception as e:
+        logger.error(f"Error storing embeddings: {str(e)}")
+        raise
 
-    # Store embeddings in Qdrant
-    if points:
-        try:
-            client.upsert(collection_name=collection_name, points=points)
-            logger.info(f"Stored {len(points)} embeddings in Qdrant")
-        except Exception as e:
-            logger.error(f"Error storing embeddings in Qdrant: {e}")
-            raise
-    else:
-        raise Exception("No embeddings generated")
-
-    # Return results
-    return {
-        "message": "PDF processed successfully",
-        "pageCount": len(images),
-        "savedImages": saved_images
-    }
-
-if __name__ == "__main__":
-    if len(sys.argv) < 7:
-        print(json.dumps({
-            "error": "Usage: compute_embeddings.py <pdf_path> <collection_name> <images_dir> <model_name> <model_path> [<model_params>]"
-        }))
+def main():
+    """Main function to process PDF and compute embeddings"""
+    if len(sys.argv) < 4:
+        logger.error("Usage: python compute_embeddings.py <pdf_path> <collection_name> <output_dir> [model_name] [model_path] [model_params_json]")
         sys.exit(1)
-
+    
     pdf_path = sys.argv[1]
     collection_name = sys.argv[2]
-    images_dir = sys.argv[3]
-    model_name = sys.argv[4]
-    model_path = sys.argv[5]
-    model_params = sys.argv[6] if len(sys.argv) > 6 else "{}"
-
+    output_dir = sys.argv[3]
+    
+    # Default model settings
+    model_name = "colpali"
+    model_path = "vidore/colpali-v1.2"
+    model_params = {}
+    
+    # Override with command line arguments if provided
+    if len(sys.argv) > 4:
+        model_name = sys.argv[4]
+    if len(sys.argv) > 5:
+        model_path = sys.argv[5]
+    if len(sys.argv) > 6:
+        try:
+            model_params = json.loads(sys.argv[6])
+        except json.JSONDecodeError:
+            logger.warning(f"Invalid JSON for model parameters: {sys.argv[6]}")
+    
     try:
-        result = process_pdf(pdf_path, collection_name, images_dir, model_name, model_path, model_params)
+        # Process PDF
+        logger.info(f"Processing PDF: {pdf_path}")
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Convert PDF to images
+        image_paths, page_count = convert_pdf_to_images(pdf_path, output_dir)
+        logger.info(f"Converted PDF to {len(image_paths)} images")
+        
+        # Compute embeddings
+        embeddings = compute_embeddings(image_paths, model_name, model_path, model_params)
+        logger.info(f"Computed {len(embeddings)} embeddings")
+        
+        # Store embeddings in Qdrant
+        pdf_name = os.path.basename(pdf_path)
+        stored_count = store_embeddings(embeddings, collection_name, pdf_name, image_paths)
+        
+        # Return result as JSON
+        result = {
+            "success": True,
+            "pdf_name": pdf_name,
+            "pageCount": page_count,
+            "embeddingCount": len(embeddings),
+            "storedCount": stored_count
+        }
         print(json.dumps(result))
+        
     except Exception as e:
         logger.error(f"Error: {str(e)}")
-        print(json.dumps({"error": str(e)}))
+        result = {
+            "success": False,
+            "error": str(e)
+        }
+        print(json.dumps(result))
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()

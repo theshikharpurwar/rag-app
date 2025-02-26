@@ -1,28 +1,38 @@
 # python/embeddings/embed_factory.py
-import logging
-import torch
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import importlib
+import os
+import sys
 
-class EmbeddingModelFactory:
-    """Factory for creating embedding models"""
+def get_embedder(model_name, model_path, **kwargs):
+    """
+    Factory function to get the appropriate embedder based on model name
 
-    @staticmethod
-    def create_model(model_name, model_path, params=None):
-        """Create and return the specified embedding model"""
-        if params is None:
-            params = {}
+    Args:
+        model_name (str): Name of the embedding model (e.g., 'colpali')
+        model_path (str): Path or identifier for the model
+        **kwargs: Additional parameters for the embedder
 
-        model_name = model_name.lower()
-
+    Returns:
+        An embedder instance that can embed images and text
+    """
+    try:
+        # Try to import the specific embedder module
         if model_name == 'colpali':
-            from .colpali_embed import ColPaliEmbedder
-            return ColPaliEmbedder(model_path, params)
-        elif model_name == 'sentence_transformer':
-            from .sentence_transformer_embed import SentenceTransformerEmbedder
-            return SentenceTransformerEmbedder(model_path, params)
-        # Add more models as needed
+            from python.embeddings.colpali_embed import ColpaliEmbedder
+            return ColpaliEmbedder(model_path, **kwargs)
         else:
-            logger.error(f"Unsupported embedding model: {model_name}")
-            raise ValueError(f"Unsupported embedding model: {model_name}")
+            # Try dynamic import
+            module_name = f"python.embeddings.{model_name}_embed"
+            module = importlib.import_module(module_name)
+
+            # Get the embedder class
+            embedder_class = getattr(module, f"{model_name.capitalize()}Embedder")
+
+            # Create and return an instance
+            return embedder_class(model_path, **kwargs)
+    except (ImportError, AttributeError) as e:
+        # If specific embedder not found, use a default embedder
+        print(f"Warning: Could not load embedder for {model_name}, using default ColpaliEmbedder")
+        from python.embeddings.colpali_embed import ColpaliEmbedder
+        return ColpaliEmbedder(model_path, **kwargs)

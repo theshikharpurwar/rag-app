@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './ModelSelector.css';
+
 
 function ModelSelector({ embeddingModel, llmModel, onModelChange }) {
   const [models, setModels] = useState({
