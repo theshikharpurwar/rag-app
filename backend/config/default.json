@@ -1,27 +1,15 @@
 {
-    "port": 5000,
-    "corsOrigin": "http://localhost:3000",
-    "mongodb": {
-      "uri": "mongodb://localhost:27017/multimodal_rag"
-    },
-    "qdrant": {
-      "url": "http://localhost:6333",
-      "collectionName": "multimodal_rag",
-      "vectorSize": 128,
-      "distance": "Cosine"
-    },
-    "directories": {
-      "uploads": "uploads",
-      "images": "images"
-    },
-    "defaultModels": {
-      "embedding": {
-        "name": "colpali",
-        "path": "vidore/colpali-v1.2"
-      },
-      "llm": {
-        "name": "qwen",
-        "path": "Qwen/Qwen2.5-VL-3B-Instruct"
-      }
-    }
+  "port": 5000,
+  "corsOrigin": "http://localhost:3000",
+  "mongodb": {
+    "uri": "mongodb://localhost:27017/rag-app"
+  },
+  "qdrant": {
+    "url": "http://localhost:6333",
+    "collectionName": "documents"
+  },
+  "directories": {
+    "uploads": "uploads",
+    "images": "images"
   }
+}
