@@ -1,38 +1,42 @@
-# python/embeddings/embed_factory.py
-
-import importlib
 import os
-import sys
+import logging
+from typing import Dict, Any, Optional
 
-def get_embedder(model_name, model_path, **kwargs):
-    """
-    Factory function to get the appropriate embedder based on model name
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-    Args:
-        model_name (str): Name of the embedding model (e.g., 'colpali')
-        model_path (str): Path or identifier for the model
-        **kwargs: Additional parameters for the embedder
+class EmbeddingModelFactory:
+    """Factory class for creating embedding model instances"""
 
-    Returns:
-        An embedder instance that can embed images and text
-    """
-    try:
-        # Try to import the specific embedder module
-        if model_name == 'colpali':
-            from python.embeddings.colpali_embed import ColpaliEmbedder
-            return ColpaliEmbedder(model_path, **kwargs)
+    @staticmethod
+    def get_embedder(model_path: str, **kwargs: Any):
+        """
+        Get an embedder instance based on the model path
+
+        Args:
+            model_path: Path or identifier for the embedding model
+            **kwargs: Additional arguments to pass to the embedder
+
+        Returns:
+            An embedder instance
+        """
+        logger.info(f"Creating embedder for model: {model_path}")
+
+        # Determine which embedder to use based on the model path
+        if "clip" in model_path.lower():
+            from embeddings.clip_embed import ClipEmbedder
+            return ClipEmbedder(model_path=model_path, **kwargs)
+        elif "colpali" in model_path.lower():
+            from embeddings.colpali_embed import ColpaliEmbedder
+            return ColpaliEmbedder(model_path=model_path, **kwargs)
         else:
-            # Try dynamic import
-            module_name = f"python.embeddings.{model_name}_embed"
-            module = importlib.import_module(module_name)
+            # Default to CLIP embedder
+            logger.warning(f"Unknown model type for {model_path}, defaulting to CLIP embedder")
+            from embeddings.clip_embed import ClipEmbedder
+            return ClipEmbedder(model_path="openai/clip-vit-base-patch32", **kwargs)
 
-            # Get the embedder class
-            embedder_class = getattr(module, f"{model_name.capitalize()}Embedder")
-
-            # Create and return an instance
-            return embedder_class(model_path, **kwargs)
-    except (ImportError, AttributeError) as e:
-        # If specific embedder not found, use a default embedder
-        print(f"Warning: Could not load embedder for {model_name}, using default ColpaliEmbedder")
-        from python.embeddings.colpali_embed import ColpaliEmbedder
-        return ColpaliEmbedder(model_path, **kwargs)
+# For backward compatibility
+def get_embedder(model_path: str, **kwargs: Any):
+    """Legacy function for backward compatibility"""
+    return EmbeddingModelFactory.get_embedder(model_path, **kwargs)

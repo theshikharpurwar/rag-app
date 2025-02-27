@@ -6,8 +6,53 @@ const { spawn } = require('child_process');
 const Document = require('../models/Document');
 const ModelConfig = require('../models/ModelConfig');
 const config = require('../config/default.json');
+const fetch = require('node-fetch');
 
 const router = express.Router();
+
+// Ensure Qdrant collection exists
+async function ensureQdrantCollection() {
+  try {
+    const url = config.qdrant.url || 'http://localhost:6333';
+    const collectionName = config.qdrant.collectionName;
+    
+    // Check if collection exists
+    const response = await fetch(`${url}/collections/${collectionName}`);
+    
+    if (response.status === 404) {
+      console.log(`Creating Qdrant collection: ${collectionName}`);
+      
+      // Create collection with appropriate vector size
+      const createResponse = await fetch(`${url}/collections/${collectionName}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          vectors: {
+            size: 512,  // Default size for CLIP embeddings
+            distance: 'Cosine'
+          }
+        })
+      });
+      
+      if (createResponse.ok) {
+        console.log(`Successfully created Qdrant collection: ${collectionName}`);
+      } else {
+        console.error(`Failed to create Qdrant collection: ${await createResponse.text()}`);
+      }
+    } else if (response.ok) {
+      console.log(`Qdrant collection exists: ${collectionName}`);
+    } else {
+      console.error(`Error checking Qdrant collection: ${await response.text()}`);
+    }
+  } catch (error) {
+    console.error(`Error ensuring Qdrant collection: ${error.message}`);
+  }
+}
+
+// Call this when the server starts
+ensureQdrantCollection();
 
 // Get active model configurations
 const getActiveModels = async () => {
@@ -16,8 +61,8 @@ const getActiveModels = async () => {
   
   return {
     embedding: embeddingModel || { 
-      name: 'colpali',
-      path: 'vidore/colpali-v1.2',
+      name: 'clip',  // Changed from colpali to clip
+      path: 'openai/clip-vit-base-patch32',  // Changed to CLIP model
       parameters: {}
     },
     llm: llmModel || {
@@ -67,7 +112,7 @@ router.post('/upload/pdf', async (req, res) => {
     
     // Run Python script to compute embeddings with model params
     const pythonProcess = spawn('python', [
-      path.join(process.cwd(),'..', 'python/compute_embeddings.py'),
+      path.join(process.cwd(), '..', 'python', 'compute_embeddings.py'),
       pdfPath,
       config.qdrant.collectionName,
       imageDir,
@@ -81,6 +126,7 @@ router.post('/upload/pdf', async (req, res) => {
     
     pythonProcess.stdout.on('data', (data) => {
       outputData += data.toString();
+      console.log(`Python Output: ${data.toString()}`);
     });
     
     pythonProcess.stderr.on('data', (data) => {
@@ -90,8 +136,17 @@ router.post('/upload/pdf', async (req, res) => {
     
     pythonProcess.on('close', async (code) => {
       try {
-        if (code === 0) {
-          const result = JSON.parse(outputData);
+        if (code === 0 && outputData.trim()) {
+          let result;
+          try {
+            result = JSON.parse(outputData);
+          } catch (parseError) {
+            console.error('Error parsing Python output:', parseError);
+            document.status = 'failed';
+            document.error = `Error parsing output: ${parseError.message}`;
+            await document.save();
+            return;
+          }
           
           // Update document with page count and status
           document.pageCount = result.pageCount || 0;
@@ -168,7 +223,7 @@ router.post('/query', async (req, res) => {
     
     // Run Python script to query using the active LLM model
     const pythonProcess = spawn('python', [
-      path.join(process.cwd(),'..', 'python/local_llm.py'),
+      path.join(process.cwd(), '..', 'python', 'local_llm.py'),
       question,
       document.storedName,
       config.qdrant.collectionName,
@@ -185,6 +240,7 @@ router.post('/query', async (req, res) => {
     
     pythonProcess.stdout.on('data', (data) => {
       outputData += data.toString();
+      console.log(`Python Output: ${data.toString()}`);
     });
     
     pythonProcess.stderr.on('data', (data) => {
@@ -193,7 +249,7 @@ router.post('/query', async (req, res) => {
     });
     
     pythonProcess.on('close', (code) => {
-      if (code === 0) {
+      if (code === 0 && outputData.trim()) {
         try {
           // Try to parse as JSON first
           const result = JSON.parse(outputData);
