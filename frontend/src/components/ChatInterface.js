@@ -1,59 +1,47 @@
-import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+// D:\rag-app\frontend\src\components\ChatInterface.js
 
+import React, { useState } from 'react';
+import { queryRAG } from '../api';
+import './ChatInterface.css';
 
-function ChatInterface({ document, llmModel }) {
+const ChatInterface = ({ pdf, model }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef(null);
+  const [error, setError] = useState(null);
 
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!input.trim() || loading) return;
+  const handleSend = async () => {
+    if (!input.trim()) return;
     
-    const question = input.trim();
+    const userMessage = {
+      text: input,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString()
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
-    
-    // Add user message
-    setMessages(prev => [...prev, { role: 'user', content: question }]);
-    
-    // Add temporary assistant message
-    setMessages(prev => [...prev, { role: 'assistant', content: '...', temporary: true }]);
-    
     setLoading(true);
+    setError(null);
     
     try {
-      const response = await axios.post('http://localhost:5000/api/query', {
-        question,
-        documentId: document._id
-      });
+      // Only pass the model name, not the path
+      const response = await queryRAG(pdf._id, input, model.name);
       
-      // Replace temporary message with actual response
-      setMessages(prev => [
-        ...prev.filter(msg => !msg.temporary),
-        { role: 'assistant', content: response.data.answer }
-      ]);
-    } catch (error) {
-      // Replace temporary message with error
-      setMessages(prev => [
-        ...prev.filter(msg => !msg.temporary),
-        { 
-          role: 'assistant', 
-          content: `Error: ${error.response?.data?.error || 'Failed to get response'}`,
-          isError: true
-        }
-      ]);
-      console.error('Query error:', error);
+      if (response.success) {
+        const botMessage = {
+          text: response.answer,
+          sender: 'bot',
+          timestamp: new Date().toLocaleTimeString(),
+          sources: response.sources
+        };
+        
+        setMessages(prev => [...prev, botMessage]);
+      } else {
+        setError(`Error: ${response.message || 'Failed to get response'}`);
+      }
+    } catch (err) {
+      setError(`Error: ${err.message || 'Something went wrong'}`);
     } finally {
       setLoading(false);
     }
@@ -62,46 +50,61 @@ function ChatInterface({ document, llmModel }) {
   return (
     <div className="chat-interface">
       <div className="chat-header">
-        <h4>{document.originalName}</h4>
-        <div className="model-info">
-          Using: {llmModel.name}
-        </div>
+        <h3>Chat with {pdf.originalName}</h3>
       </div>
       
-      <div className="chat-messages">
-        {messages.length === 0 ? (
-          <div className="empty-chat">
-            <p>Ask a question about this document</p>
-          </div>
-        ) : (
-          messages.map((msg, index) => (
-            <div 
-              key={index} 
-              className={`message ${msg.role} ${msg.isError ? 'error' : ''} ${msg.temporary ? 'temporary' : ''}`}
-            >
-              <div className="message-content">
-                {msg.content}
-              </div>
+      <div className="messages">
+        {messages.map((msg, index) => (
+          <div key={index} className={`message ${msg.sender}`}>
+            <div className="message-content">
+              <p>{msg.text}</p>
+              {msg.sources && msg.sources.length > 0 && (
+                <div className="sources">
+                  <p>Sources:</p>
+                  <ul>
+                    {msg.sources.map((source, idx) => (
+                      <li key={idx}>
+                        {source.pdf_name} (Page {source.page_num})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
-          ))
+            <div className="timestamp">{msg.timestamp}</div>
+          </div>
+        ))}
+        
+        {loading && (
+          <div className="message bot">
+            <div className="message-content">
+              <p>Thinking...</p>
+            </div>
+          </div>
         )}
-        <div ref={messagesEndRef} />
+        
+        {error && (
+          <div className="error-message">
+            <p>{error}</p>
+          </div>
+        )}
       </div>
       
-      <form className="chat-input" onSubmit={handleSubmit}>
+      <div className="input-area">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
           placeholder="Ask a question..."
           disabled={loading}
         />
-        <button type="submit" disabled={!input.trim() || loading}>
-          {loading ? 'Thinking...' : 'Send'}
+        <button onClick={handleSend} disabled={loading}>
+          Send
         </button>
-      </form>
+      </div>
     </div>
   );
-}
+};
 
 export default ChatInterface;

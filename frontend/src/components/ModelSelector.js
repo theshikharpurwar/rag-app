@@ -1,163 +1,119 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+// D:\rag-app\frontend\src\components\ModelSelector.js
 
+import React, { useState } from 'react';
+import './ModelSelector.css';
 
-function ModelSelector({ embeddingModel, llmModel, onModelChange }) {
-  const [models, setModels] = useState({
-    embedding: [],
-    llm: []
-  });
-  const [showAddModel, setShowAddModel] = useState(false);
-  const [newModel, setNewModel] = useState({
-    type: 'embedding',
-    name: '',
-    path: '',
-    parameters: '{}'
-  });
+const ModelSelector = ({ selectedModel, setSelectedModel }) => {
+  const [customModelPath, setCustomModelPath] = useState('');
+  const [showCustomPath, setShowCustomPath] = useState(false);
 
-  useEffect(() => {
-    fetchModels();
-  }, []);
+  // Predefined models
+  const predefinedModels = [
+    { name: 'clip', path: 'openai/clip-vit-base-patch32', label: 'CLIP (Default)' },
+    { name: 'clip', path: 'openai/clip-vit-large-patch14', label: 'CLIP Large' }
+  ];
 
-  const fetchModels = async () => {
-    try {
-      const response = await axios.get('http://localhost:5000/api/model-config');
+  // Handle model selection
+  const handleModelChange = (e) => {
+    const value = e.target.value;
+    
+    if (value === 'custom') {
+      setShowCustomPath(true);
+      // Don't update the selected model yet, wait for custom path
+    } else {
+      setShowCustomPath(false);
       
-      setModels({
-        embedding: response.data.filter(m => m.type === 'embedding'),
-        llm: response.data.filter(m => m.type === 'llm')
-      });
-    } catch (err) {
-      console.error('Error fetching models:', err);
+      // Find the selected predefined model
+      const model = predefinedModels.find(m => `${m.name}:${m.path}` === value);
+      
+      if (model && setSelectedModel) {
+        setSelectedModel({
+          name: model.name,
+          path: model.path
+        });
+      }
     }
   };
 
-  const handleAddModel = async (e) => {
+  // Handle custom model path change
+  const handleCustomPathChange = (e) => {
+    setCustomModelPath(e.target.value);
+  };
+
+  // Handle custom model submission
+  const handleCustomModelSubmit = (e) => {
     e.preventDefault();
     
-    try {
-      // Parse parameters to validate JSON
-      const parameters = JSON.parse(newModel.parameters);
-      
-      await axios.post('http://localhost:5000/api/model-config', {
-        ...newModel,
-        parameters
+    if (customModelPath.trim() && setSelectedModel) {
+      setSelectedModel({
+        name: 'custom',
+        path: customModelPath.trim()
       });
-      
-      setNewModel({
-        type: 'embedding',
-        name: '',
-        path: '',
-        parameters: '{}'
-      });
-      
-      setShowAddModel(false);
-      fetchModels();
-    } catch (err) {
-      console.error('Error adding model:', err);
-      alert(`Error adding model: ${err.message}`);
     }
+  };
+
+  // Get the current model value for the select input
+  const getCurrentModelValue = () => {
+    if (selectedModel) {
+      const predefinedModel = predefinedModels.find(
+        m => m.name === selectedModel.name && m.path === selectedModel.path
+      );
+      
+      if (predefinedModel) {
+        return `${predefinedModel.name}:${predefinedModel.path}`;
+      } else if (selectedModel.name === 'custom') {
+        return 'custom';
+      }
+    }
+    
+    // Default to first model
+    return `${predefinedModels[0].name}:${predefinedModels[0].path}`;
   };
 
   return (
     <div className="model-selector">
-      <h4>Model Configuration</h4>
-      
-      <div className="model-section">
-        <h5>Embedding Model</h5>
-        <div className="current-model">
-          Current: <strong>{embeddingModel.name}</strong>
-        </div>
-        
-        <select 
-          onChange={(e) => onModelChange('embedding', e.target.value)}
-          value={embeddingModel._id || ''}
-        >
-          <option value="" disabled>Change model</option>
-          {models.embedding.map(model => (
-            <option key={model._id} value={model._id}>
-              {model.name} ({model.path})
-            </option>
-          ))}
-        </select>
-      </div>
-      
-      <div className="model-section">
-        <h5>LLM Model</h5>
-        <div className="current-model">
-          Current: <strong>{llmModel.name}</strong>
-        </div>
-        
-        <select
-          onChange={(e) => onModelChange('llm', e.target.value)}
-          value={llmModel._id || ''}
-        >
-          <option value="" disabled>Change model</option>
-          {models.llm.map(model => (
-            <option key={model._id} value={model._id}>
-              {model.name} ({model.path})
-            </option>
-          ))}
-        </select>
-      </div>
-      
-      <button 
-        className="add-model-btn"
-        onClick={() => setShowAddModel(!showAddModel)}
+      <label htmlFor="model-select">Select Embedding Model:</label>
+      <select
+        id="model-select"
+        value={getCurrentModelValue()}
+        onChange={handleModelChange}
+        className="model-select"
       >
-        {showAddModel ? 'Cancel' : 'Add New Model'}
-      </button>
+        {predefinedModels.map((model, index) => (
+          <option key={index} value={`${model.name}:${model.path}`}>
+            {model.label}
+          </option>
+        ))}
+        <option value="custom">Custom Model</option>
+      </select>
       
-      {showAddModel && (
-        <form className="add-model-form" onSubmit={handleAddModel}>
-          <div className="form-group">
-            <label>Model Type</label>
-            <select
-              value={newModel.type}
-              onChange={(e) => setNewModel({...newModel, type: e.target.value})}
-              required
-            >
-              <option value="embedding">Embedding</option>
-              <option value="llm">LLM</option>
-            </select>
-          </div>
-          
-          <div className="form-group">
-            <label>Name</label>
-            <input
-              type="text"
-              value={newModel.name}
-              onChange={(e) => setNewModel({...newModel, name: e.target.value})}
-              required
-              placeholder="e.g., colpali, qwen"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>Model Path</label>
-            <input
-              type="text"
-              value={newModel.path}
-              onChange={(e) => setNewModel({...newModel, path: e.target.value})}
-              required
-              placeholder="e.g., vidore/colpali-v1.2"
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>Parameters (JSON)</label>
-            <textarea
-              value={newModel.parameters}
-              onChange={(e) => setNewModel({...newModel, parameters: e.target.value})}
-              placeholder='{"param1": "value1"}'
-            />
-          </div>
-          
-          <button type="submit" className="submit-btn">Add Model</button>
+      {showCustomPath && (
+        <form onSubmit={handleCustomModelSubmit} className="custom-model-form">
+          <input
+            type="text"
+            value={customModelPath}
+            onChange={handleCustomPathChange}
+            placeholder="Enter model path or identifier"
+            className="custom-model-input"
+          />
+          <button 
+            type="submit" 
+            disabled={!customModelPath.trim()}
+            className="custom-model-button"
+          >
+            Set Custom Model
+          </button>
         </form>
+      )}
+      
+      {selectedModel && (
+        <div className="selected-model-info">
+          <p><strong>Model:</strong> {selectedModel.name}</p>
+          <p><strong>Path:</strong> {selectedModel.path}</p>
+        </div>
       )}
     </div>
   );
-}
+};
 
 export default ModelSelector;

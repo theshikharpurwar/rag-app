@@ -1,274 +1,225 @@
-// routes/api.js
+// D:\rag-app\backend\routes\api.js
+
 const express = require('express');
+const router = express.Router();
+const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const Document = require('../models/Document');
-const ModelConfig = require('../models/ModelConfig');
-const config = require('../config/default.json');
-const fetch = require('node-fetch');
+const PDF = require('../models/pdf');
 
-const router = express.Router();
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '..', '..', 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const timestamp = Date.now();
+    const originalName = file.originalname;
+    cb(null, `${timestamp}-${originalName}`);
+  }
+});
 
-// Ensure Qdrant collection exists
-async function ensureQdrantCollection() {
-  try {
-    const url = config.qdrant.url || 'http://localhost:6333';
-    const collectionName = config.qdrant.collectionName;
-    
-    // Check if collection exists
-    const response = await fetch(`${url}/collections/${collectionName}`);
-    
-    if (response.status === 404) {
-      console.log(`Creating Qdrant collection: ${collectionName}`);
-      
-      // Create collection with appropriate vector size
-      const createResponse = await fetch(`${url}/collections/${collectionName}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          vectors: {
-            size: 512,  // Default size for CLIP embeddings
-            distance: 'Cosine'
-          }
-        })
-      });
-      
-      if (createResponse.ok) {
-        console.log(`Successfully created Qdrant collection: ${collectionName}`);
-      } else {
-        console.error(`Failed to create Qdrant collection: ${await createResponse.text()}`);
-      }
-    } else if (response.ok) {
-      console.log(`Qdrant collection exists: ${collectionName}`);
+const upload = multer({ 
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
     } else {
-      console.error(`Error checking Qdrant collection: ${await response.text()}`);
+      cb(new Error('Only PDF files are allowed'), false);
     }
-  } catch (error) {
-    console.error(`Error ensuring Qdrant collection: ${error.message}`);
   }
-}
+});
 
-// Call this when the server starts
-ensureQdrantCollection();
-
-// Get active model configurations
-const getActiveModels = async () => {
-  const embeddingModel = await ModelConfig.findOne({ type: 'embedding', isActive: true });
-  const llmModel = await ModelConfig.findOne({ type: 'llm', isActive: true });
-  
-  return {
-    embedding: embeddingModel || { 
-      name: 'clip',  // Changed from colpali to clip
-      path: 'openai/clip-vit-base-patch32',  // Changed to CLIP model
-      parameters: {}
-    },
-    llm: llmModel || {
-      name: 'qwen',
-      path: 'Qwen/Qwen2.5-VL-3B-Instruct',
-      parameters: {}
-    }
-  };
-};
-
-// Upload PDF
-router.post('/upload/pdf', async (req, res) => {
-  if (!req.files || !req.files.pdf) {
-    return res.status(400).json({ error: 'PDF file is required' });
-  }
-
-  const { pdf } = req.files;
-  // Use timestamp to avoid filename conflicts
-  const storedName = `${Date.now()}_${pdf.name.replace(/\s+/g, '_')}`;
-  const pdfPath = path.join(config.directories.uploads, storedName);
-  
+// Upload PDF route
+router.post('/upload', upload.single('pdf'), async (req, res) => {
   try {
-    // Save PDF file
-    await pdf.mv(pdfPath);
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const pdfPath = req.file.path;
+    const originalName = req.file.originalname;
+    const fileName = req.file.filename;
     
-    // Create document in MongoDB
-    const document = new Document({
-      originalName: pdf.name,
-      storedName: storedName,
-      status: 'uploaded'
-    });
-    
-    await document.save();
-    
-    // Get active models
-    const activeModels = await getActiveModels();
-    
-    // Process PDF in the background
-    const imageDir = path.join(config.directories.images, storedName.split('.')[0]);
-    if (!fs.existsSync(imageDir)) {
-      fs.mkdirSync(imageDir, { recursive: true });
+    // Create output directory for images
+    const outputDir = path.join(__dirname, '..', '..', 'uploads', 'images', fileName);
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
     }
     
-    // Update document status
-    document.status = 'processing';
-    await document.save();
+    // Collection name for Qdrant
+    const collectionName = 'documents';
     
-    // Run Python script to compute embeddings with model params
+    // Run Python script to compute embeddings
+    const pythonScript = path.join(__dirname, '..', '..', 'python', 'compute_embeddings.py');
+    
+    // Default model settings
+    const modelName = req.body.modelName || 'clip';
+    const modelPath = req.body.modelPath || 'openai/clip-vit-base-patch32';
+    const modelParams = req.body.modelParams || '{}';
+    
     const pythonProcess = spawn('python', [
-      path.join(process.cwd(), '..', 'python', 'compute_embeddings.py'),
+      pythonScript,
       pdfPath,
-      config.qdrant.collectionName,
-      imageDir,
-      activeModels.embedding.name,
-      activeModels.embedding.path,
-      JSON.stringify(activeModels.embedding.parameters)
+      collectionName,
+      outputDir,
+      modelName,
+      modelPath,
+      modelParams
     ]);
     
-    let outputData = '';
-    let errorData = '';
+    let pythonData = '';
+    let pythonError = '';
     
     pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
-      console.log(`Python Output: ${data.toString()}`);
+      pythonData += data.toString();
     });
     
     pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-      console.error(`Python Error: ${data.toString()}`);
+      console.error(`Python stderr: ${data}`);
+      pythonError += data.toString();
     });
     
     pythonProcess.on('close', async (code) => {
-      try {
-        if (code === 0 && outputData.trim()) {
-          let result;
-          try {
-            result = JSON.parse(outputData);
-          } catch (parseError) {
-            console.error('Error parsing Python output:', parseError);
-            document.status = 'failed';
-            document.error = `Error parsing output: ${parseError.message}`;
-            await document.save();
-            return;
-          }
-          
-          // Update document with page count and status
-          document.pageCount = result.pageCount || 0;
-          document.status = 'indexed';
-          document.indexedAt = new Date();
-          await document.save();
-          
-          console.log(`Document ${storedName} processed successfully`);
-        } else {
-          document.status = 'failed';
-          document.error = errorData.substring(0, 500); // Truncate very long errors
-          await document.save();
-          
-          console.error(`Error processing document ${storedName}: ${errorData}`);
-        }
-      } catch (error) {
-        console.error('Error updating document status:', error);
-        document.status = 'failed';
-        document.error = error.message;
-        await document.save();
+      console.log(`Python process exited with code ${code}`);
+      
+      if (code !== 0) {
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Error processing PDF', 
+          error: pythonError 
+        });
       }
-    });
-    
-    // Return immediately to user
-    res.status(200).json({
-      message: 'PDF uploaded successfully and processing started',
-      documentId: document._id,
-      storedName: storedName
-    });
-    
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get all documents
-router.get('/documents', async (req, res) => {
-  try {
-    const documents = await Document.find().sort({ uploadedAt: -1 });
-    res.json(documents);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Query document
-router.post('/query', async (req, res) => {
-  const { question, documentId } = req.body;
-  
-  if (!question || !documentId) {
-    return res.status(400).json({ error: 'Question and document ID are required' });
-  }
-  
-  try {
-    // Find document
-    const document = await Document.findById(documentId);
-    if (!document) {
-      return res.status(404).json({ error: 'Document not found' });
-    }
-    
-    if (document.status !== 'indexed') {
-      return res.status(400).json({ 
-        error: 'Document is not ready for querying', 
-        status: document.status 
-      });
-    }
-    
-    // Get active models
-    const activeModels = await getActiveModels();
-    
-    // Directory where images are stored for this document
-    const imageDir = path.join(config.directories.images, document.storedName.split('.')[0]);
-    
-    // Run Python script to query using the active LLM model
-    const pythonProcess = spawn('python', [
-      path.join(process.cwd(), '..', 'python', 'local_llm.py'),
-      question,
-      document.storedName,
-      config.qdrant.collectionName,
-      imageDir,
-      activeModels.embedding.name,
-      activeModels.embedding.path,
-      activeModels.llm.name,
-      activeModels.llm.path,
-      JSON.stringify(activeModels.llm.parameters)
-    ]);
-    
-    let outputData = '';
-    let errorData = '';
-    
-    pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
-      console.log(`Python Output: ${data.toString()}`);
-    });
-    
-    pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-      console.error(`Python Error: ${data.toString()}`);
-    });
-    
-    pythonProcess.on('close', (code) => {
-      if (code === 0 && outputData.trim()) {
-        try {
-          // Try to parse as JSON first
-          const result = JSON.parse(outputData);
-          res.json({ answer: result.answer || outputData });
-        } catch (e) {
-          // If not JSON, return as plain text
-          res.json({ answer: outputData });
+      
+      try {
+        const result = JSON.parse(pythonData);
+        
+        if (result.success) {
+          // Save PDF info to MongoDB
+          const newPDF = new PDF({
+            fileName,
+            originalName,
+            path: pdfPath,
+            pageCount: result.pageCount,
+            embeddingCount: result.embeddingCount,
+            collectionName
+          });
+          
+          await newPDF.save();
+          
+          res.json({ 
+            success: true, 
+            message: 'PDF uploaded and processed successfully',
+            pdf: newPDF
+          });
+        } else {
+          res.status(500).json({ 
+            success: false, 
+            message: 'Error processing PDF', 
+            error: result.error 
+          });
         }
-      } else {
+      } catch (err) {
+        console.error('Error parsing Python output:', err);
         res.status(500).json({ 
-          error: 'Error generating response', 
-          details: errorData 
+          success: false, 
+          message: 'Error parsing Python output', 
+          error: err.message,
+          pythonData
         });
       }
     });
+  } catch (err) {
+    console.error('Error uploading PDF:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Get all PDFs route
+router.get('/pdfs', async (req, res) => {
+  try {
+    const pdfs = await PDF.find().sort({ createdAt: -1 });
+    res.json({ success: true, pdfs });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+
+// D:\rag-app\backend\routes\api.js
+
+// Find the query route and update the spawn command:
+router.post('/process', async (req, res) => {
+    try {
+      const { pdfId } = req.body;
+      
+      // Validate pdfId
+      if (!pdfId) {
+        return res.status(400).json({ success: false, message: 'PDF ID is required' });
+      }
+      
+      // Get PDF info from MongoDB
+      const pdf = await PDF.findById(pdfId);
+      if (!pdf) {
+        return res.status(404).json({ success: false, message: 'PDF not found' });
+      }
+      
+      // Run Python script to compute embeddings
+      const pythonScript = path.join(__dirname, '..', '..', 'python', 'compute_embeddings.py');
+      
+      // IMPORTANT: Fix the argument order and format
+      const pythonProcess = spawn('python', [
+        pythonScript,
+        pdf.path,  // First positional argument should be the file path
+        '--collection_name', 'documents',  // Named arguments with flags
+        '--model_name', 'clip',
+        '--model_path', 'ViT-B/32'
+      ]);
     
-  } catch (error) {
-    console.error('Query error:', error);
-    res.status(500).json({ error: error.message });
+    let pythonData = '';
+    let pythonError = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      pythonData += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`Python stderr: ${data}`);
+      pythonError += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      console.log(`Python process exited with code ${code}`);
+      
+      if (code !== 0) {
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Error processing query', 
+          error: pythonError 
+        });
+      }
+      
+      try {
+        const result = JSON.parse(pythonData);
+        res.json(result);
+      } catch (err) {
+        console.error('Error parsing Python output:', err);
+        res.status(500).json({ 
+          success: false, 
+          message: 'Error parsing Python output', 
+          error: err.message,
+          pythonData
+        });
+      }
+    });
+} catch (err) {
+    console.error('Error querying PDF:', err);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

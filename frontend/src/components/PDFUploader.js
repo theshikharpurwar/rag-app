@@ -1,73 +1,67 @@
+// D:\rag-app\frontend\src\components\PDFUploader.js
+
 import React, { useState } from 'react';
+import { uploadPDF } from '../api';
+import './PDFUploader.css';
 
-
-function PDFUploader({ onUpload, disabled }) {
-  const [dragging, setDragging] = useState(false);
+const PDFUploader = ({ onUpload }) => {
   const [file, setFile] = useState(null);
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setDragging(true);
-  };
-
-  const handleDragLeave = () => {
-    setDragging(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragging(false);
-    
-    const files = e.dataTransfer.files;
-    if (files.length && files[0].type === 'application/pdf') {
-      setFile(files[0]);
-    }
-  };
+  const [error, setError] = useState(null);
+  const [uploading, setUploading] = useState(false);
 
   const handleFileChange = (e) => {
-    if (e.target.files.length) {
-      setFile(e.target.files[0]);
-    }
+    setFile(e.target.files[0]);
+    setError(null);
   };
 
-  const handleUpload = () => {
-    if (file) {
-      onUpload(file);
-      setFile(null);
+  const handleUpload = async () => {
+    if (!file) {
+      setError('Please select a PDF file to upload');
+      return;
+    }
+    try {
+      setUploading(true);
+      const response = await uploadPDF(file);
+      if (response.success) {
+        onUpload();
+        setFile(null);
+      } else {
+        setError('Upload failed: ' + response.message);
+      }
+    } catch (err) {
+      setError('Error uploading PDF: ' + (err.message || 'Unknown error'));
+    } finally {
+      setUploading(false);
     }
   };
 
   return (
     <div className="pdf-uploader">
-      <div
-        className={`dropzone ${dragging ? 'dragging' : ''}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <input
-          type="file"
-          accept=".pdf"
-          onChange={handleFileChange}
-          id="file-input"
-          disabled={disabled}
+      <div className="file-input-container">
+        <input 
+          type="file" 
+          accept="application/pdf" 
+          onChange={handleFileChange} 
+          className="file-input" 
+          id="pdf-file-input"
+          disabled={uploading}
         />
-        <label htmlFor="file-input">
-          {file ? file.name : 'Drop PDF here or click to browse'}
+        <label htmlFor="pdf-file-input" className="file-input-label">
+          {file ? file.name : 'Choose PDF file...'}
         </label>
       </div>
       
-      {file && (
-        <button 
-          className="upload-button" 
-          onClick={handleUpload}
-          disabled={disabled}
-        >
-          {disabled ? 'Uploading...' : 'Upload PDF'}
-        </button>
-      )}
+      <button 
+        onClick={handleUpload} 
+        className="upload-button"
+        disabled={!file || uploading}
+      >
+        {uploading ? 'Uploading...' : 'Upload PDF'}
+      </button>
+      
+      {error && <p className="error-message">{error}</p>}
     </div>
   );
-}
+};
 
 export default PDFUploader;

@@ -1,76 +1,89 @@
-# python/embeddings/colpali_embed.py
+# D:\rag-app\python\embeddings\colpali_embed.py
 
 import torch
 from PIL import Image
-from transformers import CLIPProcessor, CLIPModel
+import numpy as np
+from transformers import AutoProcessor, AutoModel
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class ColpaliEmbedder:
-    def __init__(self, model_path, **kwargs):
-        """
-        Initialize the embedder with a CLIP model
+    def __init__(self, model_path="vidore/colpali-v1.2", device=None, **kwargs):
+        self.model_path = model_path
 
-        Args:
-            model_path (str): Path or identifier for the model
-            **kwargs: Additional parameters for the model
-        """
-        # Use a standard CLIP model instead of PaliGemma
-        self.model_name = "openai/clip-vit-base-patch32"
-        self.model = CLIPModel.from_pretrained(self.model_name)
-        self.processor = CLIPProcessor.from_pretrained(self.model_name)
+        # Determine device
+        if device is None:
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = device
 
-        # Print info about the model being used
-        print(f"Using CLIP model: {self.model_name} instead of {model_path}")
+        logger.info(f"Loading Colpali model from {model_path} on {self.device}")
+
+        # Load model and processor
+        self.model = AutoModel.from_pretrained(model_path).to(self.device)
+        self.processor = AutoProcessor.from_pretrained(model_path)
+
+        logger.info(f"Colpali model loaded successfully")
 
     def embed_image(self, image):
         """
-        Compute embedding for an image
+        Generate embedding for an image
 
         Args:
-            image (PIL.Image): Image to embed
+            image: PIL Image or path to image file
 
         Returns:
-            numpy.ndarray: Embedding vector
+            numpy array: Image embedding
         """
-        # Ensure image is in RGB format
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
+        try:
+            # Load image if path is provided
+            if isinstance(image, str):
+                image = Image.open(image).convert("RGB")
 
-        # Process the image
-        inputs = self.processor(images=image, return_tensors="pt")
+            # Process image
+            inputs = self.processor(images=image, return_tensors="pt").to(self.device)
 
-        # Get image features
-        with torch.no_grad():
-            image_features = self.model.get_image_features(**inputs)
+            # Generate embedding
+            with torch.no_grad():
+                outputs = self.model.get_image_features(**inputs)
+                image_features = outputs.last_hidden_state.mean(dim=1)  # Pool the output
 
-        # Normalize the features
-        image_features = image_features / image_features.norm(dim=1, keepdim=True)
+            # Normalize embedding
+            image_embedding = image_features / image_features.norm(dim=1, keepdim=True)
 
-        # Convert to numpy array
-        embedding = image_features.squeeze().cpu().numpy()
-
-        return embedding
+            # Convert to numpy array
+            return image_embedding.cpu().numpy()[0]
+        except Exception as e:
+            logger.error(f"Error embedding image: {str(e)}")
+            raise
 
     def embed_text(self, text):
         """
-        Compute embedding for text
+        Generate embedding for text
 
         Args:
-            text (str): Text to embed
+            text: Text string
 
         Returns:
-            numpy.ndarray: Embedding vector
+            numpy array: Text embedding
         """
-        # Process the text
-        inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True)
+        try:
+            # Process text
+            inputs = self.processor(text=text, return_tensors="pt", padding=True).to(self.device)
 
-        # Get text features
-        with torch.no_grad():
-            text_features = self.model.get_text_features(**inputs)
+            # Generate embedding
+            with torch.no_grad():
+                outputs = self.model.get_text_features(**inputs)
+                text_features = outputs.last_hidden_state.mean(dim=1)  # Pool the output
 
-        # Normalize the features
-        text_features = text_features / text_features.norm(dim=1, keepdim=True)
+            # Normalize embedding
+            text_embedding = text_features / text_features.norm(dim=1, keepdim=True)
 
-        # Convert to numpy array
-        embedding = text_features.squeeze().cpu().numpy()
-
-        return embedding
+            # Convert to numpy array
+            return text_embedding.cpu().numpy()[0]
+        except Exception as e:
+            logger.error(f"Error embedding text: {str(e)}")
+            raise
