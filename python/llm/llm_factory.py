@@ -1,28 +1,32 @@
-# python/llm/llm_factory.py
-import logging
-import torch
+# D:\rag-app\python\llm\llm_factory.py
 
-logging.basicConfig(level=logging.INFO)
+import logging
+from .ollama_llm import OllamaLLM
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class LLMFactory:
-    """Factory for creating LLM models"""
+    """
+    Factory class for creating LLM instances
+    """
 
     @staticmethod
-    def create_model(model_name, model_path, params=None):
-        """Create and return the specified LLM model"""
-        if params is None:
-            params = {}
+    def get_llm(model_name=None, **kwargs):
+        """
+        Get an LLM instance based on model name
 
-        model_name = model_name.lower()
+        Args:
+            model_name (str): Name of the model
+            **kwargs: Additional arguments for specific models
 
-        if model_name == 'qwen':
-            from .qwen_llm import QwenVLModel
-            return QwenVLModel(model_path, params)
-        elif model_name == 'llama':
-            from .llama_llm import LlamaVLModel
-            return LlamaVLModel(model_path, params)
-        # Add more models as needed
-        else:
-            logger.error(f"Unsupported LLM model: {model_name}")
-            raise ValueError(f"Unsupported LLM model: {model_name}")
+        Returns:
+            LLM instance
+        """
+        if not model_name:
+            model_name = "phi"
+
+        # Always use Ollama LLM with the specified model
+        logger.info(f"Creating Ollama LLM with model {model_name}")
+        return OllamaLLM(model_name=model_name)

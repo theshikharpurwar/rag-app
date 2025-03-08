@@ -1,52 +1,198 @@
-.pdf-uploader {
-    margin-bottom: 15px;
+/* D:\rag-app\frontend\src\components\PDFUploader.css */
+.pdf-uploader-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 20px;
+  background-color: #f7f7f8;
+}
+
+.pdf-uploader-content {
+  max-width: 700px;
+  width: 100%;
+  background-color: white;
+  border-radius: 10px;
+  padding: 32px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pdf-uploader-content h1 {
+  font-size: 24px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.subtitle {
+  text-align: center;
+  color: #6b7280;
+  margin-bottom: 24px;
+}
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.drag-drop-area {
+  border: 2px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.drag-drop-area.drag-active {
+  border-color: #10a37f;
+  background-color: rgba(16, 163, 127, 0.05);
+}
+
+.drag-drop-area.has-file {
+  border-style: solid;
+  border-color: #e5e7eb;
+  padding: 16px;
+}
+
+.upload-icon {
+  color: #9ca3af;
+  margin-bottom: 16px;
+}
+
+.browse-label {
+  color: #10a37f;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.browse-label input {
+  display: none;
+}
+
+.small {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  margin-top: 8px;
+}
+
+.selected-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.file-icon {
+  color: #d25c5c;
+}
+
+.file-details {
+  flex: 1;
+  text-align: left;
+}
+
+.file-name {
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.file-size {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.remove-file-btn {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 16px;
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remove-file-btn:hover {
+  background-color: #f3f4f6;
+  color: #6b7280;
+}
+
+.upload-button {
+  background-color: #10a37f;
+  color: white;
+  border: none;
+  padding: 12px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.upload-button:hover:not(:disabled) {
+  background-color: #0e906f;
+}
+
+.upload-button:disabled {
+  background-color: #d1d5db;
+  cursor: not-allowed;
+}
+
+.upload-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-bar {
+  height: 8px;
+  background-color: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background-color: #10a37f;
+  transition: width 0.3s ease;
+}
+
+.features {
+  margin-top: 48px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+}
+
+.feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.feature-icon {
+  color: #10a37f;
+  flex-shrink: 0;
+}
+
+.feature-text h3 {
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.feature-text p {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+@media (max-width: 640px) {
+  .pdf-uploader-content {
+    padding: 20px;
   }
   
-  .file-input-container {
-    margin-bottom: 10px;
+  .features {
+    grid-template-columns: 1fr;
   }
-  
-  .file-input {
-    display: none;
-  }
-  
-  .file-input-label {
-    display: block;
-    padding: 8px 12px;
-    background-color: #f5f5f5;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    cursor: pointer;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-  
-  .file-input-label:hover {
-    background-color: #e0e0e0;
-  }
-  
-  .upload-button {
-    width: 100%;
-    padding: 8px 12px;
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  
-  .upload-button:hover {
-    background-color: #45a049;
-  }
-  
-  .upload-button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-  }
-  
-  .error-message {
-    color: #d32f2f;
-    font-size: 0.9rem;
-    margin-top: 10px;
-  }
+}

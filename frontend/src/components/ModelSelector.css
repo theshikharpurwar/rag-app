@@ -1,54 +1,84 @@
+/* D:\rag-app\frontend\src\components\ModelSelector.css */
+
 .model-selector {
-    margin-bottom: 15px;
-  }
-  
-  .model-select {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin-bottom: 10px;
-  }
-  
-  .custom-model-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 10px;
-  }
-  
-  .custom-model-input {
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-  }
-  
-  .custom-model-button {
-    padding: 8px 12px;
-    background-color: #2196f3;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  
-  .custom-model-button:hover {
-    background-color: #0b7dda;
-  }
-  
-  .custom-model-button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-  }
-  
-  .selected-model-info {
-    margin-top: 15px;
-    padding: 10px;
-    background-color: #e3f2fd;
-    border-radius: 4px;
-    font-size: 0.9rem;
-  }
-  
-  .selected-model-info p {
-    margin: 5px 0;
-  }
+  background-color: #f5f7fa;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.model-selector h3 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 16px;
+  color: #333;
+}
+
+.api-key-input {
+  margin-bottom: 16px;
+}
+
+.api-key-input label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.api-key-input input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.selector-container {
+  margin-bottom: 12px;
+}
+
+.selector-container label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.selector-container select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 14px;
+}
+
+.custom-input {
+  margin-top: 8px;
+  display: flex;
+}
+
+.custom-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px 0 0 4px;
+  font-size: 14px;
+}
+
+.custom-input button {
+  padding: 8px 12px;
+  background-color: #10a37f;
+  color: white;
+  border: none;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.current-model {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #666;
+}

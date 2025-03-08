@@ -1,47 +1,14 @@
+/* D:\rag-app\frontend\src\components\RAGInterface.css */
 .rag-interface {
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
-  
-  .rag-interface h2 {
-    margin-top: 0;
-    margin-bottom: 20px;
-    color: #333;
-  }
-  
-  .pdf-list {
-    margin-top: 20px;
-  }
-  
-  .pdf-list h3 {
-    margin-top: 0;
-    margin-bottom: 10px;
-    color: #444;
-  }
-  
-  .pdf-list ul {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-  }
-  
-  .pdf-list li {
-    padding: 10px;
-    margin-bottom: 5px;
-    background-color: #f5f5f5;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-  }
-  
-  .pdf-list li:hover {
-    background-color: #e0e0e0;
-  }
-  
-  .error {
-    color: #d32f2f;
-    padding: 10px;
-    background-color: #ffebee;
-    border-radius: 4px;
-  }
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+.model-selector-wrapper {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+}

@@ -3,222 +3,311 @@
 import os
 import sys
 import json
-import logging
-import glob
-import fitz  # PyMuPDF
-from PIL import Image
-import io
 import argparse
+import logging
+import fitz  # PyMuPDF
 import numpy as np
+from PIL import Image
+from io import BytesIO
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct
-import pptx  # For PowerPoint files
+from qdrant_client.http import models
+from embeddings.embed_factory import EmbeddingModelFactory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def extract_from_pdf(file_path):
-    """Extract text and images from a PDF using PyMuPDF."""
-    result = []
+def ensure_collection_exists(client, collection_name, vector_size=384):
+    """
+    Ensure that the collection exists in Qdrant
 
+    Args:
+        client: QdrantClient instance
+        collection_name (str): Name of the collection
+        vector_size (int): Size of the vectors
+
+    Returns:
+        bool: True if collection exists or was created
+    """
     try:
-        # Open the PDF file
-        doc = fitz.open(file_path)
-        page_count = len(doc)
-        logger.info(f"Processing PDF with {page_count} pages")
+        collections = client.get_collections().collections
+        collection_exists = any(c.name == collection_name for c in collections)
 
-        # Process each page
-        for page_num in range(page_count):
-            page = doc[page_num]
+        if not collection_exists:
+            logger.info(f"Creating collection {collection_name} with vector size {vector_size}")
+            client.create_collection(
+                collection_name=collection_name,
+                vectors_config=models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE
+                )
+            )
+            logger.info(f"Collection {collection_name} created successfully")
+        else:
+            logger.info(f"Collection {collection_name} already exists")
 
+        return True
+    except Exception as e:
+        logger.error(f"Error ensuring collection exists: {str(e)}")
+        return False
+
+def extract_from_pdf(pdf_path):
+    """
+    Extract text and images from a PDF file
+
+    Args:
+        pdf_path (str): Path to the PDF file
+
+    Returns:
+        list: List of dictionaries with page text and images
+    """
+    try:
+        logger.info(f"Extracting content from PDF: {pdf_path}")
+
+        # Check if file exists
+        if not os.path.exists(pdf_path):
+            logger.error(f"PDF file not found: {pdf_path}")
+            return []
+
+        # Extract the filename from the path
+        filename = os.path.basename(pdf_path)
+
+        # Open the PDF
+        doc = fitz.open(pdf_path)
+        logger.info(f"PDF opened successfully with {len(doc)} pages")
+
+        pages = []
+
+        for page_idx, page in enumerate(doc):
             # Extract text
             text = page.get_text()
 
-            # Create PIL image from page
-            pix = page.get_pixmap(alpha=False)
-            img_data = pix.tobytes("jpeg")
-            img = Image.open(io.BytesIO(img_data))
+            # Extract images
+            image_list = []
 
-            result.append({
-                'page': page_num + 1,  # 1-based page numbering
-                'text': text,
-                'image': img
+            # Get the page images
+            for img_idx, img in enumerate(page.get_images(full=True)):
+                try:
+                    xref = img[0]
+                    base_image = doc.extract_image(xref)
+                    image_bytes = base_image["image"]
+
+                    # Convert to PIL Image
+                    image = Image.open(BytesIO(image_bytes))
+
+                    # Add the image to the list
+                    image_list.append({
+                        "image": image,
+                        "index": img_idx
+                    })
+                except Exception as e:
+                    logger.error(f"Error extracting image {img_idx} from page {page_idx}: {str(e)}")
+
+            # Add the page data
+            pages.append({
+                "page_num": page_idx + 1,
+                "text": text,
+                "images": image_list,
+                "filename": filename
             })
 
-        return result, page_count
+        logger.info(f"Extracted content from {len(pages)} pages")
+        return pages
+
     except Exception as e:
-        logger.error(f"Error extracting content from PDF: {str(e)}")
-        raise
+        logger.error(f"Error extracting from PDF: {str(e)}")
+        return []
 
-def extract_from_pptx(file_path):
-    """Extract text and images from a PowerPoint file."""
-    result = []
+def store_embeddings(client, collection_name, pages, embedder):
+    """
+    Generate and store embeddings for PDF pages
 
+    Args:
+        client: QdrantClient instance
+        collection_name (str): Name of the collection
+        pages (list): List of page data
+        embedder: Embedder instance
+
+    Returns:
+        int: Number of points stored
+    """
     try:
-        # Open the PowerPoint file
-        presentation = pptx.Presentation(file_path)
-        slide_count = len(presentation.slides)
-        logger.info(f"Processing PowerPoint with {slide_count} slides")
+        logger.info(f"Storing embeddings for {len(pages)} pages")
 
-        # Process each slide
-        for slide_num, slide in enumerate(presentation.slides):
-            # Extract text from all shapes
-            texts = []
-            for shape in slide.shapes:
-                if hasattr(shape, "text"):
-                    texts.append(shape.text)
-
-            text = "\n".join(texts)
-
-            # Create a blank image for the slide (we can't easily render slides as images)
-            # In a real solution, you'd use a library that can render PowerPoint slides
-            img = Image.new('RGB', (800, 600), color='white')
-
-            result.append({
-                'page': slide_num + 1,  # 1-based slide numbering
-                'text': text,
-                'image': img
-            })
-
-        return result, slide_count
-    except Exception as e:
-        logger.error(f"Error extracting content from PowerPoint: {str(e)}")
-        raise
-
-def extract_content(file_path):
-    """Extract content from various file types."""
-    file_ext = os.path.splitext(file_path)[1].lower()
-
-    if file_ext == '.pdf':
-        return extract_from_pdf(file_path)
-    elif file_ext in ['.pptx', '.ppt']:
-        return extract_from_pptx(file_path)
-    else:
-        raise ValueError(f"Unsupported file type: {file_ext}")
-
-def create_qdrant_collection(client, collection_name, vector_size):
-    """Create a Qdrant collection if it doesn't exist."""
-    try:
-        collections = client.get_collections().collections
-        collection_names = [collection.name for collection in collections]
-
-        if collection_name not in collection_names:
-            client.create_collection(
-                collection_name=collection_name,
-                vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
-            )
-            logger.info(f"Created new collection: {collection_name}")
-        else:
-            logger.info(f"Collection {collection_name} already exists")
-    except Exception as e:
-        logger.error(f"Error creating collection: {str(e)}")
-        raise
-
-def store_embeddings(embeddings, collection_name):
-    """Store embeddings in Qdrant."""
-    try:
-        # Connect to Qdrant
-        client = QdrantClient(host="localhost", port=6333)
-
-        # Get embedding size from first embedding
-        if not embeddings:
-            raise ValueError("No embeddings to store")
-
-        vector_size = len(embeddings[0]['vector'])
-        logger.info(f"Embedding vector size: {vector_size}")
-
-        # Create collection if it doesn't exist
-        create_qdrant_collection(client, collection_name, vector_size)
-
-        # Prepare points for insertion
         points = []
-        for i, item in enumerate(embeddings):
-            # Convert embedding to list if it's a numpy array
-            vector = item['vector'].tolist() if isinstance(item['vector'], np.ndarray) else item['vector']
 
-            # Create point with ID based on index
-            point = PointStruct(
-                id=i,
-                vector=vector,
-                payload={
-                    'text': item['text'],
-                    'page': str(item['page'])
-                }
+        for page_idx, page in enumerate(pages):
+            try:
+                # Generate embedding for text
+                text = page["text"]
+                if text and text.strip():
+                    text_embedding = embedder.get_embedding(text, input_type="text")
+
+                    # Convert to list if it's a numpy array
+                    if isinstance(text_embedding, np.ndarray):
+                        text_embedding = text_embedding.tolist()
+
+                    # Create a point for the text
+                    point_id = page_idx * 100  # Text points have IDs like 0, 100, 200...
+
+                    points.append(models.PointStruct(
+                        id=point_id,
+                        vector=text_embedding,
+                        payload={
+                            "type": "text",
+                            "text": text,
+                            "page_num": page["page_num"],
+                            "filename": page["filename"]
+                        }
+                    ))
+
+                # Generate embeddings for images
+                for img_idx, img_data in enumerate(page["images"]):
+                    image = img_data["image"]
+
+                    # Skip very small images
+                    if image.width < 50 or image.height < 50:
+                        continue
+
+                    # Generate embedding for the image
+                    image_embedding = embedder.get_embedding(image, input_type="image")
+
+                    # Convert to list if it's a numpy array
+                    if isinstance(image_embedding, np.ndarray):
+                        image_embedding = image_embedding.tolist()
+
+                    # Create a point for the image
+                    point_id = page_idx * 100 + img_idx + 1  # Image points have IDs like 1, 2, 101, 102...
+
+                    # Convert PIL image to base64 for storage
+                    buffered = BytesIO()
+                    image.save(buffered, format="JPEG")
+                    img_str = f"data:image/jpeg;base64,{BytesIO(buffered.getvalue()).read().hex()}"
+
+                    points.append(models.PointStruct(
+                        id=point_id,
+                        vector=image_embedding,
+                        payload={
+                            "type": "image",
+                            "image_data": img_str,
+                            "width": image.width,
+                            "height": image.height,
+                            "page_num": page["page_num"],
+                            "filename": page["filename"]
+                        }
+                    ))
+            except Exception as e:
+                logger.error(f"Error processing page {page_idx}: {str(e)}")
+
+        # Store points in batches of 100
+        batch_size = 100
+        for i in range(0, len(points), batch_size):
+            batch = points[i:i+batch_size]
+            client.upsert(
+                collection_name=collection_name,
+                points=batch
             )
-            points.append(point)
+            logger.info(f"Stored batch of {len(batch)} points")
 
-        # Insert points into collection
-        client.upsert(
-            collection_name=collection_name,
-            points=points
-        )
+        logger.info(f"Successfully stored {len(points)} points")
+        return len(points)
 
-        logger.info(f"Stored {len(embeddings)} embeddings in collection {collection_name}")
-        return True
     except Exception as e:
         logger.error(f"Error storing embeddings: {str(e)}")
-        raise
+        return 0
+
+def process_pdf(pdf_path, collection_name="documents", model_name="all-MiniLM-L6-v2"):
+    """
+    Process a PDF file and store embeddings in Qdrant
+
+    Args:
+        pdf_path (str): Path to the PDF file
+        collection_name (str): Name of the Qdrant collection
+        model_name (str): Name of the embedding model
+
+    Returns:
+        dict: Result of processing
+    """
+    try:
+        logger.info(f"Processing PDF: {pdf_path}")
+        logger.info(f"Using model: {model_name}")
+
+        try:
+            # Initialize the embedder
+            embedder = EmbeddingModelFactory.get_embedder(model_name)
+        except Exception as e:
+            logger.error(f"Failed to initialize embedder: {str(e)}")
+            return {
+                "success": False,
+                "message": f"Error initializing embedder: {str(e)}",
+                "page_count": 0,
+                "points_stored": 0
+            }
+
+        # Initialize Qdrant client
+        client = QdrantClient("localhost", port=6333)
+
+        # Ensure collection exists - use 384 for all-MiniLM-L6-v2
+        vector_size = 384  # Default for sentence-transformers models
+        ensure_collection_exists(client, collection_name, vector_size)
+
+        # Extract content from PDF
+        pages = extract_from_pdf(pdf_path)
+
+        if not pages:
+            return {
+                "success": False,
+                "message": "Failed to extract content from PDF",
+                "page_count": 0,
+                "points_stored": 0
+            }
+
+        # Store embeddings
+        points_stored = store_embeddings(client, collection_name, pages, embedder)
+
+        return {
+            "success": True,
+            "message": "PDF processed successfully",
+            "page_count": len(pages),
+            "points_stored": points_stored
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing PDF: {str(e)}")
+        return {
+            "success": False,
+            "message": f"Error processing PDF: {str(e)}",
+            "page_count": 0,
+            "points_stored": 0
+        }
 
 def main():
     try:
-        # Parse command-line arguments
-        parser = argparse.ArgumentParser(description='Compute embeddings for document')
-        parser.add_argument('file_path', help='Path to document file (PDF, PPTX)')
-        parser.add_argument('--collection_name', default='documents', help='Qdrant collection name')
-        parser.add_argument('--model_name', default='clip', help='Embedding model name')
-        parser.add_argument('--model_path', default='ViT-B/32', help='Path to embedding model')
+        parser = argparse.ArgumentParser(description="Process PDF and store embeddings in Qdrant")
+        parser.add_argument("pdf_path", help="Path to the PDF file")
+        parser.add_argument("--collection_name", default="documents", help="Name of the Qdrant collection")
+        parser.add_argument("--model_name", default="all-MiniLM-L6-v2", help="Name of the embedding model")
 
         args = parser.parse_args()
 
-        # Log the arguments
-        logger.info(f"Processing file: {args.file_path}")
-        logger.info(f"Collection name: {args.collection_name}")
-        logger.info(f"Model name: {args.model_name}")
-        logger.info(f"Model path: {args.model_path}")
+        result = process_pdf(
+            args.pdf_path,
+            collection_name=args.collection_name,
+            model_name=args.model_name
+        )
 
-        # Extract content from document
-        page_contents, page_count = extract_content(args.file_path)
-
-        # Get the embedder
-        from embeddings.embed_factory import get_embedder
-        embedder = get_embedder(args.model_name, args.model_path)
-
-        # Generate embeddings for each page
-        embeddings = []
-        for page_content in page_contents:
-            # Get embedding for the image
-            embedding = embedder.get_embedding(page_content['image'])
-
-            # Store embedding with text and page metadata
-            embeddings.append({
-                'vector': embedding,
-                'text': page_content['text'],
-                'page': page_content['page']
-            })
-
-        # Store embeddings in Qdrant
-        success = store_embeddings(embeddings, args.collection_name)
-
-        # Output result as JSON
-        result = {
-            'success': success,
-            'message': f"Successfully processed {page_count} pages and stored {len(embeddings)} embeddings",
-            'pageCount': page_count
-        }
-        print(json.dumps(result))
+        # Print the result as JSON for parsing by Node.js
+        print(json.dumps(result, ensure_ascii=False))
 
     except Exception as e:
-        error_message = str(e)
-        logger.error(f"Error: {error_message}")
-
-        # Output error as JSON
+        logger.error(f"Error in main function: {str(e)}")
         error_result = {
-            'success': False,
-            'message': error_message
+            "success": False,
+            "message": f"Error: {str(e)}",
+            "page_count": 0,
+            "points_stored": 0
         }
-        print(json.dumps(error_result))
-        sys.exit(1)
+        print(json.dumps(error_result, ensure_ascii=False))
 
 if __name__ == "__main__":
     main()

@@ -1,30 +1,40 @@
 # D:\rag-app\python\embeddings\embed_factory.py
 
 import logging
+import sys
 import os
 
+# Add the parent directory to the path so we can import the local_embed module
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from embeddings.local_embed import LocalEmbedder
+
+# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def get_embedder(model_name, model_path=None, **kwargs):
+class EmbeddingModelFactory:
     """
-    Factory function to get the appropriate embedder based on model name.
-
-    Args:
-        model_name (str): Name of the model to use ('clip' or 'colpali')
-        model_path (str, optional): Path to the model. Defaults to None.
-        **kwargs: Additional arguments to pass to the embedder.
-
-    Returns:
-        Embedder: An instance of the appropriate embedder class.
+    Factory class for creating embedding model instances
     """
-    logger.info(f"Creating embedder for model: {model_name} from {model_path}")
 
-    if model_name.lower() == 'clip':
-        from embeddings.clip_embed import ClipEmbedder
-        return ClipEmbedder(model_path, **kwargs)
-    elif model_name.lower() == 'colpali':
-        from embeddings.colpali_embed import ColpaliEmbedder
-        return ColpaliEmbedder(model_path, **kwargs)
-    else:
-        raise ValueError(f"Unknown model: {model_name}")
+    @staticmethod
+    def get_embedder(model_name=None, **kwargs):
+        """
+        Get an embedder instance based on model name
+
+        Args:
+            model_name (str): Name of the model
+            **kwargs: Additional arguments for specific models
+
+        Returns:
+            Embedder instance
+        """
+        # Default to all-MiniLM-L6-v2 if not specified
+        if not model_name or model_name.lower() == "local":
+            model_name = "all-MiniLM-L6-v2"
+
+        logger.info(f"Creating local embedder with model {model_name}")
+        return LocalEmbedder(model_name=model_name)
