@@ -3,16 +3,15 @@
 import React, { useState } from 'react';
 import './ModelSelector.css';
 
-const ModelSelector = ({ selectedModel, setSelectedModel, apiKey, setApiKey }) => {
-  const [customPath, setCustomPath] = useState('');
+const ModelSelector = ({ selectedModel, setSelectedModel }) => {
+  const [customModel, setCustomModel] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
 
   const predefinedModels = [
-    { name: 'Mistral (Default)', value: 'mistral' },
-    { name: 'Mistral Large', value: 'mistral-large-latest' },
-    { name: 'Mistral Medium', value: 'mistral-medium-latest' },
-    { name: 'Mistral Small', value: 'mistral-small-latest' },
-    { name: 'CLIP (Fallback for embeddings)', value: 'clip' }
+    { id: 'phi', name: 'Phi-2 (Default)' },
+    { id: 'llama2', name: 'Llama 2' },
+    { id: 'mistral', name: 'Mistral' },
+    { id: 'gemma', name: 'Gemma' }
   ];
 
   const handleModelChange = (e) => {
@@ -25,65 +24,40 @@ const ModelSelector = ({ selectedModel, setSelectedModel, apiKey, setApiKey }) =
     }
   };
 
-  const handleCustomPathChange = (e) => {
-    setCustomPath(e.target.value);
+  const handleCustomModelChange = (e) => {
+    setCustomModel(e.target.value);
   };
 
-  const handleApiKeyChange = (e) => {
-    setApiKey(e.target.value);
-  };
-
-  const handleCustomPathSubmit = () => {
-    if (customPath.trim()) {
-      setSelectedModel(customPath);
+  const handleCustomModelSubmit = (e) => {
+    e.preventDefault();
+    if (customModel.trim()) {
+      setSelectedModel(customModel.trim());
     }
   };
 
   return (
     <div className="model-selector">
-      <h3>Model Settings</h3>
+      <h3>Select Model</h3>
+      <select value={selectedModel} onChange={handleModelChange}>
+        {predefinedModels.map(model => (
+          <option key={model.id} value={model.id}>{model.name}</option>
+        ))}
+        <option value="custom">Custom Model</option>
+      </select>
       
-      <div className="api-key-input">
-        <label htmlFor="api-key">Mistral API Key:</label>
-        <input 
-          type="password" 
-          id="api-key" 
-          value={apiKey} 
-          onChange={handleApiKeyChange}
-          placeholder="Enter your Mistral API key" 
-        />
-      </div>
+      {showCustomInput && (
+        <form onSubmit={handleCustomModelSubmit} className="custom-model-form">
+          <input
+            type="text"
+            value={customModel}
+            onChange={handleCustomModelChange}
+            placeholder="Enter model name"
+          />
+          <button type="submit">Set</button>
+        </form>
+      )}
       
-      <div className="selector-container">
-        <label htmlFor="model-select">Select Model:</label>
-        <select 
-          id="model-select"
-          value={predefinedModels.some(m => m.value === selectedModel) ? selectedModel : 'custom'} 
-          onChange={handleModelChange}
-        >
-          {predefinedModels.map(model => (
-            <option key={model.value} value={model.value}>
-              {model.name}
-            </option>
-          ))}
-          <option value="custom">Custom Model</option>
-        </select>
-        
-        {showCustomInput && (
-          <div className="custom-input">
-            <input 
-              type="text" 
-              value={customPath} 
-              onChange={handleCustomPathChange} 
-              placeholder="Enter model name or path"
-            />
-            <button onClick={handleCustomPathSubmit}>Set</button>
-          </div>
-        )}
-      </div>
-      <div className="current-model">
-        Current: {selectedModel}
-      </div>
+      <p className="current-model">Current model: {selectedModel}</p>
     </div>
   );
 };

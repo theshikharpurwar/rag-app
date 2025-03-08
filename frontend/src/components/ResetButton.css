@@ -1,74 +1,69 @@
 /* D:\rag-app\frontend\src\components\ResetButton.css */
 
 .reset-button-container {
-    margin: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 10px 0;
   }
   
   .reset-button {
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
+    padding: 10px 20px;
+    background-color: #ff4d4d;
+    color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 5px;
     cursor: pointer;
     transition: background-color 0.3s;
   }
   
-  .reset-button.danger {
-    background-color: #ff4d4f;
-    color: white;
-  }
-  
-  .reset-button.danger:hover {
-    background-color: #ff7875;
+  .reset-button:hover {
+    background-color: #ff1a1a;
   }
   
   .reset-button:disabled {
-    background-color: #d9d9d9;
+    background-color: #cccccc;
     cursor: not-allowed;
   }
   
   .confirm-dialog {
-    border: 1px solid #d9d9d9;
-    padding: 1rem;
-    border-radius: 4px;
-    background-color: #f5f5f5;
-    margin-bottom: 1rem;
+    margin-top: 10px;
+    padding: 15px;
+    background-color: #f8f8f8;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+    text-align: center;
   }
   
-  .confirm-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
+  .confirm-button, .cancel-button {
+    padding: 8px 15px;
+    margin: 5px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
   }
   
   .confirm-button {
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    background-color: #ff4d4f;
+    background-color: #4caf50;
     color: white;
   }
   
-  .confirm-button:hover {
-    background-color: #ff7875;
+  .confirm-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
   }
   
   .cancel-button {
-    padding: 0.5rem 1rem;
-    font-size: 1rem;
-    border: 1px solid #d9d9d9;
-    border-radius: 4px;
-    cursor: pointer;
-    background-color: white;
+    background-color: #f44336;
+    color: white;
   }
   
-  .cancel-button:hover {
-    background-color: #f5f5f5;
+  .cancel-button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
   }
   
-  .error-message {
-    color: #ff4d4f;
-    margin-top: 0.5rem;
+  .error {
+    color: red;
+    margin-top: 10px;
   }

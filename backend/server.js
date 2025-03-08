@@ -7,6 +7,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
+
 // Import routes
 const apiRoutes = require('./routes/api');
 
@@ -52,24 +53,24 @@ async function clearQdrantCollection(collectionName = 'documents') {
     console.log(`Clearing Qdrant collection: ${collectionName}`);
     
     const pythonScript = path.join(__dirname, '..', 'python', 'utils', 'qdrant_utils.py');
-    const pythonProcess = spawn('python', [pythonScript, collectionName]);
+    const pythonProcess = spawn('python', [pythonScript, 'clear', collectionName]);
     
     let outputData = '';
     let errorData = '';
     
     pythonProcess.stdout.on('data', (data) => {
       outputData += data.toString();
+      console.log(`Python output: ${data.toString().trim()}`);
     });
     
     pythonProcess.stderr.on('data', (data) => {
       errorData += data.toString();
-      console.error(`Python error: ${data}`);
+      console.error(`Python error: ${data.toString().trim()}`);
     });
     
     pythonProcess.on('close', (code) => {
       if (code === 0) {
         console.log(`Successfully cleared Qdrant collection: ${collectionName}`);
-        console.log(`Output: ${outputData}`);
         resolve(outputData);
       } else {
         console.error(`Failed to clear Qdrant collection. Exit code: ${code}`);

@@ -8,24 +8,27 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const PDF = require('../models/pdf');
 
-// Configure multer storage for file uploads
+// Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: function(req, file, cb) {
-    cb(null, path.join(__dirname, '..', '..', 'uploads'));
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
   },
-  filename: function(req, file, cb) {
+  filename: (req, file, cb) => {
     cb(null, Date.now() + '-' + file.originalname);
   }
 });
 
 const upload = multer({ 
-  storage: storage,
-  fileFilter: function(req, file, cb) {
-    if (file.mimetype === 'application/pdf' || 
-        file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF and PPTX files are allowed'), false);
+      cb(new Error('Only PDF files are allowed'), false);
     }
   }
 });
@@ -33,106 +36,114 @@ const upload = multer({
 // Get all PDFs
 router.get('/pdfs', async (req, res) => {
   try {
-    const pdfs = await PDF.find().sort({ createdAt: -1 });
-    res.json({ success: true, pdfs });
+    const pdfs = await PDF.find().sort({ uploadDate: -1 });
+    res.json(pdfs);
   } catch (err) {
-    console.error('Error fetching PDFs:', err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Upload a PDF
+router.post('/upload', upload.single('pdf'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: 'No file uploaded' });
+  }
+
+  try {
+    // Create a new PDF document in MongoDB
+    const newPdf = new PDF({
+      path: req.file.path,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      uploadDate: new Date()
+    });
+
+    const savedPdf = await newPdf.save();
+    
+    res.json({ 
+      success: true, 
+      message: 'File uploaded successfully', 
+      pdf: savedPdf 
+    });
+  } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// Upload and process a PDF
-router.post('/upload', upload.single('file'), async (req, res) => {
+// Process a PDF
+router.post('/process', async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    const { pdfId, modelName = 'all-MiniLM-L6-v2', collectionName = 'documents' } = req.body;
+    
+    // Find the PDF in the database
+    const pdf = await PDF.findById(pdfId);
+    if (!pdf) {
+      return res.status(404).json({ success: false, message: 'PDF not found' });
     }
 
-    const file = req.file;
-    const apiKey = req.body.apiKey;
-    const modelName = req.body.modelName || 'mistral';
+    // Path to the Python script
+    const pythonScript = path.join(__dirname, '../../python/compute_embeddings.py');
     
-    if (!apiKey) {
-      return res.status(400).json({ success: false, message: 'API key is required' });
-    }
-    
-    // Save PDF info to MongoDB
-    const newPDF = new PDF({
-      filename: file.filename,
-      originalName: file.originalname,
-      path: file.path,
-      size: file.size,
-      mimeType: file.mimetype,
-      pageCount: 0  // Will be updated after processing
-    });
-    
-    const savedPDF = await newPDF.save();
-
-    // Process the PDF with Python script
-    const pythonScript = path.join(__dirname, '..', '..', 'python', 'compute_embeddings.py');
+    // Run the Python script to process the PDF
     const pythonProcess = spawn('python', [
       pythonScript,
-      file.path,
-      '--collection_name', 'documents',
-      '--model_name', modelName,
-      '--api_key', apiKey
+      pdf.path,
+      '--collection_name',
+      collectionName,
+      '--model_name',
+      modelName
     ]);
-    
-    let outputData = '';
-    let errorData = '';
-    
+
+    let pythonOutput = '';
+    let pythonError = '';
+
     pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
-      console.log(`Python stdout: ${data}`);
+      pythonOutput += data.toString();
     });
-    
+
     pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-      console.error(`Python stderr: ${data}`);
+      console.error('Python stderr:', data.toString());
+      pythonError += data.toString();
     });
-    
+
     pythonProcess.on('close', async (code) => {
       console.log(`Python process exited with code ${code}`);
       
-      if (code === 0) {
-        try {
-          // Try to parse the output as JSON
-          const result = JSON.parse(outputData);
-          
-          // Update the page count in MongoDB
-          if (result.page_count) {
-            await PDF.findByIdAndUpdate(savedPDF._id, { 
-              pageCount: result.page_count 
-            });
-          }
-          
-          res.json({ 
-            success: true, 
-            message: 'PDF uploaded and processed successfully',
-            pdf: {
-              ...savedPDF.toObject(),
-              pageCount: result.page_count || 0
-            }
-          });
-        } catch (err) {
-          console.error('Error parsing Python output:', err);
-          res.json({ 
-            success: true, 
-            message: 'PDF uploaded but there may have been issues with processing',
-            pdf: savedPDF
-          });
-        }
-      } else {
-        console.error(`Python processing failed with code ${code}: ${errorData}`);
+      if (code !== 0) {
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Error processing PDF', 
+          error: pythonError 
+        });
+      }
+
+      try {
+        // Parse the Python output
+        const result = JSON.parse(pythonOutput);
+        
+        // Update the PDF document with the processing results
+        pdf.processed = true;
+        pdf.pageCount = result.page_count;
+        pdf.pointsStored = result.points_stored;
+        pdf.processingDate = new Date();
+        
+        await pdf.save();
+        
+        res.json({ 
+          success: true, 
+          message: 'PDF processed successfully', 
+          result 
+        });
+      } catch (err) {
         res.status(500).json({ 
           success: false, 
-          message: 'Error processing PDF',
-          error: errorData
+          message: 'Error parsing Python output', 
+          error: err.message,
+          pythonOutput
         });
       }
     });
   } catch (err) {
-    console.error('Error uploading PDF:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -140,191 +151,154 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 // Query the RAG system
 router.post('/query', async (req, res) => {
   try {
-    const { query, pdfId, modelName, modelPath, apiKey } = req.body;
+    const { query, modelName = 'phi', collectionName = 'documents' } = req.body;
     
     if (!query) {
       return res.status(400).json({ success: false, message: 'Query is required' });
     }
+
+    // Path to the Python script
+    const pythonScript = path.join(__dirname, '../../python/local_llm.py');
     
-    if (!apiKey) {
-      return res.status(400).json({ success: false, message: 'API key is required' });
-    }
-    
-    const pythonScript = path.join(__dirname, '..', '..', 'python', 'local_llm.py');
-    
-    // Build arguments for the Python script
-    const pythonArgs = [
-      pythonScript, 
-      query, 
-      '--collection_name', 'documents',
-      '--api_key', apiKey
-    ];
-    
-    if (modelName) {
-      pythonArgs.push('--model_name', modelName);
-    }
-    
-    if (modelPath) {
-      pythonArgs.push('--model_path', modelPath);
-    }
-    
-    const pythonProcess = spawn('python', pythonArgs);
-    
-    let outputData = '';
-    let errorData = '';
-    
+    // Run the Python script to query the RAG system
+    const pythonProcess = spawn('python', [
+      pythonScript,
+      query,
+      '--collection_name',
+      collectionName,
+      '--model_name',
+      modelName
+    ]);
+
+    let pythonOutput = '';
+    let pythonError = '';
+
     pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
+      pythonOutput += data.toString();
     });
-    
+
     pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-      console.error(`Python error: ${data}`);
+      console.error('Python error:', data.toString());
+      pythonError += data.toString();
     });
-    
+
     pythonProcess.on('close', (code) => {
-      if (code === 0) {
-        try {
-          const result = JSON.parse(outputData);
-          res.json({ 
-            success: true, 
-            answer: result.answer,
-            sources: result.sources || []
-          });
-        } catch (err) {
-          console.error('Error parsing Python output:', err);
-          res.status(500).json({ 
-            success: false, 
-            message: 'Error parsing response',
-            error: err.message,
-            output: outputData
-          });
-        }
-      } else {
-        console.error(`Python process exited with code ${code}: ${errorData}`);
+      if (code !== 0) {
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Error querying RAG system', 
+          error: pythonError 
+        });
+      }
+
+      try {
+        // Parse the Python output
+        const result = JSON.parse(pythonOutput);
+        
+        res.json({ 
+          success: true, 
+          result 
+        });
+      } catch (err) {
         res.status(500).json({ 
           success: false, 
-          message: 'Error processing query',
-          error: errorData
+          message: 'Error parsing Python output', 
+          error: err.message,
+          pythonOutput
         });
       }
     });
   } catch (err) {
-    console.error('Error processing query:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// Route to clear Qdrant collection and uploaded files
+// Reset the system (clear all data)
 router.post('/reset', async (req, res) => {
   try {
-    console.log('Resetting application state...');
+    // Delete all PDFs from MongoDB
+    await PDF.deleteMany({});
     
-    // 1. Delete all PDFs from MongoDB
-    const deleteResult = await PDF.deleteMany({});
-    console.log(`Deleted ${deleteResult.deletedCount} documents from MongoDB`);
-    
-    // 2. Clear uploads directory
-    const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
-    if (fs.existsSync(uploadsDir)) {
-      const files = fs.readdirSync(uploadsDir);
-      for (const file of files) {
-        const filePath = path.join(uploadsDir, file);
-        if (fs.lstatSync(filePath).isFile()) {
-          fs.unlinkSync(filePath);
-          console.log(`Deleted file: ${filePath}`);
+    // Function to recursively delete files and directories
+    const deleteFilesRecursive = (directory) => {
+      if (fs.existsSync(directory)) {
+        try {
+          const files = fs.readdirSync(directory);
+          
+          for (const file of files) {
+            if (file !== '.gitkeep') {
+              const curPath = path.join(directory, file);
+              
+              if (fs.lstatSync(curPath).isDirectory()) {
+                // Recursive call for directories
+                deleteFilesRecursive(curPath);
+                try {
+                  fs.rmdirSync(curPath);
+                } catch (e) {
+                  console.error(`Could not remove directory ${curPath}: ${e.message}`);
+                }
+              } else {
+                // Delete file
+                try {
+                  fs.unlinkSync(curPath);
+                } catch (e) {
+                  console.error(`Could not delete file ${curPath}: ${e.message}`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`Error reading directory ${directory}: ${e.message}`);
         }
       }
+    };
+    
+    // Delete all files from the uploads directory
+    const uploadsDir = path.join(__dirname, '../../uploads');
+    deleteFilesRecursive(uploadsDir);
+    
+    // Ensure uploads and images directories exist
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
     }
     
-    // 3. Clear images directory
     const imagesDir = path.join(uploadsDir, 'images');
-    if (fs.existsSync(imagesDir)) {
-      const clearDir = (dir) => {
-        if (fs.existsSync(dir)) {
-          fs.readdirSync(dir).forEach((file) => {
-            const curPath = path.join(dir, file);
-            if (fs.lstatSync(curPath).isDirectory()) {
-              clearDir(curPath);
-            } else {
-              fs.unlinkSync(curPath);
-              console.log(`Deleted file: ${curPath}`);
-            }
-          });
-        }
-      };
-      clearDir(imagesDir);
-      console.log('Cleared images directory');
+    if (!fs.existsSync(imagesDir)) {
+      fs.mkdirSync(imagesDir, { recursive: true });
     }
     
-    // 4. Clear Qdrant collection using the Python utility
-    const pythonScript = path.join(__dirname, '..', '..', 'python', 'utils', 'qdrant_utils.py');
+    // Reset the Qdrant collection
+    const pythonScript = path.join(__dirname, '../../python/utils/qdrant_utils.py');
+    const pythonProcess = spawn('python', [pythonScript, 'reset', 'documents']);
     
-    // Execute the Python script
-    const pythonProcess = spawn('python', [pythonScript]);
-    
-    let outputData = '';
-    let errorData = '';
+    let pythonOutput = '';
+    let pythonError = '';
     
     pythonProcess.stdout.on('data', (data) => {
-      outputData += data.toString();
+      pythonOutput += data.toString();
+      console.log(`Python output: ${data.toString().trim()}`);
     });
     
     pythonProcess.stderr.on('data', (data) => {
-      errorData += data.toString();
-      console.error(`Python error: ${data}`);
+      console.error('Python stderr:', data.toString().trim());
+      pythonError += data.toString();
     });
     
-    // Wait for the Python process to complete
-    const exitCode = await new Promise((resolve) => {
-      pythonProcess.on('close', resolve);
-    });
-    
-    if (exitCode === 0) {
-      console.log('Successfully cleared Qdrant collection');
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        return res.status(500).json({
+          success: false,
+          message: 'Error resetting Qdrant collection',
+          error: pythonError
+        });
+      }
       
-      // Send successful response
       res.json({
         success: true,
-        message: 'Application reset successful',
-        details: {
-          mongoDocumentsDeleted: deleteResult.deletedCount,
-          qdrantResult: outputData
-        }
+        message: 'System reset successfully'
       });
-    } else {
-      throw new Error(`Python process exited with code ${exitCode}: ${errorData}`);
-    }
-  } catch (err) {
-    console.error('Error resetting application:', err);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error resetting application', 
-      error: err.message 
     });
-  }
-});
-
-// Delete a specific PDF
-router.delete('/pdfs/:id', async (req, res) => {
-  try {
-    const pdf = await PDF.findById(req.params.id);
-    
-    if (!pdf) {
-      return res.status(404).json({ success: false, message: 'PDF not found' });
-    }
-    
-    // Delete the file if it exists
-    if (fs.existsSync(pdf.path)) {
-      fs.unlinkSync(pdf.path);
-    }
-    
-    // Delete from MongoDB
-    await PDF.findByIdAndDelete(req.params.id);
-    
-    res.json({ success: true, message: 'PDF deleted successfully' });
   } catch (err) {
-    console.error('Error deleting PDF:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });

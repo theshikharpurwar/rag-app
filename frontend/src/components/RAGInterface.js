@@ -11,97 +11,76 @@ import './RAGInterface.css';
 const RAGInterface = () => {
   const [pdfs, setPdfs] = useState([]);
   const [selectedPdf, setSelectedPdf] = useState(null);
-  const [selectedModel, setSelectedModel] = useState('mistral');
-  const [apiKey, setApiKey] = useState('');
+  const [selectedModel, setSelectedModel] = useState('phi');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetchAllPDFs();
+    fetchPDFs()
+      .then(data => {
+        setPdfs(data);
+      })
+      .catch(err => {
+        setError('Error fetching PDFs');
+      });
   }, []);
 
-  const fetchAllPDFs = async () => {
+  const handlePdfUpload = () => {
     setLoading(true);
     setError(null);
-    try {
-      const fetchedPdfs = await fetchPDFs();
-      setPdfs(fetchedPdfs);
-      if (fetchedPdfs.length > 0 && !selectedPdf) {
-        setSelectedPdf(fetchedPdfs[0]);
-      }
-    } catch (err) {
-      console.error('Error fetching PDFs:', err);
-      setError('Failed to fetch PDFs');
-    } finally {
-      setLoading(false);
-    }
+    
+    fetchPDFs()
+      .then(data => {
+        setPdfs(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError('Error fetching PDFs');
+        setLoading(false);
+      });
   };
 
   const handleReset = () => {
-    setPdfs([]);
     setSelectedPdf(null);
-    fetchAllPDFs();
+    handlePdfUpload();
   };
 
   return (
     <div className="rag-interface">
-      <h2>Mistral AI RAG System</h2>
-      
-      <div className="controls-container">
-        <ModelSelector 
-          selectedModel={selectedModel} 
-          setSelectedModel={setSelectedModel} 
-          apiKey={apiKey}
-          setApiKey={setApiKey}
-        />
-        
-        <PDFUploader 
-          onUpload={fetchAllPDFs} 
-          apiKey={apiKey}
-          selectedModel={selectedModel}
-        />
-        
+      <h2>Local RAG System</h2>
+      <div className="controls">
+        <PDFUploader onUpload={handlePdfUpload} />
+        <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} />
         <ResetButton onReset={handleReset} />
       </div>
       
-      {loading && <p className="loading-indicator">Loading PDFs...</p>}
-      {error && <p className="error-message">{error}</p>}
+      {loading && <p className="loading">Loading PDFs...</p>}
+      {error && <p className="error">{error}</p>}
       
-      <div className="content-container">
-        <div className="pdf-list">
-          <h3>Uploaded Documents</h3>
-          {pdfs.length === 0 ? (
-            <p>No documents uploaded yet</p>
-          ) : (
-            <ul>
-              {pdfs.map(pdf => (
-                <li 
-                  key={pdf._id} 
-                  onClick={() => setSelectedPdf(pdf)}
-                  className={selectedPdf && selectedPdf._id === pdf._id ? 'selected' : ''}
-                >
-                  {pdf.originalName} 
-                  <span className="page-count">({pdf.pageCount || '?'} pages)</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        
-        <div className="chat-container">
-          {selectedPdf ? (
-            <ChatInterface 
-              pdf={selectedPdf} 
-              model={selectedModel} 
-              apiKey={apiKey}
-            />
-          ) : (
-            <div className="no-pdf-selected">
-              <p>Upload or select a document to start chatting</p>
-            </div>
-          )}
-        </div>
+      <div className="pdf-list">
+        <h3>Uploaded PDFs</h3>
+        {pdfs.length === 0 ? (
+          <p>No PDFs uploaded yet</p>
+        ) : (
+          <ul>
+            {pdfs.map(pdf => (
+              <li 
+                key={pdf._id} 
+                onClick={() => setSelectedPdf(pdf)}
+                className={selectedPdf && selectedPdf._id === pdf._id ? 'selected' : ''}
+              >
+                {pdf.originalName} 
+                {pdf.processed && <span className="processed-badge">Processed</span>}
+                {pdf.pageCount > 0 && <span className="page-count">{pdf.pageCount} pages</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
+      
+      {selectedPdf && (
+        <ChatInterface pdf={selectedPdf} model={selectedModel} />
+      )}
     </div>
   );
 };

@@ -4,116 +4,65 @@ const API_URL = 'http://localhost:5000/api';
 
 // Fetch all PDFs
 export const fetchPDFs = async () => {
-  try {
-    const response = await fetch(`${API_URL}/pdfs`);
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to fetch PDFs');
-    }
-    
-    return data.pdfs;
-  } catch (error) {
-    console.error('Error fetching PDFs:', error);
-    throw error;
+  const response = await fetch(`${API_URL}/pdfs`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch PDFs');
   }
+  return response.json();
 };
 
 // Upload a PDF
-export const uploadPDF = async (file, apiKey, modelName = 'mistral') => {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('apiKey', apiKey);
-    formData.append('modelName', modelName);
-    
-    const response = await fetch(`${API_URL}/upload`, {
-      method: 'POST',
-      body: formData
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to upload PDF');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error uploading PDF:', error);
-    throw error;
-  }
+export const uploadPDF = async (file) => {
+  const formData = new FormData();
+  formData.append('pdf', file);
+
+  const response = await fetch(`${API_URL}/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  return response.json();
+};
+
+// Process a PDF
+export const processPDF = async (pdfId, modelName = 'all-MiniLM-L6-v2', collectionName = 'documents') => {
+  const response = await fetch(`${API_URL}/process`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      pdfId,
+      modelName,
+      collectionName,
+    }),
+  });
+
+  return response.json();
 };
 
 // Query the RAG system
-export const queryRAG = async (query, apiKey, pdfId = null, modelName = 'mistral', modelPath = null) => {
-  try {
-    const response = await fetch(`${API_URL}/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        query,
-        pdfId,
-        modelName,
-        modelPath,
-        apiKey
-      })
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to process query');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error querying RAG system:', error);
-    throw error;
-  }
+export const queryRAG = async (query, modelName = 'phi', collectionName = 'documents') => {
+  const response = await fetch(`${API_URL}/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query,
+      modelName,
+      collectionName,
+    }),
+  });
+
+  return response.json();
 };
 
-// Reset the application (clear databases and files)
-export const resetApplication = async () => {
-  try {
-    const response = await fetch(`${API_URL}/reset`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      }
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to reset application');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error resetting application:', error);
-    throw error;
-  }
-};
+// Reset the system
+export const resetSystem = async () => {
+  const response = await fetch(`${API_URL}/reset`, {
+    method: 'POST',
+  });
 
-// Delete a specific PDF
-export const deletePDF = async (id) => {
-  try {
-    const response = await fetch(`${API_URL}/pdfs/${id}`, {
-      method: 'DELETE'
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to delete PDF');
-    }
-    
-    return data;
-  } catch (error) {
-    console.error('Error deleting PDF:', error);
-    throw error;
-  }
+  return response.json();
 };
