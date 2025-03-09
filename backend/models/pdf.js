@@ -1,9 +1,8 @@
 // D:\rag-app\backend\models\pdf.js
 
 const mongoose = require('mongoose');
-const Schema = mongoose.Schema;
 
-const PDFSchema = new Schema({
+const pdfSchema = new mongoose.Schema({
   filename: {
     type: String,
     required: true
@@ -22,18 +21,20 @@ const PDFSchema = new Schema({
   },
   mimeType: {
     type: String,
-    required: true
+    default: 'application/pdf'  // Add a default value
   },
   pageCount: {
     type: Number,
-    default: 0
+    required: true
   },
-  processed: {
-    type: Boolean,
-    default: false
+  embeddingsCount: {
+    type: Number,
+    required: true
   }
 }, {
   timestamps: true
 });
 
-module.exports = mongoose.model('PDF', PDFSchema);
+const PDF = mongoose.model('PDF', pdfSchema);
+
+module.exports = PDF;

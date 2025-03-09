@@ -4,10 +4,10 @@ import React, { useState } from 'react';
 import { uploadPDF } from '../api';
 import './PDFUploader.css';
 
-const PDFUploader = ({ onUpload, apiKey, selectedModel }) => {
+const PDFUploader = ({ onUpload }) => {
   const [file, setFile] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -20,50 +20,30 @@ const PDFUploader = ({ onUpload, apiKey, selectedModel }) => {
       return;
     }
 
-    if (!apiKey) {
-      setError('Please enter a Mistral API key');
-      return;
-    }
-
-    setUploading(true);
-    setError(null);
-
+    setLoading(true);
     try {
-      const response = await uploadPDF(file, apiKey, selectedModel);
+      const response = await uploadPDF(file);
       if (response.success) {
-        setFile(null);
         onUpload();
+        setFile(null);
       } else {
         setError('Upload failed: ' + response.message);
       }
     } catch (err) {
-      setError('Error uploading PDF: ' + (err.message || 'Unknown error'));
+      setError('Error uploading PDF');
     } finally {
-      setUploading(false);
+      setLoading(false);
     }
   };
 
   return (
     <div className="pdf-uploader">
-      <h3>Upload Document</h3>
-      <div className="upload-controls">
-        <input 
-          type="file" 
-          accept="application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation" 
-          onChange={handleFileChange}
-          disabled={uploading}
-        />
-        <button 
-          onClick={handleUpload} 
-          disabled={!file || uploading || !apiKey}
-          className={!apiKey ? 'disabled' : ''}
-        >
-          {uploading ? 'Uploading...' : 'Upload'}
-        </button>
-      </div>
-      {error && <p className="error-message">{error}</p>}
-      {!apiKey && <p className="warning-message">API key required for upload</p>}
-      {file && <p className="file-name">Selected: {file.name}</p>}
+      <input type="file" accept="application/pdf" onChange={handleFileChange} />
+      <button onClick={handleUpload} disabled={loading}>
+        {loading ? 'Uploading...' : 'Upload'}
+      </button>
+      {file && <p>Selected: {file.name}</p>}
+      {error && <p className="error">{error}</p>}
     </div>
   );
 };

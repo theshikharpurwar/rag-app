@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchPDFs } from '../api';
 import PDFUploader from './PDFUploader';
-import ModelSelector from './ModelSelector';
 import ChatInterface from './ChatInterface';
 import ResetButton from './ResetButton';
 import './RAGInterface.css';
@@ -11,76 +10,72 @@ import './RAGInterface.css';
 const RAGInterface = () => {
   const [pdfs, setPdfs] = useState([]);
   const [selectedPdf, setSelectedPdf] = useState(null);
-  const [selectedModel, setSelectedModel] = useState('phi');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    fetchPDFs()
-      .then(data => {
-        setPdfs(data);
-      })
-      .catch(err => {
-        setError('Error fetching PDFs');
-      });
-  }, []);
-
-  const handlePdfUpload = () => {
+  const fetchAllPDFs = async () => {
     setLoading(true);
     setError(null);
-    
-    fetchPDFs()
-      .then(data => {
-        setPdfs(data);
-        setLoading(false);
-      })
-      .catch(err => {
-        setError('Error fetching PDFs');
-        setLoading(false);
-      });
+    try {
+      const fetchedPdfs = await fetchPDFs();
+      setPdfs(fetchedPdfs);
+      if (fetchedPdfs.length > 0 && !selectedPdf) {
+        setSelectedPdf(fetchedPdfs[0]);
+      }
+    } catch (err) {
+      setError('Error fetching PDFs');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleReset = () => {
-    setSelectedPdf(null);
-    handlePdfUpload();
-  };
+  useEffect(() => {
+    fetchAllPDFs();
+  }, []);
 
   return (
     <div className="rag-interface">
       <h2>Local RAG System</h2>
-      <div className="controls">
-        <PDFUploader onUpload={handlePdfUpload} />
-        <ModelSelector selectedModel={selectedModel} setSelectedModel={setSelectedModel} />
-        <ResetButton onReset={handleReset} />
+      
+      <div className="rag-container">
+        <div className="left-panel">
+          <h3>Upload Document</h3>
+          <PDFUploader onUpload={fetchAllPDFs} />
+          
+          <h3>Uploaded PDFs</h3>
+          {loading && <p>Loading PDFs...</p>}
+          {error && <p className="error">{error}</p>}
+          {pdfs.length === 0 && !loading ? (
+            <p>No PDFs uploaded yet</p>
+          ) : (
+            <ul className="pdf-list">
+              {pdfs.map(pdf => (
+                <li 
+                  key={pdf._id} 
+                  onClick={() => setSelectedPdf(pdf)}
+                  className={selectedPdf && pdf._id === selectedPdf._id ? 'selected' : ''}
+                >
+                  {pdf.originalName} ({pdf.pageCount} pages)
+                </li>
+              ))}
+            </ul>
+          )}
+          
+          <div className="reset-container">
+            <ResetButton onReset={fetchAllPDFs} />
+          </div>
+        </div>
+        
+        <div className="right-panel">
+          {selectedPdf ? (
+            <ChatInterface pdf={selectedPdf} />
+          ) : (
+            <div className="no-pdf-selected">
+              <p>Select a PDF or upload a new one to start chatting</p>
+            </div>
+          )}
+        </div>
       </div>
-      
-      {loading && <p className="loading">Loading PDFs...</p>}
-      {error && <p className="error">{error}</p>}
-      
-      <div className="pdf-list">
-        <h3>Uploaded PDFs</h3>
-        {pdfs.length === 0 ? (
-          <p>No PDFs uploaded yet</p>
-        ) : (
-          <ul>
-            {pdfs.map(pdf => (
-              <li 
-                key={pdf._id} 
-                onClick={() => setSelectedPdf(pdf)}
-                className={selectedPdf && selectedPdf._id === pdf._id ? 'selected' : ''}
-              >
-                {pdf.originalName} 
-                {pdf.processed && <span className="processed-badge">Processed</span>}
-                {pdf.pageCount > 0 && <span className="page-count">{pdf.pageCount} pages</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-      
-      {selectedPdf && (
-        <ChatInterface pdf={selectedPdf} model={selectedModel} />
-      )}
     </div>
   );
 };

@@ -1,8 +1,9 @@
 # D:\rag-app\python\llm\ollama_llm.py
 
 import logging
-import json
 import requests
+import json
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -10,164 +11,121 @@ logger = logging.getLogger(__name__)
 
 class OllamaLLM:
     """
-    Class for generating text responses using Ollama's local models.
+    Class to generate text responses using the Ollama API
     """
 
-    def __init__(self, model_name="phi", **kwargs):
+    def __init__(self, model_name='phi2'):
         """
-        Initialize the Ollama LLM
+        Initialize the OllamaLLM with a model
 
         Args:
-            model_name (str): Name of the Ollama model
+            model_name (str): Name of the Ollama model to use
         """
+        logger.info(f"Initializing OllamaLLM with model: {model_name}")
         self.model_name = model_name
         self.api_base = "http://localhost:11434/api"
-        self.temperature = 0.7
-        self.max_tokens = 1024
-        logger.info(f"Initialized Ollama LLM with model: {model_name}")
 
-    def generate(self, prompt, context=None, conversation_history=None):
+        # Verify that Ollama is running and the model is available
+        try:
+            response = requests.get(f"{self.api_base}/tags")
+            if response.status_code == 200:
+                available_models = [model['name'] for model in response.json().get('models', [])]
+                if model_name not in available_models:
+                    logger.warning(f"Model {model_name} not found in available models: {available_models}")
+                    logger.info(f"You may need to run: ollama pull {model_name}")
+                else:
+                    logger.info(f"Model {model_name} is available")
+            else:
+                logger.warning(f"Could not check available models. Status code: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error checking Ollama API: {str(e)}")
+            logger.warning("Make sure Ollama is running on localhost:11434")
+
+    def generate_response(self, prompt, context=None, max_tokens=1000, temperature=0.7):
         """
-        Generate a response based on the prompt and context
+        Generate a response for the provided prompt
 
         Args:
-            prompt (str): The query or instruction
-            context (str, optional): Additional context for the query
-            conversation_history (list, optional): List of previous messages
+            prompt (str): The prompt to generate a response for
+            context (list, optional): Additional context for the prompt
+            max_tokens (int, optional): Maximum number of tokens to generate
+            temperature (float, optional): Sampling temperature
 
         Returns:
-            str: Generated response
+            str: The generated response
         """
+        if not prompt:
+            logger.warning("Empty prompt provided")
+            return "Please provide a question or prompt."
+
+        logger.info(f"Generating response for prompt: {prompt[:50]}...")
+
         try:
-            # Create system prompt with context if provided
-            system_content = "You are a helpful assistant."
-            if context:
-                system_content += " Answer the question based on this context:\n\n" + context
-
-            # Build message list
-            messages = [{"role": "system", "content": system_content}]
-
-            # Add conversation history if provided
-            if conversation_history:
-                for msg in conversation_history:
-                    messages.append({"role": msg["role"], "content": msg["content"]})
-
-            # Add the current prompt
-            messages.append({"role": "user", "content": prompt})
-
-            logger.info(f"Generating response for prompt: {prompt[:50]}...")
-
-            # Call Ollama API
-            response = requests.post(
-                f"{self.api_base}/chat",
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "temperature": self.temperature,
-                    "max_tokens": self.max_tokens
+            # Prepare the request payload
+            payload = {
+                "model": self.model_name,
+                "prompt": prompt,
+                "options": {
+                    "num_predict": max_tokens,
+                    "temperature": temperature
                 }
-            )
-
-            if response.status_code == 200:
-                answer = response.json().get("message", {}).get("content", "")
-                logger.info(f"Generated response with {len(answer)} characters")
-                return answer
-            else:
-                error_msg = f"Error from Ollama API: {response.status_code} - {response.text}"
-                logger.error(error_msg)
-                return error_msg
-
-        except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
-            return f"Error generating response: {str(e)}"
-
-    def generate_with_sources(self, query, retrieved_documents):
-        """
-        Generate a response based on retrieved documents with source citations
-
-        Args:
-            query (str): The user's query
-            retrieved_documents (list): List of documents from vector search
-
-        Returns:
-            dict: Response with answer and sources
-        """
-        try:
-            if not retrieved_documents or len(retrieved_documents) == 0:
-                return {
-                    "answer": "I couldn't find any relevant information to answer your question.",
-                    "sources": []
-                }
-
-            # Extract the content from documents
-            contexts = []
-            sources = []
-
-            for i, doc in enumerate(retrieved_documents):
-                payload = doc.payload
-                content = payload.get("text", "No text available")
-                page_num = payload.get("page_num", "Unknown")
-                filename = payload.get("filename", "Unknown document")
-
-                context_text = f"Document {i+1} (Page {page_num} from {filename}):\n{content}\n\n"
-                contexts.append(context_text)
-
-                sources.append({
-                    "page": page_num,
-                    "filename": filename,
-                    "text": content[:200] + ("..." if len(content) > 200 else "")
-                })
-
-            # Combine contexts
-            combined_context = "\n".join(contexts)
-
-            # Create system prompt
-            system_content = f"""You are a helpful assistant. Answer the question based on these documents:
-
-{combined_context}
-
-If the documents don't contain the information needed to answer the question, say "I couldn't find relevant information to answer your question."
-Cite the page numbers and document names when providing information."""
-
-            # Create messages
-            messages = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": query}
-            ]
-
-            logger.info(f"Generating response with sources for query: {query}")
-
-            # Call Ollama API
-            response = requests.post(
-                f"{self.api_base}/chat",
-                json={
-                    "model": self.model_name,
-                    "messages": messages,
-                    "temperature": 0.3,  # Lower temperature for more factual answers
-                    "max_tokens": 1024
-                }
-            )
-
-            if response.status_code == 200:
-                answer = response.json().get("message", {}).get("content", "")
-                logger.info(f"Generated response with {len(answer)} characters and {len(sources)} sources")
-
-                return {
-                    "answer": answer,
-                    "sources": sources
-                }
-            else:
-                error_msg = f"Error from Ollama API: {response.status_code} - {response.text}"
-                logger.error(error_msg)
-
-                return {
-                    "answer": error_msg,
-                    "sources": []
-                }
-
-        except Exception as e:
-            logger.error(f"Error generating response with sources: {str(e)}")
-            return {
-                "answer": f"Error generating response: {str(e)}",
-                "sources": []
             }
+
+            # Make the request to the Ollama API
+            response = requests.post(f"{self.api_base}/generate", json=payload)
+
+            if response.status_code == 200:
+                # Extract the response text
+                response_text = response.text
+
+                # Parse the response
+                responses = [json.loads(line) for line in response_text.strip().split('\n')]
+                full_response = ''.join(r.get('response', '') for r in responses)
+
+                logger.info(f"Successfully generated response: {full_response[:50]}...")
+                return full_response
+            else:
+                error_msg = f"API error: {response.status_code} - {response.text}"
+                logger.error(error_msg)
+                return f"Sorry, I encountered an error: {error_msg}"
+
+        except Exception as e:
+            error_msg = f"Error generating response: {str(e)}"
+            logger.error(error_msg)
+            return f"Sorry, I encountered an error: {error_msg}"
+
+    def generate_answer(self, query, retrieved_contexts):
+        """
+        Generate an answer for a query using retrieved contexts
+
+        Args:
+            query (str): The query to answer
+            retrieved_contexts (list): List of retrieved contexts
+
+        Returns:
+            str: The generated answer
+        """
+        logger.info(f"Generating answer for query: {query}")
+
+        if not retrieved_contexts or len(retrieved_contexts) == 0:
+            logger.warning("No contexts provided for the query")
+            return "I couldn't find any relevant information to answer your question."
+
+        # Prepare the prompt with the retrieved contexts
+        context_text = "\n\n".join([
+            f"Context {i+1}:\n{ctx.get('text', '')}"
+            for i, ctx in enumerate(retrieved_contexts)
+        ])
+
+        prompt = f"""
+Based on the following contexts, please answer the query: "{query}"
+
+{context_text}
+
+Answer:
+"""
+
+        response = self.generate_response(prompt)
+        logger.info(f"Generated answer: {response[:100]}...")
+
+        return response

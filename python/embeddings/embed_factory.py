@@ -1,40 +1,29 @@
 # D:\rag-app\python\embeddings\embed_factory.py
 
 import logging
-import sys
-import os
-
-# Add the parent directory to the path so we can import the local_embed module
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.append(parent_dir)
-
-from embeddings.local_embed import LocalEmbedder
+from .local_embed import LocalEmbedder
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class EmbeddingModelFactory:
+def get_embedder(model_name=None, **kwargs):
     """
-    Factory class for creating embedding model instances
+    Factory function to get an embedder instance
+
+    Args:
+        model_name (str, optional): Name of the model to use
+        **kwargs: Additional arguments for the embedder
+
+    Returns:
+        object: An embedder instance
     """
+    logger.info(f"Getting embedder instance for model: {model_name}")
 
-    @staticmethod
-    def get_embedder(model_name=None, **kwargs):
-        """
-        Get an embedder instance based on model name
+    # Use a default model if none provided
+    if not model_name:
+        model_name = 'all-MiniLM-L6-v2'
+        logger.info(f"No model specified, using default: {model_name}")
 
-        Args:
-            model_name (str): Name of the model
-            **kwargs: Additional arguments for specific models
-
-        Returns:
-            Embedder instance
-        """
-        # Default to all-MiniLM-L6-v2 if not specified
-        if not model_name or model_name.lower() == "local":
-            model_name = "all-MiniLM-L6-v2"
-
-        logger.info(f"Creating local embedder with model {model_name}")
-        return LocalEmbedder(model_name=model_name)
+    # Currently we only support local sentence-transformers models
+    return LocalEmbedder(model_name=model_name)

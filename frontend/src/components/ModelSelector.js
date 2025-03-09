@@ -1,27 +1,25 @@
 // D:\rag-app\frontend\src\components\ModelSelector.js
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './ModelSelector.css';
 
 const ModelSelector = ({ selectedModel, setSelectedModel }) => {
+  const [localModels, setLocalModels] = useState([
+    { name: 'phi-2', path: 'phi2', description: 'Microsoft Phi-2 - small but capable local LLM' },
+    { name: 'llama3', path: 'llama3', description: 'Llama 3 - Meta\'s advanced open source LLM' },
+    { name: 'mistral', path: 'mistral', description: 'Mistral - efficient open-weight language model' }
+  ]);
   const [customModel, setCustomModel] = useState('');
-  const [showCustomInput, setShowCustomInput] = useState(false);
-
-  const predefinedModels = [
-    { id: 'phi', name: 'Phi-2 (Default)' },
-    { id: 'llama2', name: 'Llama 2' },
-    { id: 'mistral', name: 'Mistral' },
-    { id: 'gemma', name: 'Gemma' }
-  ];
-
-  const handleModelChange = (e) => {
-    const value = e.target.value;
-    if (value === 'custom') {
-      setShowCustomInput(true);
-    } else {
-      setShowCustomInput(false);
-      setSelectedModel(value);
+  
+  useEffect(() => {
+    // Set default model if not already set
+    if (!selectedModel && localModels.length > 0) {
+      setSelectedModel(localModels[0].path);
     }
+  }, [selectedModel, setSelectedModel, localModels]);
+
+  const handleModelSelect = (modelPath) => {
+    setSelectedModel(modelPath);
   };
 
   const handleCustomModelChange = (e) => {
@@ -38,26 +36,34 @@ const ModelSelector = ({ selectedModel, setSelectedModel }) => {
   return (
     <div className="model-selector">
       <h3>Select Model</h3>
-      <select value={selectedModel} onChange={handleModelChange}>
-        {predefinedModels.map(model => (
-          <option key={model.id} value={model.id}>{model.name}</option>
+      <div className="model-options">
+        {localModels.map((model) => (
+          <div 
+            key={model.path}
+            className={`model-option ${selectedModel === model.path ? 'selected' : ''}`}
+            onClick={() => handleModelSelect(model.path)}
+          >
+            <div className="model-info">
+              <h4>{model.name}</h4>
+              <p>{model.description}</p>
+            </div>
+          </div>
         ))}
-        <option value="custom">Custom Model</option>
-      </select>
+      </div>
       
-      {showCustomInput && (
-        <form onSubmit={handleCustomModelSubmit} className="custom-model-form">
-          <input
-            type="text"
-            value={customModel}
-            onChange={handleCustomModelChange}
-            placeholder="Enter model name"
-          />
-          <button type="submit">Set</button>
-        </form>
-      )}
+      <form className="custom-model-form" onSubmit={handleCustomModelSubmit}>
+        <input
+          type="text"
+          placeholder="Enter custom model name"
+          value={customModel}
+          onChange={handleCustomModelChange}
+        />
+        <button type="submit">Use Custom Model</button>
+      </form>
       
-      <p className="current-model">Current model: {selectedModel}</p>
+      <div className="selected-model">
+        <p>Currently using: <strong>{selectedModel}</strong></p>
+      </div>
     </div>
   );
 };
