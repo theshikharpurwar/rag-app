@@ -1,5 +1,3 @@
-// D:\rag-app\frontend\src\components\ChatInterface.js
-
 import React, { useState, useRef, useEffect } from 'react';
 import { queryRAG } from '../api';
 import './ChatInterface.css';
@@ -11,20 +9,18 @@ const ChatInterface = ({ pdf }) => {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    // Add welcome message when PDF is selected
-    if (pdf) {
-      setMessages([
-        {
-          role: 'assistant',
-          content: `I'm ready to answer questions about "${pdf.originalName}". What would you like to know?`,
-          timestamp: new Date()
-        }
-      ]);
-    }
+    // Add welcome message on component mount
+    setMessages([
+      {
+        role: 'assistant',
+        content: `Ask me anything about "${pdf.originalName}"`,
+        timestamp: new Date()
+      }
+    ]);
   }, [pdf]);
 
   useEffect(() => {
-    // Scroll to bottom whenever messages change
+    // Scroll to bottom of messages when messages change
     scrollToBottom();
   }, [messages]);
 
@@ -32,48 +28,50 @@ const ChatInterface = ({ pdf }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const formatTime = (timestamp) => {
+    return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     if (!input.trim()) return;
-    
-    // Add user message
+
     const userMessage = {
       role: 'user',
       content: input,
       timestamp: new Date()
     };
-    
-    setMessages(prev => [...prev, userMessage]);
+
+    setMessages(messages => [...messages, userMessage]);
     setInput('');
     setIsTyping(true);
-    
+
     try {
-      // Send query to backend
-      const response = await queryRAG(input);
+      const response = await queryRAG(pdf._id, input);
       
-      // Add assistant message
-      const assistantMessage = {
-        role: 'assistant',
-        content: response.answer,
-        timestamp: new Date(),
-        sources: response.sources
-      };
-      
-      setMessages(prev => [...prev, assistantMessage]);
+      if (response.success) {
+        const botMessage = {
+          role: 'assistant',
+          content: response.data.answer,
+          timestamp: new Date(),
+          sources: response.data.sources || []
+        };
+        setMessages(messages => [...messages, botMessage]);
+      } else {
+        const errorMessage = {
+          role: 'assistant',
+          content: `Error: ${response.message || 'Failed to get a response'}`,
+          timestamp: new Date()
+        };
+        setMessages(messages => [...messages, errorMessage]);
+      }
     } catch (error) {
-      // Add error message
       const errorMessage = {
         role: 'assistant',
-        content: 'Sorry, I encountered an error while processing your request.',
+        content: `Error: ${error.message || 'Something went wrong'}`,
         timestamp: new Date()
       };
-      
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(messages => [...messages, errorMessage]);
     } finally {
       setIsTyping(false);
     }
@@ -83,6 +81,24 @@ const ChatInterface = ({ pdf }) => {
     <div className="chat-interface">
       <div className="chat-header">
         <h3>Chat with {pdf.originalName}</h3>
+        <div className="header-actions">
+          <button 
+            className="icon-button"
+            onClick={() => {
+              setMessages([
+                {
+                  role: 'assistant',
+                  content: `Ask me anything about "${pdf.originalName}"`,
+                  timestamp: new Date()
+                }
+              ]);
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M12 2V22M2 12H22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
       
       <div className="chat-messages">
@@ -90,20 +106,20 @@ const ChatInterface = ({ pdf }) => {
           <div key={index} className={`message ${msg.role}`}>
             <div className="message-content">
               <p>{msg.content}</p>
-              {msg.sources && msg.sources.length > 0 && (
-                <div className="sources">
-                  <p className="sources-title">Sources:</p>
-                  <ul>
-                    {msg.sources.map((source, idx) => (
-                      <li key={idx}>
-                        {source.source} (Page {source.page})
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
               <span className="timestamp">{formatTime(msg.timestamp)}</span>
             </div>
+            {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+              <div className="message-sources">
+                <p className="sources-heading">Sources:</p>
+                <ul>
+                  {msg.sources.map((source, idx) => (
+                    <li key={idx}>
+                      Page {source.page} from {source.document} (Relevance: {source.score})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         ))}
         {isTyping && (
