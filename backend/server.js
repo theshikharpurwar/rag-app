@@ -7,7 +7,6 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 
-
 // Import routes
 const apiRoutes = require('./routes/api');
 
@@ -52,8 +51,14 @@ async function clearQdrantCollection(collectionName = 'documents') {
   return new Promise((resolve, reject) => {
     console.log(`Clearing Qdrant collection: ${collectionName}`);
     
+    // CORRECTED PATH - Uses the utils directory
     const pythonScript = path.join(__dirname, '..', 'python', 'utils', 'qdrant_utils.py');
-    const pythonProcess = spawn('python', [pythonScript, 'clear', collectionName]);
+    const pythonProcess = spawn('python', [
+      pythonScript, 
+      'reset_collection',
+      '--collection_name', 
+      collectionName
+    ]);
     
     let outputData = '';
     let errorData = '';
@@ -82,9 +87,10 @@ async function clearQdrantCollection(collectionName = 'documents') {
 
 // Register server shutdown handlers
 process.on('SIGINT', async () => {
-  console.log('\nServer shutting down (SIGINT)...');
+  console.log('Server shutting down (SIGINT)...');
+  
   try {
-    await clearQdrantCollection();
+    await clearQdrantCollection('documents');
     console.log('Cleanup completed successfully.');
   } catch (error) {
     console.error('Error during cleanup:', error.message);

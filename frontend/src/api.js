@@ -12,7 +12,9 @@ export const uploadPDF = async (file) => {
       body: formData,
     });
     
-    return await response.json();
+    const data = await response.json();
+    console.log('Upload response:', data);
+    return data;
   } catch (error) {
     console.error('Error uploading PDF:', error);
     return { success: false, message: 'Failed to upload PDF' };
@@ -21,12 +23,30 @@ export const uploadPDF = async (file) => {
 
 export const fetchPDFs = async () => {
   try {
-    const response = await fetch(`${API_URL}/pdfs`);
+    console.log('Fetching PDFs...');
+    // Add timestamp parameter to prevent caching
+    const cacheParam = `t=${new Date().getTime()}`;
+    const response = await fetch(`${API_URL}/pdfs?${cacheParam}`);
     
-    return await response.json();
+    if (!response.ok) {
+      throw new Error(`Server responded with status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('Fetch PDFs response:', data);
+    
+    // Make sure we're returning the array of PDFs, not just the response object
+    if (Array.isArray(data)) {
+      return data;
+    } else if (data.success && Array.isArray(data.pdfs)) {
+      return data.pdfs;
+    } else {
+      console.warn('Unexpected response format:', data);
+      return []; // Return empty array as fallback
+    }
   } catch (error) {
     console.error('Error fetching PDFs:', error);
-    return { success: false, message: 'Failed to fetch PDFs' };
+    throw error; // Re-throw to allow component to handle the error
   }
 };
 

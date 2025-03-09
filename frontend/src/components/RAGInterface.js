@@ -1,5 +1,7 @@
+// D:\rag-app\frontend\src\components\RAGInterface.js
+
 import React, { useState, useEffect } from 'react';
-import { fetchPDFs } from '../api';
+import { fetchPDFs, uploadPDF } from '../api';
 import PDFUploader from './PDFUploader';
 import ChatInterface from './ChatInterface';
 import ResetButton from './ResetButton';
@@ -8,72 +10,95 @@ import './RAGInterface.css';
 const RAGInterface = () => {
   const [pdfs, setPdfs] = useState([]);
   const [selectedPdf, setSelectedPdf] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Load PDFs on component mount
+  useEffect(() => {
+    loadPDFs();
+  }, []);
+
+  // Function to load PDFs from the backend
   const loadPDFs = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const response = await fetchPDFs();
-      if (response.success) {
-        setPdfs(response.data || []);
-        
-        // Clear selected PDF if it's no longer in the list
-        if (selectedPdf && !response.data.find(pdf => pdf._id === selectedPdf._id)) {
-          setSelectedPdf(null);
-        }
-      } else {
-        setError('Failed to fetch PDFs');
+      const fetchedPdfs = await fetchPDFs();
+      setPdfs(fetchedPdfs);
+      
+      // If we had a selected PDF, find its updated version
+      if (selectedPdf) {
+        const updatedPdf = fetchedPdfs.find(pdf => pdf._id === selectedPdf._id);
+        setSelectedPdf(updatedPdf || null);
       }
     } catch (err) {
-      setError('Error fetching PDFs');
+      console.error('Error loading PDFs:', err);
+      setError('Failed to load PDFs');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadPDFs();
-  }, []);
+  // Handle PDF upload completion
+  const handleUploadComplete = () => {
+    // Add a slight delay to ensure backend processing has started
+    setTimeout(loadPDFs, 500);
+  };
 
-  const handleReset = async () => {
+  // Handle reset completion
+  const handleResetComplete = () => {
     setSelectedPdf(null);
-    await loadPDFs();
+    loadPDFs();
   };
 
-  const handleUpload = async () => {
-    await loadPDFs();
-  };
+  // Check for processing status every 5 seconds for selected PDF
+  useEffect(() => {
+    if (!selectedPdf) return;
+    
+    // Only poll if page count is 0 (still processing)
+    if (selectedPdf.pageCount === 0) {
+      const intervalId = setInterval(() => {
+        loadPDFs();
+      }, 5000);
+      
+      return () => clearInterval(intervalId);
+    }
+  }, [selectedPdf]);
 
   return (
     <div className="rag-interface">
-      <h2>Local RAG System</h2>
-      <PDFUploader onUpload={handleUpload} />
-      <div className="pdf-list">
-        <h3>Uploaded PDFs</h3>
-        {loading && <p>Loading PDFs...</p>}
-        {error && <p className="error">{error}</p>}
-        {!loading && pdfs.length === 0 && <p>No PDFs uploaded yet</p>}
-        <ul>
-          {pdfs.map(pdf => (
-            <li key={pdf._id} onClick={() => setSelectedPdf(pdf)}>
-              {pdf.originalName} - {pdf.pageCount} pages
-            </li>
-          ))}
-        </ul>
+      <h3>Upload and Query PDFs</h3>
+      <div className="controls-container">
+        <PDFUploader onUpload={handleUploadComplete} />
+        <ResetButton onReset={handleResetComplete} />
       </div>
       
-      <div className="reset-container">
-        <ResetButton onReset={handleReset} />
+      {loading && <p className="loading-message">Loading PDFs...</p>}
+      {error && <p className="error-message">{error}</p>}
+      
+      <div className="pdf-list">
+        <h4>Uploaded PDFs</h4>
+        {pdfs.length === 0 ? (
+          <p>No PDFs uploaded yet.</p>
+        ) : (
+          <ul>
+            {pdfs.map(pdf => (
+              <li 
+                key={pdf._id} 
+                onClick={() => setSelectedPdf(pdf)}
+                className={selectedPdf && pdf._id === selectedPdf._id ? 'selected' : ''}
+              >
+                {pdf.originalName} - {pdf.pageCount || 0} pages
+                {pdf.pageCount === 0 && <span className="processing-tag">Processing...</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       
       {selectedPdf && (
         <ChatInterface pdf={selectedPdf} />
       )}
-      
-      <div className="footer">
-        <p>Powered by Ollama & Sentence Transformers</p>
-      </div>
     </div>
   );
 };

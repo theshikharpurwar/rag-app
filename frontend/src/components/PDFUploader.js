@@ -6,8 +6,8 @@ import './PDFUploader.css';
 
 const PDFUploader = ({ onUpload }) => {
   const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -20,29 +20,40 @@ const PDFUploader = ({ onUpload }) => {
       return;
     }
 
-    setLoading(true);
     try {
+      setUploading(true);
       const response = await uploadPDF(file);
       if (response.success) {
-        onUpload();
         setFile(null);
+        // Reset file input
+        document.getElementById('pdf-upload').value = '';
+        onUpload();
       } else {
         setError('Upload failed: ' + response.message);
       }
     } catch (err) {
+      console.error('Error in handleUpload:', err);
       setError('Error uploading PDF');
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   };
 
   return (
     <div className="pdf-uploader">
-      <input type="file" accept="application/pdf" onChange={handleFileChange} />
-      <button onClick={handleUpload} disabled={loading}>
-        {loading ? 'Uploading...' : 'Upload'}
+      <input 
+        type="file" 
+        id="pdf-upload"
+        accept="application/pdf" 
+        onChange={handleFileChange} 
+        disabled={uploading}
+      />
+      <button 
+        onClick={handleUpload} 
+        disabled={uploading || !file}
+      >
+        {uploading ? 'Uploading...' : 'Upload'}
       </button>
-      {file && <p>Selected: {file.name}</p>}
       {error && <p className="error">{error}</p>}
     </div>
   );

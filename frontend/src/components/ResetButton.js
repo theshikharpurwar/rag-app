@@ -1,3 +1,5 @@
+// D:\rag-app\frontend\src\components\ResetButton.js
+
 import React, { useState } from 'react';
 import { resetSystem } from '../api';
 import './ResetButton.css';
@@ -7,6 +9,11 @@ const ResetButton = ({ onReset }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const handleClick = () => {
+    setShowConfirm(true);
+    setError(null);
+  };
+
   const handleReset = async () => {
     setLoading(true);
     setError(null);
@@ -14,17 +21,16 @@ const ResetButton = ({ onReset }) => {
     try {
       const response = await resetSystem();
       if (response.success) {
-        if (onReset) {
-          await onReset(); // Call the callback to update the parent component
-        }
+        setShowConfirm(false);
+        if (onReset) onReset();
       } else {
-        setError(response.message || 'Reset failed');
+        setError(`Reset failed: ${response.message}`);
       }
     } catch (err) {
-      setError(err.message || 'Error during reset');
+      console.error('Error in handleReset:', err);
+      setError('Error resetting system');
     } finally {
       setLoading(false);
-      setShowConfirm(false);
     }
   };
 
@@ -33,28 +39,29 @@ const ResetButton = ({ onReset }) => {
       {!showConfirm ? (
         <button 
           className="reset-button" 
-          onClick={() => setShowConfirm(true)}
+          onClick={handleClick}
         >
           Reset System
         </button>
       ) : (
         <div className="confirm-dialog">
-          <p>Are you sure you want to reset the system?</p>
-          <p>This will delete all uploaded documents and embeddings.</p>
-          <button 
-            className="confirm-button" 
-            onClick={handleReset}
-            disabled={loading}
-          >
-            {loading ? 'Resetting...' : 'Yes, Reset'}
-          </button>
-          <button 
-            className="cancel-button" 
-            onClick={() => setShowConfirm(false)}
-            disabled={loading}
-          >
-            Cancel
-          </button>
+          <p>Are you sure? This will delete all PDFs and clear the database.</p>
+          <div className="confirm-actions">
+            <button 
+              className="confirm-button" 
+              onClick={handleReset}
+              disabled={loading}
+            >
+              {loading ? 'Resetting...' : 'Yes, Reset'}
+            </button>
+            <button 
+              className="cancel-button" 
+              onClick={() => setShowConfirm(false)}
+              disabled={loading}
+            >
+              Cancel
+            </button>
+          </div>
           {error && <p className="error">{error}</p>}
         </div>
       )}

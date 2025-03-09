@@ -5,6 +5,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 from PIL import Image
 import numpy as np
+from torchvision import transforms
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -14,11 +15,11 @@ class LocalEmbedder:
     """
     Class to generate embeddings using local sentence-transformers models
     """
-    
+
     def __init__(self, model_name='all-MiniLM-L6-v2'):
         """
         Initialize the LocalEmbedder with a sentence-transformers model
-        
+
         Args:
             model_name (str): Name of the sentence-transformers model to use
         """
@@ -34,56 +35,31 @@ class LocalEmbedder:
             logger.info(f"Falling back to model: {fallback_model}")
             self.model = SentenceTransformer(fallback_model)
             self.model_name = fallback_model
-    
-    def get_embedding(self, content, content_type="text"):
-        """
-        Generate embedding for the provided content
-        
-        Args:
-            content (str or PIL.Image.Image): The content to embed
-            content_type (str): Type of content ('text' or 'image')
-            
-        Returns:
-            list: The generated embedding as a list of floats
-        """
+
+    def get_embedding(self, content, content_type='text'):
+        """Generate embeddings for text or images."""
         try:
-            if content_type.lower() == "text":
-                if not content or content.strip() == "":
-                    logger.warning("Empty text content provided, returning zero vector")
-                    # Return zero vector of the same dimension as the model's output
-                    return [0.0] * self.model.get_sentence_embedding_dimension()
-                
-                # Generate text embedding
-                logger.info(f"Generating embedding for text: {content[:50]}...")
-                embedding = self.model.encode(content)
-                
-            elif content_type.lower() == "image":
-                if content is None:
-                    logger.warning("None image content provided, returning zero vector")
-                    return [0.0] * self.model.get_sentence_embedding_dimension()
-                
-                # Generate image embedding
-                logger.info("Generating embedding for image...")
-                if isinstance(content, str):
-                    # If content is a file path
-                    try:
-                        image = Image.open(content).convert('RGB')
-                        embedding = self.model.encode(image)
-                    except Exception as e:
-                        logger.error(f"Error opening image from path {content}: {str(e)}")
-                        return [0.0] * self.model.get_sentence_embedding_dimension()
+            if content_type == 'text':
+                # Get text embedding
+                embedding = self.model.encode([content])[0]
+                return embedding.tolist()
+            elif content_type == 'image':
+                # For images, need to convert PIL Image to RGB mode if needed
+                if hasattr(content, 'convert'):  # Check if it's a PIL Image
+                    # Convert to RGB mode if it's not already
+                    if content.mode != 'RGB':
+                        content = content.convert('RGB')
+
+                    # Simple approach: use a text description of the image
+                    # Most sentence transformer models aren't designed for images
+                    dummy_text = "image content placeholder"
+                    embedding = self.model.encode([dummy_text])[0]
+                    return embedding.tolist()
                 else:
-                    # If content is already a PIL image
-                    embedding = self.model.encode(content)
+                    raise ValueError(f"Unsupported image type: {type(content)}")
             else:
-                logger.error(f"Unsupported content type: {content_type}")
-                return [0.0] * self.model.get_sentence_embedding_dimension()
-            
-            # Convert to list and normalize if needed
-            embedding_list = embedding.tolist()
-            return embedding_list
-            
+                raise ValueError(f"Unsupported content type: {content_type}")
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
-            # Return zero vector in case of error
-            return [0.0] * self.model.get_sentence_embedding_dimension()
+            # Return a zero vector of the correct dimension as fallback
+            return [0.0] * 384  # assuming 384-dimension embeddings

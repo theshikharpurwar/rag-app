@@ -3,11 +3,11 @@
 const mongoose = require('mongoose');
 
 const pdfSchema = new mongoose.Schema({
-  filename: {
+  originalName: {
     type: String,
     required: true
   },
-  originalName: {
+  filename: {
     type: String,
     required: true
   },
@@ -15,26 +15,26 @@ const pdfSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  mimeType: {
+    type: String,
+    default: 'application/pdf'  // Default value added
+  },
   size: {
     type: Number,
     required: true
   },
-  mimeType: {
-    type: String,
-    default: 'application/pdf'  // Add a default value
-  },
   pageCount: {
     type: Number,
-    required: true
+    default: 0
   },
-  embeddingsCount: {
-    type: Number,
-    required: true
+  processed: {
+    type: Boolean,
+    default: false
+  },
+  uploadDate: {
+    type: Date,
+    default: Date.now
   }
-}, {
-  timestamps: true
 });
 
-const PDF = mongoose.model('PDF', pdfSchema);
-
-module.exports = PDF;
+module.exports = mongoose.model('PDF', pdfSchema);
