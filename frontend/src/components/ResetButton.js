@@ -1,5 +1,3 @@
-// D:\rag-app\frontend\src\components\ResetButton.js
-
 import React, { useState } from 'react';
 import { resetSystem } from '../api';
 import './ResetButton.css';
@@ -9,43 +7,40 @@ const ResetButton = ({ onReset }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const handleClick = () => {
-    setShowConfirm(true);
-  };
-
   const handleReset = async () => {
     setLoading(true);
     setError(null);
     
     try {
       const response = await resetSystem();
-      
       if (response.success) {
-        setShowConfirm(false);
-        if (onReset) onReset();
+        if (onReset) {
+          await onReset(); // Call the callback to update the parent component
+        }
       } else {
-        setError(response.message || 'Failed to reset system');
+        setError(response.message || 'Reset failed');
       }
     } catch (err) {
-      setError('Error resetting system');
+      setError(err.message || 'Error during reset');
     } finally {
       setLoading(false);
+      setShowConfirm(false);
     }
   };
 
   return (
     <div className="reset-button-container">
-      <button 
-        className="reset-button" 
-        onClick={handleClick}
-        disabled={loading || showConfirm}
-      >
-        Reset System
-      </button>
-      
-      {showConfirm && (
+      {!showConfirm ? (
+        <button 
+          className="reset-button" 
+          onClick={() => setShowConfirm(true)}
+        >
+          Reset System
+        </button>
+      ) : (
         <div className="confirm-dialog">
-          <p>Are you sure you want to reset the system? This will delete all uploaded PDFs and clear the vector database.</p>
+          <p>Are you sure you want to reset the system?</p>
+          <p>This will delete all uploaded documents and embeddings.</p>
           <button 
             className="confirm-button" 
             onClick={handleReset}
