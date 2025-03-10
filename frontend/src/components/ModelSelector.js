@@ -5,14 +5,13 @@ import './ModelSelector.css';
 
 const ModelSelector = ({ selectedModel, setSelectedModel }) => {
   const [localModels, setLocalModels] = useState([
-    { name: 'phi-2', path: 'phi2', description: 'Microsoft Phi-2 - small but capable local LLM' },
-    { name: 'llama3', path: 'llama3', description: 'Llama 3 - Meta\'s advanced open source LLM' },
-    { name: 'mistral', path: 'mistral', description: 'Mistral - efficient open-weight language model' }
+    { name: 'Phi-2', path: 'phi-2', description: 'Microsoft Phi-2 - small but capable local LLM' },
+    { name: 'Llama3', path: 'llama3', description: 'Llama 3 - Meta\'s advanced open source LLM' },
+    { name: 'Mistral', path: 'mistral', description: 'Mistral - efficient open-weight language model' }
   ]);
   const [customModel, setCustomModel] = useState('');
   
   useEffect(() => {
-    // Set default model if not already set
     if (!selectedModel && localModels.length > 0) {
       setSelectedModel(localModels[0].path);
     }

@@ -13,48 +13,38 @@ const RAGInterface = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load PDFs when component mounts
   useEffect(() => {
     loadPDFs();
   }, []);
 
-  // Function to load PDFs from the server
   const loadPDFs = async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetchPDFs();
-      console.log('Fetched PDFs response:', response);
-      
       if (response.success) {
-        // Make sure we're setting an array of PDFs
         setPdfs(response.pdfs || []);
-        // Clear selected PDF if it's not in the list anymore
         setSelectedPdf(prev => {
           if (!prev) return null;
           const stillExists = response.pdfs.some(pdf => pdf._id === prev._id);
           return stillExists ? prev : null;
         });
       } else {
-        console.error('Failed to fetch PDFs:', response.message);
         setError('Failed to fetch PDFs: ' + response.message);
-        setPdfs([]); // Reset to empty array on error
+        setPdfs([]);
       }
     } catch (err) {
-      console.error('Error fetching PDFs:', err);
       setError('Error fetching PDFs: ' + (err.message || 'Unknown error'));
-      setPdfs([]); // Reset to empty array on error
+      setPdfs([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Handler for when a PDF is uploaded
   const handlePdfUpload = () => {
     loadPDFs();
   };
 
-  // Handler for when system is reset
   const handleReset = () => {
     setPdfs([]);
     setSelectedPdf(null);
@@ -62,48 +52,83 @@ const RAGInterface = () => {
   };
 
   return (
-    <div className="rag-interface">
-      <h2>Multimodal RAG Application</h2>
+    <div className="rag-app">
+      <header className="app-header">
+        <div className="container">
+          <h1>Multimodal RAG Application</h1>
+        </div>
+      </header>
       
-      <div className="top-controls">
-        <PDFUploader onUpload={handlePdfUpload} />
-        <ResetButton onReset={handleReset} />
-      </div>
-      
-      {loading && <p className="status-message loading">Loading PDFs...</p>}
-      {error && <p className="status-message error">{error}</p>}
-      
-      <div className="main-content">
-        <div className="pdf-list">
-          <h3>Uploaded PDFs</h3>
-          {Array.isArray(pdfs) && pdfs.length > 0 ? (
-            <ul>
-              {pdfs.map(pdf => (
-                <li 
-                  key={pdf._id} 
-                  className={selectedPdf && selectedPdf._id === pdf._id ? 'selected' : ''}
-                  onClick={() => setSelectedPdf(pdf)}
-                >
-                  <span className="pdf-name">{pdf.originalName}</span>
-                  <span className="pdf-pages">{pdf.pageCount || 0} pages</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="no-pdfs">No PDFs uploaded yet</p>
-          )}
+      <main className="container">
+        <div className="controls-section">
+          <div className="card upload-card">
+            <h2>Upload Document</h2>
+            <PDFUploader onUpload={handlePdfUpload} />
+          </div>
+          
+          <div className="reset-section">
+            <ResetButton onReset={handleReset} />
+          </div>
         </div>
         
-        <div className="chat-container">
-          {selectedPdf ? (
-            <ChatInterface pdf={selectedPdf} />
-          ) : (
-            <div className="select-pdf-prompt">
-              <p>Select a PDF from the list to start chatting</p>
-            </div>
-          )}
+        {loading && <div className="status-message loading">Loading documents...</div>}
+        {error && <div className="status-message error">{error}</div>}
+        
+        <div className="content-section">
+          <div className="card documents-card">
+            <h2>Uploaded Documents</h2>
+            {Array.isArray(pdfs) && pdfs.length > 0 ? (
+              <div className="documents-list">
+                {pdfs.map(pdf => (
+                  <div 
+                    key={pdf._id} 
+                    className={`document-item ${selectedPdf && selectedPdf._id === pdf._id ? 'selected' : ''}`}
+                    onClick={() => setSelectedPdf(pdf)}
+                  >
+                    <div className="document-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+                        <path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+                      </svg>
+                    </div>
+                    <div className="document-info">
+                      <div className="document-name">{pdf.originalName}</div>
+                      <div className="document-pages">{pdf.pageCount || 0} pages</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+                  <path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+                </svg>
+                <p>No documents uploaded yet</p>
+              </div>
+            )}
+          </div>
+          
+          <div className="chat-section">
+            {selectedPdf ? (
+              <ChatInterface pdf={selectedPdf} model="phi-2" />
+            ) : (
+              <div className="card select-prompt-card">
+                <div className="empty-state">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+                    <path fill="currentColor" d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M20,16H6L4,18V4H20" />
+                  </svg>
+                  <p>Select a document to start chatting</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </main>
+      
+      <footer className="app-footer">
+        <div className="container">
+          <p>Powered by Ollama & Sentence Transformers</p>
+        </div>
+      </footer>
     </div>
   );
 };

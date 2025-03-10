@@ -31,176 +31,81 @@ def detect_command_type(query):
     else:
         return "regular_query"
 
-def generate_summary(client, collection_name):
-    """Generate a summary of the entire document by retrieving all content."""
+def generate_summary(collection_name, client):
+    """Generate a comprehensive summary of the document with complete page content."""
+    logger.info(f"Generating summary for collection: {collection_name}")
+
     try:
-        logger.info(f"Starting document summary generation from collection {collection_name}")
+        # Get all points from the collection
+        search_result = client.scroll(
+            collection_name=collection_name,
+            limit=100,
+            with_payload=True
+        )
 
-        # Debug: Check if collection exists and its configuration
-        collections = client.get_collections().collections
-        collection_names = [collection.name for collection in collections]
-        logger.info(f"Available collections: {collection_names}")
+        points = search_result[0]
+        logger.info(f"Retrieved {len(points)} points from collection")
 
-        if collection_name not in collection_names:
-            logger.error(f"Collection {collection_name} not found")
+        if not points:
             return {
-                "answer": f"Error: Collection {collection_name} not found.",
+                "answer": "I couldn't find any content to summarize.",
                 "sources": []
             }
 
-        # Get all points - try a different approach with scroll
-        logger.info("Retrieving all points from collection")
+        # Sort points by page number
+        points.sort(key=lambda x: x.payload.get('page', 0))
 
-        # First attempt with scroll to get all documents
-        all_points = []
-        offset = None
-        limit = 100
+        # Extract text content from each page
+        page_contents = []
+        for point in points:
+            page_num = point.payload.get('page', 0)
+            text = point.payload.get('text', '')
 
-        while True:
-            points_batch, next_offset = client.scroll(
-                collection_name=collection_name,
-                limit=limit,
-                offset=offset,
-                with_payload=True
-            )
+            # Skip empty text
+            if not text or text.strip() == '':
+                continue
 
-            logger.info(f"Retrieved {len(points_batch)} points")
-            all_points.extend(points_batch)
-
-            if next_offset is None:
-                break
-
-            offset = next_offset
-
-        logger.info(f"Total points retrieved: {len(all_points)}")
-
-        if not all_points:
-            return {
-                "answer": "I couldn't find any content to summarize. The document appears to be empty or not properly processed.",
-                "sources": []
-            }
-
-        # Extract text content from points
-        logger.info(f"Extracting text content from {len(all_points)} points")
-        text_points = []
-
-        for point in all_points:
-            payload = point.payload if hasattr(point, 'payload') else point
-            
-            # Check for text content - handle different payload structures
-            if 'text' in payload and payload.get('text'):
-                # This is a text point
-                text_points.append(point)
-            elif payload.get('content_type') == 'text' and 'text' in payload:
-                # Alternative structure
-                text_points.append(point)
-
-        logger.info(f"Found {len(text_points)} text points")
-
-        if not text_points:
-            # Debug information about the points we found
-            sample_payload = all_points[0].payload if hasattr(all_points[0], 'payload') else all_points[0]
-            logger.info(f"Sample point payload keys: {sample_payload.keys()}")
-            logger.info(f"Sample point payload: {sample_payload}")
-            
-            # Check if we have text in a different field structure
-            if 'text' in sample_payload and sample_payload['text']:
-                logger.info(f"Found text in different field structure")
-                text_points = all_points  # Use all points since they contain text
-            else:
-                return {
-                    "answer": "I found data in the document but couldn't identify any text content. The document may contain only images or non-text elements.",
-                    "sources": []
-                }
-
-        # Sort text points by page number
-        text_points.sort(key=lambda p: p.payload.get('page', 0) if hasattr(p, 'payload') else p.get('page', 0))
-
-        # Group content by page
-        page_summary = {}
-        document_name = None
-
-        for point in text_points:
-            payload = point.payload if hasattr(point, 'payload') else point
-            page = payload.get('page', 0)
-            
-            # Get text from the appropriate field
-            text = payload.get('text', '')
-            
-            if document_name is None and 'source' in payload:
-                document_name = payload['source']
-            elif document_name is None and 'document_name' in payload:
-                document_name = payload['document_name']
-
-            if page not in page_summary:
-                page_summary[page] = []
-
-            page_summary[page].append(text)
-
-        logger.info(f"Grouped content into {len(page_summary)} pages")
-        
-        # Build the summary response - with cleaner formatting
-        document_title = document_name if document_name else "Uploaded Document"
-        
-        summary_parts = []
-        summary_parts.append(f"Document Summary: {document_title}\n")
-        summary_parts.append(f"This document contains {len(page_summary)} pages of content.\n\n")
-        
-        # Add key content by page with clean formatting
-        summary_parts.append("Key Content By Page:\n")
-        
-        for page_num in sorted(page_summary.keys()):
-            page_content = ' '.join(page_summary[page_num])
-            
-            # Clean and format the page content
-            page_content = clean_format_text(page_content)
-            page_content = format_bullet_points(page_content)
-            
-            # Extract preview - up to 300 chars to keep it more concise
-            page_preview = page_content[:300].strip()
-            if len(page_content) > 300:
-                page_preview += "..."
-                
-            summary_parts.append(f"Page {page_num}:")
-            summary_parts.append(f"{page_preview}\n")
-            
-        # Include helpful usage tips in a cleaner format
-        summary_parts.append("How to use this document:\n")
-        summary_parts.append("You can ask specific questions about any topic in the document for detailed information.\n")
-        summary_parts.append("Try queries like:")
-        summary_parts.append("• What does the document say about [specific topic]?")
-        summary_parts.append("• Define [term] from the document")
-        summary_parts.append("• Generate sample questions from the document")
-        summary_parts.append("• List the main topics in this document")
-            
-        # Format sources
-        sources = []
-        for i, page_num in enumerate(sorted(page_summary.keys())[:5]):  # First 5 pages as sources
-            if i >= len(text_points):
-                break
-                
-            point = text_points[i]
-            payload = point.payload if hasattr(point, 'payload') else point
-                
-            sources.append({
-                "page": payload.get('page', 0),
-                "document": payload.get('source', payload.get('document_name', document_title)),
-                "score": 1.0 - (i * 0.1)  # Approximate relevance score
+            page_contents.append({
+                'page': page_num,
+                'text': text.strip(),
+                'document': point.payload.get('document', 'Unknown')
             })
-            
-        # Combine summary parts with proper line breaks
-        final_summary = "\n".join(summary_parts)
-        
-        logger.info(f"Summary generation complete with {len(sources)} sources")
+
+        # Create a structured summary
+        total_pages = len(page_contents)
+
+        summary = f"Document Summary: {page_contents[0]['document']}\n\n"
+        summary += f"This document contains {total_pages} pages of content.\n\n\n"
+        summary += f"Key Content By Page:\n\n"
+
+        # Add content from each page without truncation
+        for page in page_contents:
+            page_num = page['page']
+            text = page['text']
+
+            summary += f"Page {page_num}:\n{text}\n\n"
+
+        # Add usage instructions
+        summary += "\nHow to use this document:\n\n"
+        summary += "You can ask specific questions about any topic in the document for detailed information.\n\n"
+        summary += "Try queries like:\n"
+        summary += "• What does the document say about [specific topic]?\n"
+        summary += "• Define [term] from the document\n"
+        summary += "• Generate sample questions from the document\n"
+        summary += "• List the main topics in this document\n"
+
+        # Create sources for the first few pages
+        sources = [{'page': page['page'], 'document': page['document']} for page in page_contents[:5]]
+
         return {
-            "answer": final_summary,
+            "answer": summary,
             "sources": sources
         }
-            
+
     except Exception as e:
-        logger.error(f"Error generating summary: {str(e)}", exc_info=True)
+        logger.error(f"Error generating summary: {str(e)}")
         return {
-            "answer": f"Sorry, I encountered an error generating the summary: {str(e)}",
+            "answer": f"I encountered an error while generating the summary: {str(e)}",
             "sources": []
         }
 

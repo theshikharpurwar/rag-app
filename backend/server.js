@@ -52,7 +52,7 @@ async function clearQdrantCollection(collectionName = 'documents') {
   return new Promise((resolve, reject) => {
     console.log(`Clearing Qdrant collection: ${collectionName}`);
     
-    // CORRECTED PATH - Uses the utils directory
+    // Corrected path to the utils directory
     const pythonScript = path.join(__dirname, '..', 'python', 'utils', 'qdrant_utils.py');
     const pythonProcess = spawn('python', [
       pythonScript, 

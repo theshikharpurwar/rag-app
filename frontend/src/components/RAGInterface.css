@@ -1,129 +1,125 @@
 /* D:\rag-app\frontend\src\components\RAGInterface.css */
 
-.rag-interface {
+.rag-app {
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: 20px;
-  height: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
 }
 
-.rag-interface h2 {
-  margin-bottom: 20px;
-  color: #333;
-  text-align: center;
-}
-
-.top-controls {
+.controls-section {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
 }
 
-.status-message {
-  padding: 10px;
-  margin: 10px 0;
-  border-radius: 4px;
-}
-
-.status-message.loading {
-  background-color: #e8f4fd;
-  color: #0078d4;
-}
-
-.status-message.error {
-  background-color: #fde7e9;
-  color: #d13438;
-}
-
-.main-content {
-  display: flex;
+.upload-card {
   flex: 1;
-  gap: 20px;
-  height: calc(100vh - 200px);
+  max-width: 600px;
 }
 
-.pdf-list {
-  width: 30%;
-  background-color: #f9f9f9;
-  border-radius: 8px;
-  padding: 16px;
+.reset-section {
+  display: flex;
+  align-items: center;
+}
+
+.content-section {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+}
+
+.documents-card {
+  height: 100%;
+}
+
+.documents-list {
+  max-height: 500px;
   overflow-y: auto;
 }
 
-.pdf-list h3 {
-  margin-top: 0;
-  margin-bottom: 16px;
-  color: #333;
-}
-
-.pdf-list ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.pdf-list li {
-  padding: 12px;
-  margin-bottom: 8px;
-  background-color: white;
-  border-radius: 6px;
+.document-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: var(--border-radius);
+  margin-bottom: 0.5rem;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
+  transition: var(--transition);
+  border: 1px solid var(--gray-200);
+}
+
+.document-item:hover {
+  background-color: var(--gray-100);
+}
+
+.document-item.selected {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.document-icon {
+  margin-right: 0.75rem;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-}
-
-.pdf-list li:hover {
-  background-color: #f0f0f0;
-}
-
-.pdf-list li.selected {
-  background-color: #e8f4fd;
-  border-left: 3px solid #0078d4;
-}
-
-.pdf-name {
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pdf-pages {
-  font-size: 0.85rem;
-  color: #666;
-}
-
-.no-pdfs {
-  color: #666;
-  font-style: italic;
-}
-
-.chat-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-}
-
-.select-pdf-prompt {
-  display: flex;
-  flex-direction: column;
   justify-content: center;
-  align-items: center;
-  height: 100%;
-  background-color: #f9f9f9;
-  color: #666;
 }
 
-.select-pdf-prompt p {
-  font-size: 1.1rem;
+.document-info {
+  flex: 1;
+}
+
+.document-name {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.document-pages {
+  font-size: 0.85rem;
+  color: var(--gray-600);
+}
+
+.document-item.selected .document-pages {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chat-section {
+  height: 600px;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  color: var(--gray-500);
+  text-align: center;
+}
+
+.empty-state svg {
+  margin-bottom: 1rem;
+  opacity: 0.5;
+}
+
+.select-prompt-card {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .content-section {
+    grid-template-columns: 1fr;
+  }
+  
+  .controls-section {
+    flex-direction: column;
+  }
+  
+  .upload-card {
+    max-width: 100%;
+    margin-bottom: 1rem;
+  }
 }

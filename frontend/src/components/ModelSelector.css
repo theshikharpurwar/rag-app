@@ -1,84 +1,49 @@
 /* D:\rag-app\frontend\src\components\ModelSelector.css */
 
 .model-selector {
-  background-color: #f5f7fa;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  margin-bottom: 20px;
 }
 
-.model-selector h3 {
-  margin-top: 0;
-  margin-bottom: 12px;
-  font-size: 16px;
-  color: #333;
-}
-
-.api-key-input {
-  margin-bottom: 16px;
-}
-
-.api-key-input label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.api-key-input input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.selector-container {
-  margin-bottom: 12px;
-}
-
-.selector-container label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.selector-container select {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background-color: white;
-  font-size: 14px;
-}
-
-.custom-input {
-  margin-top: 8px;
+.model-options {
   display: flex;
+  flex-direction: column;
 }
 
-.custom-input input {
+.model-option {
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.model-option.selected {
+  background-color: #e1f5fe;
+}
+
+.custom-model-form {
+  display: flex;
+  margin-top: 10px;
+}
+
+.custom-model-form input {
   flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px 0 0 4px;
-  font-size: 14px;
+  padding: 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  margin-right: 10px;
 }
 
-.custom-input button {
-  padding: 8px 12px;
-  background-color: #10a37f;
+.custom-model-form button {
+  background-color: #4A90E2;
   color: white;
   border: none;
-  border-radius: 0 4px 4px 0;
+  padding: 10px 15px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
 }
 
-.current-model {
-  margin-top: 8px;
-  font-size: 12px;
-  color: #666;
+.selected-model {
+  margin-top: 10px;
 }

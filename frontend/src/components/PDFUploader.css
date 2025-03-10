@@ -3,38 +3,65 @@
 .pdf-uploader {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 1rem;
+}
+
+.file-input-container {
+  position: relative;
+  width: 100%;
+}
+
+.file-input {
+  position: absolute;
+  width: 0.1px;
+  height: 0.1px;
+  opacity: 0;
+  overflow: hidden;
+  z-index: -1;
+}
+
+.file-label {
+  display: flex;
   align-items: center;
-  padding: 15px;
-  border: 1px dashed #ccc;
-  border-radius: 5px;
-  background-color: #f9f9f9;
-}
-
-.pdf-uploader input {
-  width: 300px;
-}
-
-.pdf-uploader button {
-  padding: 8px 16px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  background-color: var(--gray-100);
+  border: 2px dashed var(--gray-300);
+  border-radius: var(--border-radius);
   cursor: pointer;
-  transition: background-color 0.3s;
+  transition: var(--transition);
+  width: 100%;
 }
 
-.pdf-uploader button:hover {
-  background-color: #45a049;
+.file-label:hover {
+  background-color: var(--gray-200);
+  border-color: var(--primary-color);
 }
 
-.pdf-uploader button:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
+.file-label svg {
+  margin-right: 0.75rem;
+  color: var(--primary-color);
 }
 
-.pdf-uploader .error {
-  color: #f44336;
-  font-size: 0.9em;
+.progress-container {
+  width: 100%;
+  height: 8px;
+  background-color: var(--gray-200);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+  transition: width 0.3s ease;
+}
+
+.upload-button {
+  align-self: flex-start;
+}
+
+.error-message {
+  color: var(--danger-color);
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
 }
