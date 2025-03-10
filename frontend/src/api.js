@@ -2,80 +2,89 @@
 
 const API_URL = 'http://localhost:5000/api';
 
+// Upload a PDF file
 export const uploadPDF = async (file) => {
   const formData = new FormData();
-  formData.append('pdf', file);
-  
+  formData.append('file', file);
+
   try {
     const response = await fetch(`${API_URL}/upload`, {
       method: 'POST',
       body: formData,
     });
-    
+
     const data = await response.json();
-    console.log('Upload response:', data);
     return data;
   } catch (error) {
     console.error('Error uploading PDF:', error);
-    return { success: false, message: 'Failed to upload PDF' };
+    return { success: false, message: 'Error uploading file' };
   }
 };
 
+// Fetch all PDFs
 export const fetchPDFs = async () => {
   try {
-    console.log('Fetching PDFs...');
-    // Add timestamp parameter to prevent caching
-    const cacheParam = `t=${new Date().getTime()}`;
-    const response = await fetch(`${API_URL}/pdfs?${cacheParam}`);
-    
-    if (!response.ok) {
-      throw new Error(`Server responded with status: ${response.status}`);
-    }
-    
+    const response = await fetch(`${API_URL}/pdfs`);
     const data = await response.json();
-    console.log('Fetch PDFs response:', data);
-    
-    // Make sure we're returning the array of PDFs, not just the response object
-    if (Array.isArray(data)) {
-      return data;
-    } else if (data.success && Array.isArray(data.pdfs)) {
-      return data.pdfs;
-    } else {
-      console.warn('Unexpected response format:', data);
-      return []; // Return empty array as fallback
-    }
+    return data;
   } catch (error) {
     console.error('Error fetching PDFs:', error);
-    throw error; // Re-throw to allow component to handle the error
+    return { success: false, message: 'Error fetching PDFs' };
   }
 };
 
-export const queryRAG = async (pdfId, query) => {
+// Query the RAG model
+export const queryRAG = async (pdfId, query, modelPath = null) => {
   try {
+    console.log(`Sending query to backend: ${query} for PDF: ${pdfId}`);
+    
     const response = await fetch(`${API_URL}/query`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ pdfId, query }),
+      body: JSON.stringify({
+        pdfId,
+        query,
+        modelPath
+      }),
     });
+
+    const data = await response.json();
+    console.log('Received response from backend:', data);
     
-    return await response.json();
+    if (data.success) {
+      return {
+        answer: data.answer,
+        sources: data.sources,
+      };
+    } else {
+      console.error('API error:', data.message);
+      return {
+        answer: `Error: ${data.message}`,
+        sources: [],
+      };
+    }
   } catch (error) {
     console.error('Error querying RAG:', error);
-    return { success: false, message: 'Failed to query RAG' };
+    return {
+      answer: 'Error connecting to the server',
+      sources: [],
+    };
   }
 };
 
+// Reset the system
 export const resetSystem = async () => {
   try {
     const response = await fetch(`${API_URL}/reset`, {
       method: 'POST',
     });
-    
-    return await response.json();
+
+    const data = await response.json();
+    return data;
   } catch (error) {
     console.error('Error resetting system:', error);
-    return { success: false, message: 'Failed to reset system' };
+    return { success: false, message: 'Error resetting system' };
   }
 };

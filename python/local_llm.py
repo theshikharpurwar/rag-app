@@ -26,6 +26,8 @@ def detect_command_type(query):
         return "questions"
     elif "list topics" in query or "main topics" in query or "key topics" in query:
         return "topics"
+    elif "explain each topic" in query or "explain all topics" in query:
+        return "explain_topics"
     else:
         return "regular_query"
 
@@ -46,7 +48,7 @@ def generate_summary(client, collection_name):
                 "sources": []
             }
 
-        # Get all points - try a different approach with query_points
+        # Get all points - try a different approach with scroll
         logger.info("Retrieving all points from collection")
 
         # First attempt with scroll to get all documents
@@ -73,21 +75,6 @@ def generate_summary(client, collection_name):
         logger.info(f"Total points retrieved: {len(all_points)}")
 
         if not all_points:
-            # Try a fallback approach with query_points to get everything
-            logger.info("No points found with scroll, trying query_points fallback")
-            try:
-                query_results = client.query_points(
-                    collection_name=collection_name,
-                    query_filter=None,  # No filter to get everything
-                    limit=1000,
-                    with_payload=True
-                )
-                all_points = query_results
-                logger.info(f"Retrieved {len(all_points)} points with query_points fallback")
-            except Exception as e:
-                logger.error(f"Error with query_points fallback: {str(e)}")
-
-        if not all_points:
             return {
                 "answer": "I couldn't find any content to summarize. The document appears to be empty or not properly processed.",
                 "sources": []
@@ -99,9 +86,13 @@ def generate_summary(client, collection_name):
 
         for point in all_points:
             payload = point.payload if hasattr(point, 'payload') else point
-            content_type = payload.get('content_type', None)
-
-            if content_type == 'text':
+            
+            # Check for text content - handle different payload structures
+            if 'text' in payload and payload.get('text'):
+                # This is a text point
+                text_points.append(point)
+            elif payload.get('content_type') == 'text' and 'text' in payload:
+                # Alternative structure
                 text_points.append(point)
 
         logger.info(f"Found {len(text_points)} text points")
@@ -111,11 +102,16 @@ def generate_summary(client, collection_name):
             sample_payload = all_points[0].payload if hasattr(all_points[0], 'payload') else all_points[0]
             logger.info(f"Sample point payload keys: {sample_payload.keys()}")
             logger.info(f"Sample point payload: {sample_payload}")
-
-            return {
-                "answer": "I found data in the document but couldn't identify any text content. The document may contain only images or non-text elements.",
-                "sources": []
-            }
+            
+            # Check if we have text in a different field structure
+            if 'text' in sample_payload and sample_payload['text']:
+                logger.info(f"Found text in different field structure")
+                text_points = all_points  # Use all points since they contain text
+            else:
+                return {
+                    "answer": "I found data in the document but couldn't identify any text content. The document may contain only images or non-text elements.",
+                    "sources": []
+                }
 
         # Sort text points by page number
         text_points.sort(key=lambda p: p.payload.get('page', 0) if hasattr(p, 'payload') else p.get('page', 0))
@@ -127,9 +123,13 @@ def generate_summary(client, collection_name):
         for point in text_points:
             payload = point.payload if hasattr(point, 'payload') else point
             page = payload.get('page', 0)
+            
+            # Get text from the appropriate field
             text = payload.get('text', '')
-
-            if document_name is None and 'document_name' in payload:
+            
+            if document_name is None and 'source' in payload:
+                document_name = payload['source']
+            elif document_name is None and 'document_name' in payload:
                 document_name = payload['document_name']
 
             if page not in page_summary:
@@ -138,69 +138,103 @@ def generate_summary(client, collection_name):
             page_summary[page].append(text)
 
         logger.info(f"Grouped content into {len(page_summary)} pages")
-
-        # Build the summary response
+        
+        # Build the summary response - with cleaner formatting
+        document_title = document_name if document_name else "Uploaded Document"
+        
         summary_parts = []
-        summary_parts.append("# Document Summary\n")
-
-        # Add document metadata if available
-        if document_name:
-            summary_parts.append(f"## Document: {document_name}\n")
-
-        summary_parts.append(f"## Overview\n")
-        summary_parts.append(f"This document contains {len(page_summary)} pages of content.\n")
-
-        # Create a consolidated summary
-        summary_parts.append("## Key Content By Page\n")
-
-        # Add content from each page (up to 500 chars for each page)
+        summary_parts.append(f"Document Summary: {document_title}\n")
+        summary_parts.append(f"This document contains {len(page_summary)} pages of content.\n\n")
+        
+        # Add key content by page with clean formatting
+        summary_parts.append("Key Content By Page:\n")
+        
         for page_num in sorted(page_summary.keys()):
             page_content = ' '.join(page_summary[page_num])
-
-            # Extract more content for the page summary - up to 500 chars
-            page_preview = page_content[:500].strip()
-            if len(page_content) > 500:
+            
+            # Clean and format the page content
+            page_content = clean_format_text(page_content)
+            page_content = format_bullet_points(page_content)
+            
+            # Extract preview - up to 300 chars to keep it more concise
+            page_preview = page_content[:300].strip()
+            if len(page_content) > 300:
                 page_preview += "..."
-
-            summary_parts.append(f"### Page {page_num}\n")
+                
+            summary_parts.append(f"Page {page_num}:")
             summary_parts.append(f"{page_preview}\n")
-
-        # Include a note about how to get more specific information
-        summary_parts.append("\n## How to Use This Document\n")
-        summary_parts.append("You can ask more specific questions about any topic in the document for detailed information.\n")
-        summary_parts.append("Try queries like:\n")
-        summary_parts.append("- 'What does the document say about [specific topic]?'\n")
-        summary_parts.append("- 'Define [term] from the document'\n")
-        summary_parts.append("- 'Generate sample questions from the document'\n")
-        summary_parts.append("- 'List the main topics in this document'\n")
-
+            
+        # Include helpful usage tips in a cleaner format
+        summary_parts.append("How to use this document:\n")
+        summary_parts.append("You can ask specific questions about any topic in the document for detailed information.\n")
+        summary_parts.append("Try queries like:")
+        summary_parts.append("• What does the document say about [specific topic]?")
+        summary_parts.append("• Define [term] from the document")
+        summary_parts.append("• Generate sample questions from the document")
+        summary_parts.append("• List the main topics in this document")
+            
         # Format sources
         sources = []
         for i, page_num in enumerate(sorted(page_summary.keys())[:5]):  # First 5 pages as sources
             if i >= len(text_points):
                 break
-
+                
             point = text_points[i]
             payload = point.payload if hasattr(point, 'payload') else point
-
+                
             sources.append({
                 "page": payload.get('page', 0),
-                "text": payload.get('text', '')[:200] + "...",
-                "document": payload.get('document_name', 'Document')
+                "document": payload.get('source', payload.get('document_name', document_title)),
+                "score": 1.0 - (i * 0.1)  # Approximate relevance score
             })
-
+            
+        # Combine summary parts with proper line breaks
+        final_summary = "\n".join(summary_parts)
+        
         logger.info(f"Summary generation complete with {len(sources)} sources")
         return {
-            "answer": '\n'.join(summary_parts),
+            "answer": final_summary,
             "sources": sources
         }
-
+            
     except Exception as e:
         logger.error(f"Error generating summary: {str(e)}", exc_info=True)
         return {
             "answer": f"Sorry, I encountered an error generating the summary: {str(e)}",
             "sources": []
         }
+
+# Add these helper functions if not already present
+def clean_format_text(text):
+    """Clean and format text for better readability."""
+    import re
+    
+    # Remove reference markers
+    text = re.sub(r'\*\*Reference \d+( \(Page \d+\))?\*\*:', '', text)
+    
+    # Remove heading markers at beginning
+    text = re.sub(r'^# [^\n]+\n', '', text)
+    text = re.sub(r'^## [^\n]+\n', '', text)
+    
+    # Clean up multiple newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    return text.strip()
+
+def format_bullet_points(text):
+    """Ensure bullet points are properly formatted."""
+    import re
+    
+    # Replace inline bullet points with properly formatted ones
+    text = re.sub(r'([.!?])\s+[●○•]\s+', r'\1\n\n• ', text)
+    text = re.sub(r'\n[●○•]\s+', '\n• ', text)
+    
+    # Convert circular bullets to standard bullet points
+    text = text.replace('●', '•')
+    text = text.replace('○', '  •')
+    
+    return text
+        
 
 def generate_definition(client, collection_name, term):
     """Find and generate a definition for a specific term in the document."""
@@ -211,8 +245,8 @@ def generate_definition(client, collection_name, term):
         model = SentenceTransformer('all-MiniLM-L6-v2')
         query_embedding = model.encode(f"definition of {term}").tolist()
 
-        # Search for content related to this term using query_points instead of search
-        search_results = client.query_points(
+        # Search for content related to this term using search instead of query_points
+        search_results = client.search(
             collection_name=collection_name,
             query_vector=query_embedding,
             limit=15,  # Get more results for better context
@@ -262,7 +296,7 @@ def generate_definition(client, collection_name, term):
             sources.append({
                 "page": payload.get('page', 0),
                 "text": text[:200] + "..." if len(text) > 200 else text,
-                "document": payload.get('document_name', 'Document'),
+                "document": payload.get('source', 'Document'),
                 "score": getattr(result, 'score', 1.0) if hasattr(result, 'score') else 1.0
             })
 
@@ -352,7 +386,7 @@ def generate_questions(client, collection_name):
         text_points = []
         for point in all_points:
             payload = point.payload if hasattr(point, 'payload') else point
-            if payload.get('content_type') == 'text':
+            if 'text' in payload and payload.get('text'):
                 text_points.append(point)
 
         if not text_points:
@@ -401,7 +435,7 @@ def generate_questions(client, collection_name):
                 sources.append({
                     "page": payload.get('page', 0),
                     "text": text[:200] + "..." if len(text) > 200 else text,
-                    "document": payload.get('document_name', 'Document')
+                    "document": payload.get('source', 'Document')
                 })
 
         # Find capitalized terms or terms that might be important topics
@@ -519,7 +553,7 @@ def generate_topics(client, collection_name):
         text_points = []
         for point in all_points:
             payload = point.payload if hasattr(point, 'payload') else point
-            if payload.get('content_type') == 'text':
+            if 'text' in payload and payload.get('text'):
                 text_points.append(point)
 
         if not text_points:
@@ -611,7 +645,7 @@ def generate_topics(client, collection_name):
                 sources.append({
                     "page": page,
                     "text": payload.get('text', '')[:200] + "..." if len(payload.get('text', '')) > 200 else payload.get('text', ''),
-                    "document": payload.get('document_name', 'Document')
+                    "document": payload.get('source', 'Document')
                 })
                 used_pages.add(page)
 
@@ -627,119 +661,205 @@ def generate_topics(client, collection_name):
             "sources": []
         }
 
-def process_regular_query(query, client, collection_name):
-    """Process a regular query by searching for relevant content."""
+def explain_topics(client, collection_name):
+    """Explain each topic in the document in detail."""
     try:
-        # Generate embedding for the query
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        query_embedding = model.encode(query).tolist()
-
-        # Search for similar content using query_points instead of search
-        search_results = client.query_points(
-            collection_name=collection_name,
-            query_vector=query_embedding,
-            limit=10,  # Get more results for better context
-            with_payload=True
-        )
-
-        if not search_results:
+        # First get the topics
+        topics_result = generate_topics(client, collection_name)
+        
+        if "I couldn't identify specific topics" in topics_result["answer"]:
             return {
-                "answer": "I couldn't find any relevant information. Please try a different query.",
+                "answer": "I couldn't identify specific topics to explain. The document may not contain clearly defined topics.",
                 "sources": []
             }
+            
+        # Extract topic names from the result
+        topic_pattern = r'\*\*(.*?)\*\*'
+        topics = re.findall(topic_pattern, topics_result["answer"])
+        
+        if not topics:
+            return {
+                "answer": "I found topics but couldn't extract them properly for detailed explanation.",
+                "sources": []
+            }
+            
+        # Limit to top 10 topics
+        topics = topics[:10]
+        
+        # For each topic, find relevant content
+        explanations = []
+        all_sources = []
+        
+        for topic in topics:
+            # Create an embedding for the topic
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            query_embedding = model.encode(f"explain {topic}").tolist()
+            
+            # Search for content related to this topic
+            search_results = client.search(
+                collection_name=collection_name,
+                query_vector=query_embedding,
+                limit=3,  # Get top 3 results per topic
+                with_payload=True
+            )
+            
+            if search_results:
+                explanation = f"## {topic}\n\n"
+                
+                # Combine the content from the search results
+                content = []
+                for result in search_results:
+                    payload = result.payload if hasattr(result, 'payload') else result
+                    text = payload.get('text', '')
+                    if text:
+                        content.append(text)
+                        
+                        # Add to sources if not too many
+                        if len(all_sources) < 15:
+                            all_sources.append({
+                                "page": payload.get('page', 0),
+                                "text": text[:200] + "..." if len(text) > 200 else text,
+                                "document": payload.get('source', 'Document'),
+                                "topic": topic
+                            })
+                
+                if content:
+                    # Join the content and add to explanations
+                    explanation += "\n".join(content)
+                    explanations.append(explanation)
+            
+        if explanations:
+            answer = "# Detailed Topic Explanations\n\n"
+            answer += "Here are detailed explanations for the main topics in the document:\n\n"
+            answer += "\n\n".join(explanations)
+            
+            return {
+                "answer": answer,
+                "sources": all_sources[:10]  # Limit to 10 sources
+            }
+        else:
+            return {
+                "answer": "I couldn't find detailed explanations for the topics in the document.",
+                "sources": []
+            }
+            
+    except Exception as e:
+        logger.error(f"Error explaining topics: {str(e)}", exc_info=True)
+        return {
+            "answer": f"Sorry, I encountered an error explaining the topics: {str(e)}",
+            "sources": []
+        }
 
-        # Format the results
-        context = ""
+def process_regular_query(query, collection_name):
+    """Process a regular query by searching for relevant content."""
+    logger.info(f"Processing regular query: {query}")
+
+    try:
+        # Generate embedding for the query
+        embedding = generate_query_embedding(query)
+        if not embedding:
+            return {"answer": "I couldn't generate an embedding for your query. Please try again.", "sources": []}
+
+        # Search for similar content in Qdrant
+        client = QdrantClient(host="localhost", port=6333)
+        search_result = client.search(
+            collection_name=collection_name,
+            query_vector=embedding,
+            limit=10
+        )
+
+        if not search_result:
+            logger.info("No relevant content found")
+            return {"answer": "I couldn't find any relevant information.", "sources": []}
+
+        # Extract content and relevance from the search results
+        context = []
         sources = []
 
-        for i, result in enumerate(search_results):
-            payload = result.payload if hasattr(result, 'payload') else result
-            content_type = payload.get('content_type', 'text')
-            page = payload.get('page', 0)
-            document_name = payload.get('document_name', 'Document')
+        for hit in search_result:
+            payload = hit.payload
 
-            if content_type == 'text':
-                text = payload.get('text', '')
-                context += f"[Content {i+1}] {text}\n\n"
+            # Extract text - handle different possible payload structures
+            text = ""
+            if "text" in payload:
+                text = payload["text"]
+            elif "content" in payload:
+                text = payload["content"]
 
-                sources.append({
-                    "page": page,
-                    "text": text[:200] + "..." if len(text) > 200 else text,
-                    "document": document_name,
-                    "score": getattr(result, 'score', 1.0) if hasattr(result, 'score') else 1.0
+            # Add context and source information
+            if text and text.strip():  # Only add non-empty text
+                context.append({
+                    "text": text,
+                    "score": hit.score,
+                    "page": payload.get("page", "Unknown"),
+                    "document": payload.get("document_name", "Unknown")
                 })
 
-        # Generate an answer using Ollama (if available) or text-based response
-        try:
-            # Try to use Ollama for better responses
-            prompt = f"""
-            Based on the following document excerpts, provide a comprehensive answer to the question.
+                sources.append({
+                    "page": payload.get("page", "Unknown"),
+                    "document": payload.get("document_name", "Unknown"),
+                    "score": hit.score
+                })
 
-            Question: {query}
+        if not context:
+            logger.info("No text content found in results")
+            return {"answer": "I found matches but couldn't extract useful text content.", "sources": []}
 
-            Document excerpts:
-            {context}
-
-            Instructions:
-            1. Answer the question based ONLY on the information in the document excerpts
-            2. If the answer isn't in the provided excerpts, say "I don't have enough information to answer this question based on the document"
-            3. Maintain bullet point formatting when appropriate
-            4. Be detailed and thorough in your response, including all relevant information
-            5. Do not include information that's not in the document excerpts
-
-            Answer:
-            """
-
-            # Try to use Ollama for response generation
-            try:
-                response = requests.post(
-                    "http://localhost:11434/api/generate",
-                    json={
-                        "model": "phi",
-                        "prompt": prompt,
-                        "stream": False
-                    },
-                    timeout=15
-                )
-
-                if response.status_code == 200:
-                    answer = response.json().get("response", "")
-                else:
-                    # Fallback to manual response if Ollama fails
-                    answer = f"Based on the document, here's what I found about '{query}':\n\n"
-                    for i, result in enumerate(search_results, 1):
-                        payload = result.payload if hasattr(result, 'payload') else result
-                        if payload.get('content_type') == 'text':
-                            answer += f"**Reference {i}**: {payload.get('text', '')}\n\n"
-
-            except Exception as e:
-                logger.error(f"Error using Ollama: {str(e)}")
-                # Fallback to manual response
-                answer = f"Based on the document, here's what I found about '{query}':\n\n"
-                for i, result in enumerate(search_results, 1):
-                    payload = result.payload if hasattr(result, 'payload') else result
-                    if payload.get('content_type') == 'text':
-                        answer += f"**Reference {i}**: {payload.get('text', '')}\n\n"
-
-        except Exception as e:
-            logger.error(f"Error generating answer: {str(e)}")
-            answer = f"Based on the document, here's what I found about '{query}':\n\n"
-            for i, result in enumerate(search_results, 1):
-                payload = result.payload if hasattr(result, 'payload') else result
-                if payload.get('content_type') == 'text':
-                    answer += f"**Reference {i}**: {payload.get('text', '')}\n\n"
+        # Create a formatted answer from the retrieved content
+        answer = format_answer(query, context)
 
         return {
             "answer": answer,
-            "sources": sources
+            "sources": sources[:5]  # Limit to top 5 sources
         }
 
     except Exception as e:
-        logger.error(f"Error processing query: {str(e)}", exc_info=True)
-        return {
-            "answer": f"Sorry, I encountered an error processing your query: {str(e)}",
-            "sources": []
-        }
+        logger.error(f"Error processing query: {str(e)}")
+        return {"answer": f"I encountered an error while processing your query: {str(e)}", "sources": []}
+
+def format_answer(query, context):
+    """Format the answer in a clean, readable way."""
+    # Sort context by relevance score
+    sorted_context = sorted(context, key=lambda x: x.get("score", 0), reverse=True)
+
+    # Extract text from the top results
+    content_texts = [item["text"] for item in sorted_context[:5]]
+    combined_text = "\n\n".join(content_texts)
+
+    # Clean up the text
+    answer = clean_format_text(combined_text)
+
+    # Format bullet points properly
+    answer = format_bullet_points(answer)
+
+    return answer
+
+def clean_format_text(text):
+    """Clean and format text for better readability."""
+    # Remove reference markers
+    text = re.sub(r'\*\*Reference \d+( \(Page \d+\))?\*\*:', '', text)
+
+    # Remove heading markers at beginning
+    text = re.sub(r'^# [^\n]+\n', '', text)
+    text = re.sub(r'^## [^\n]+\n', '', text)
+
+    # Clean up multiple newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
+def format_bullet_points(text):
+    """Ensure bullet points are properly formatted."""
+    # Replace inline bullet points with properly formatted ones
+    text = re.sub(r'([.!?])\s+[●○•]\s+', r'\1\n\n• ', text)
+    text = re.sub(r'\n[●○•]\s+', '\n• ', text)
+
+    # Convert circular bullets to standard bullet points
+    text = text.replace('●', '•')
+    text = text.replace('○', '  •')
+
+    return text
+        
 
 def main():
     """Main function to process the query."""
@@ -775,6 +895,9 @@ def main():
         elif command == "topics":
             logger.info(f"Extracting main topics")
             result = generate_topics(client, collection_name)
+        elif command == "explain_topics":
+            logger.info(f"Explaining topics in detail")
+            result = explain_topics(client, collection_name)
         else:
             logger.info(f"Searching for relevant content in collection: {collection_name}")
             result = process_regular_query(query, client, collection_name)

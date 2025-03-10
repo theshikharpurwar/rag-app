@@ -1,41 +1,81 @@
 /* D:\rag-app\frontend\src\components\RAGInterface.css */
 
 .rag-interface {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  height: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
-  font-family: Arial, sans-serif;
 }
 
 .rag-interface h2 {
+  margin-bottom: 20px;
   color: #333;
   text-align: center;
+}
+
+.top-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
 }
 
+.status-message {
+  padding: 10px;
+  margin: 10px 0;
+  border-radius: 4px;
+}
+
+.status-message.loading {
+  background-color: #e8f4fd;
+  color: #0078d4;
+}
+
+.status-message.error {
+  background-color: #fde7e9;
+  color: #d13438;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  gap: 20px;
+  height: calc(100vh - 200px);
+}
+
 .pdf-list {
-  margin: 20px 0;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  padding: 15px;
+  width: 30%;
   background-color: #f9f9f9;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .pdf-list h3 {
   margin-top: 0;
-  color: #444;
+  margin-bottom: 16px;
+  color: #333;
 }
 
 .pdf-list ul {
   list-style: none;
   padding: 0;
+  margin: 0;
 }
 
 .pdf-list li {
-  padding: 10px;
-  border-bottom: 1px solid #eee;
+  padding: 12px;
+  margin-bottom: 8px;
+  background-color: white;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .pdf-list li:hover {
@@ -43,23 +83,47 @@
 }
 
 .pdf-list li.selected {
-  background-color: #e6f7ff;
-  border-left: 3px solid #1890ff;
+  background-color: #e8f4fd;
+  border-left: 3px solid #0078d4;
 }
 
-.error {
-  color: #f56c6c;
-  font-weight: bold;
+.pdf-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.reset-container {
-  text-align: center;
-  margin: 20px 0;
-}
-
-.rag-footer {
-  text-align: center;
-  margin-top: 40px;
+.pdf-pages {
+  font-size: 0.85rem;
   color: #666;
-  font-size: 0.9em;
+}
+
+.no-pdfs {
+  color: #666;
+  font-style: italic;
+}
+
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.select-pdf-prompt {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  background-color: #f9f9f9;
+  color: #666;
+}
+
+.select-pdf-prompt p {
+  font-size: 1.1rem;
 }

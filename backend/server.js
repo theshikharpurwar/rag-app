@@ -6,6 +6,7 @@ const cors = require('cors');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const PDF = require('./models/pdf');
 
 // Import routes
 const apiRoutes = require('./routes/api');
@@ -85,38 +86,134 @@ async function clearQdrantCollection(collectionName = 'documents') {
   });
 }
 
-// Register server shutdown handlers
-process.on('SIGINT', async () => {
-  console.log('Server shutting down (SIGINT)...');
+// Function to clear MongoDB collections
+async function clearMongoDBCollections() {
+  console.log('Clearing MongoDB collections...');
   
   try {
-    await clearQdrantCollection('documents');
-    console.log('Cleanup completed successfully.');
+    if (mongoose.connection.readyState === 1) { // Check if connected (1 = connected)
+      // Delete all PDF documents
+      const result = await PDF.deleteMany({});
+      console.log(`Deleted ${result.deletedCount} documents from PDF collection`);
+      return true;
+    } else {
+      console.log('MongoDB not connected, no cleanup needed');
+      return false;
+    }
   } catch (error) {
-    console.error('Error during cleanup:', error.message);
+    console.error('Error clearing MongoDB collections:', error);
+    return false;
   }
+}
+
+// Function to clear uploads directory
+async function clearUploadsDirectory() {
+  console.log('Clearing uploads directory...');
+  
+  try {
+    // Clear images directory
+    const imagesDir = path.join(uploadsDir, 'images');
+    if (fs.existsSync(imagesDir)) {
+      // Read all files in the directory
+      const files = fs.readdirSync(imagesDir);
+      
+      // Delete each file
+      for (const file of files) {
+        const filePath = path.join(imagesDir, file);
+        fs.unlinkSync(filePath);
+      }
+      
+      console.log(`Cleared ${files.length} files from images directory`);
+    }
+
+    // Clear main uploads directory (only PDF files)
+    if (fs.existsSync(uploadsDir)) {
+      const files = fs.readdirSync(uploadsDir);
+      
+      let deletedCount = 0;
+      for (const file of files) {
+        const filePath = path.join(uploadsDir, file);
+        // Only delete files, not directories
+        if (fs.statSync(filePath).isFile() && file.toLowerCase().endsWith('.pdf')) {
+          fs.unlinkSync(filePath);
+          deletedCount++;
+        }
+      }
+      
+      console.log(`Cleared ${deletedCount} PDF files from uploads directory`);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error clearing uploads directory:', error);
+    return false;
+  }
+}
+
+// Comprehensive cleanup function that handles everything
+async function performFullCleanup() {
+  console.log('Performing full application cleanup...');
+  
+  let qdrantCleared = false;
+  let mongoCleared = false;
+  let uploadsCleared = false;
+  
+  try {
+    // 1. Clear Qdrant
+    try {
+      await clearQdrantCollection('documents');
+      qdrantCleared = true;
+    } catch (error) {
+      console.error('Qdrant cleanup failed:', error.message);
+    }
+    
+    // 2. Clear MongoDB
+    try {
+      mongoCleared = await clearMongoDBCollections();
+    } catch (error) {
+      console.error('MongoDB cleanup failed:', error.message);
+    }
+    
+    // 3. Clear uploads directory
+    try {
+      uploadsCleared = await clearUploadsDirectory();
+    } catch (error) {
+      console.error('Uploads directory cleanup failed:', error.message);
+    }
+    
+    // 4. Close MongoDB connection
+    if (mongoose.connection.readyState === 1) {
+      await mongoose.connection.close();
+      console.log('MongoDB connection closed');
+    }
+    
+    console.log('Cleanup summary:');
+    console.log(`- Qdrant collection: ${qdrantCleared ? 'Cleared ✓' : 'Failed ✗'}`);
+    console.log(`- MongoDB collections: ${mongoCleared ? 'Cleared ✓' : 'Failed ✗'}`);
+    console.log(`- Uploads directory: ${uploadsCleared ? 'Cleared ✓' : 'Failed ✗'}`);
+    console.log('Application cleanup completed.');
+    
+  } catch (error) {
+    console.error('Unexpected error during cleanup:', error);
+  }
+}
+
+// Register server shutdown handlers
+process.on('SIGINT', async () => {
+  console.log('\nServer shutting down (SIGINT)...');
+  await performFullCleanup();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\nServer shutting down (SIGTERM)...');
-  try {
-    await clearQdrantCollection();
-    console.log('Cleanup completed successfully.');
-  } catch (error) {
-    console.error('Error during cleanup:', error.message);
-  }
+  await performFullCleanup();
   process.exit(0);
 });
 
 // Close gracefully on uncaught exceptions as well
 process.on('uncaughtException', async (error) => {
   console.error('Uncaught Exception:', error);
-  try {
-    await clearQdrantCollection();
-    console.log('Cleanup completed successfully.');
-  } catch (cleanupError) {
-    console.error('Error during cleanup:', cleanupError.message);
-  }
+  await performFullCleanup();
   process.exit(1);
 });
