@@ -1,5 +1,3 @@
-# D:\rag-app\python\local_llm.py
-
 import argparse
 import json
 import logging
@@ -31,11 +29,21 @@ def detect_command_type(query):
     else:
         return "regular_query"
 
-def generate_summary(collection_name, client):
+def generate_summary(client, collection_name):
     """Generate a comprehensive summary of the document with complete page content."""
     logger.info(f"Generating summary for collection: {collection_name}")
 
     try:
+        # First, verify the collection exists
+        collections = client.get_collections()
+        collection_exists = any(c.name == collection_name for c in collections.collections)
+        
+        if not collection_exists:
+            return {
+                "answer": f"Collection '{collection_name}' does not exist.",
+                "sources": []
+            }
+
         # Get all points from the collection
         search_result = client.scroll(
             collection_name=collection_name,
@@ -109,7 +117,6 @@ def generate_summary(collection_name, client):
             "sources": []
         }
 
-# Add these helper functions if not already present
 def clean_format_text(text):
     """Clean and format text for better readability."""
     import re
@@ -139,12 +146,21 @@ def format_bullet_points(text):
     text = text.replace('○', '  •')
     
     return text
-        
 
 def generate_definition(client, collection_name, term):
     """Find and generate a definition for a specific term in the document."""
     try:
         logger.info(f"Starting definition generation for term '{term}' from collection {collection_name}")
+
+        # Verify collection exists
+        collections = client.get_collections()
+        collection_exists = any(c.name == collection_name for c in collections.collections)
+        
+        if not collection_exists:
+            return {
+                "answer": f"Collection '{collection_name}' does not exist.",
+                "sources": []
+            }
 
         # Create an embedding for the term
         model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -261,6 +277,16 @@ def generate_definition(client, collection_name, term):
 def generate_questions(client, collection_name):
     """Generate sample questions based on the document content."""
     try:
+        # Verify collection exists
+        collections = client.get_collections()
+        collection_exists = any(c.name == collection_name for c in collections.collections)
+        
+        if not collection_exists:
+            return {
+                "answer": f"Collection '{collection_name}' does not exist.",
+                "sources": []
+            }
+
         # Get points from the collection
         all_points = []
         offset = None
@@ -428,6 +454,16 @@ def generate_questions(client, collection_name):
 def generate_topics(client, collection_name):
     """Extract and list the main topics covered in the document."""
     try:
+        # Verify collection exists
+        collections = client.get_collections()
+        collection_exists = any(c.name == collection_name for c in collections.collections)
+        
+        if not collection_exists:
+            return {
+                "answer": f"Collection '{collection_name}' does not exist.",
+                "sources": []
+            }
+
         # Get content from the collection
         all_points = []
         offset = None
@@ -569,6 +605,16 @@ def generate_topics(client, collection_name):
 def explain_topics(client, collection_name):
     """Explain each topic in the document in detail."""
     try:
+        # Verify collection exists
+        collections = client.get_collections()
+        collection_exists = any(c.name == collection_name for c in collections.collections)
+        
+        if not collection_exists:
+            return {
+                "answer": f"Collection '{collection_name}' does not exist.",
+                "sources": []
+            }
+
         # First get the topics
         topics_result = generate_topics(client, collection_name)
         
@@ -655,18 +701,29 @@ def explain_topics(client, collection_name):
             "sources": []
         }
 
-def process_regular_query(query, collection_name):
+def process_regular_query(query, client, collection_name):
     """Process a regular query by searching for relevant content."""
     logger.info(f"Processing regular query: {query}")
 
     try:
+        # Verify collection exists
+        collections = client.get_collections()
+        collection_exists = any(c.name == collection_name for c in collections.collections)
+        
+        if not collection_exists:
+            return {
+                "answer": f"Collection '{collection_name}' does not exist.",
+                "sources": []
+            }
+
         # Generate embedding for the query
-        embedding = generate_query_embedding(query)
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        embedding = model.encode(query).tolist()
+        
         if not embedding:
             return {"answer": "I couldn't generate an embedding for your query. Please try again.", "sources": []}
 
         # Search for similar content in Qdrant
-        client = QdrantClient(host="localhost", port=6333)
         search_result = client.search(
             collection_name=collection_name,
             query_vector=embedding,
@@ -739,33 +796,6 @@ def format_answer(query, context):
 
     return answer
 
-def clean_format_text(text):
-    """Clean and format text for better readability."""
-    # Remove reference markers
-    text = re.sub(r'\*\*Reference \d+( \(Page \d+\))?\*\*:', '', text)
-
-    # Remove heading markers at beginning
-    text = re.sub(r'^# [^\n]+\n', '', text)
-    text = re.sub(r'^## [^\n]+\n', '', text)
-
-    # Clean up multiple newlines
-    text = re.sub(r'\n{3,}', '\n\n', text)
-
-    return text.strip()
-
-def format_bullet_points(text):
-    """Ensure bullet points are properly formatted."""
-    # Replace inline bullet points with properly formatted ones
-    text = re.sub(r'([.!?])\s+[●○•]\s+', r'\1\n\n• ', text)
-    text = re.sub(r'\n[●○•]\s+', '\n• ', text)
-
-    # Convert circular bullets to standard bullet points
-    text = text.replace('●', '•')
-    text = text.replace('○', '  •')
-
-    return text
-        
-
 def main():
     """Main function to process the query."""
     parser = argparse.ArgumentParser(description='Process a query for RAG')
@@ -777,8 +807,18 @@ def main():
     collection_name = args.collection_name
 
     try:
-        # Connect to Qdrant
+        # Connect to Qdrant and verify connection
         client = QdrantClient(host="localhost", port=6333)
+        try:
+            client.get_collections()  # Test connection
+        except Exception as e:
+            logger.error(f"Failed to connect to Qdrant: {str(e)}")
+            error_response = {
+                "answer": f"Failed to connect to Qdrant database: {str(e)}",
+                "sources": []
+            }
+            print(json.dumps(error_response))
+            sys.exit(1)
 
         # Generate embedding for the query
         logger.info(f"Generating embedding for query: {query}")
@@ -804,7 +844,7 @@ def main():
             logger.info(f"Explaining topics in detail")
             result = explain_topics(client, collection_name)
         else:
-            logger.info(f"Searching for relevant content in collection: {collection_name}")
+            logger.info(f"Processing regular query for collection: {collection_name}")
             result = process_regular_query(query, client, collection_name)
 
         # Print the result as JSON

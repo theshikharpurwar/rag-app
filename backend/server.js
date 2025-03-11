@@ -1,5 +1,3 @@
-// D:\rag-app\backend\server.js
-
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -28,8 +26,10 @@ mongoose.connect('mongodb://localhost:27017/rag_app', {
 .then(() => console.log('MongoDB connected'))
 .catch(err => console.error('MongoDB connection error:', err));
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '..', 'uploads');
+// Ensure uploads directory exists (corrected to point to backend/uploads)
+const uploadsDir = path.join(__dirname, 'uploads'); // Changed from path.join(__dirname, '..', 'uploads')
+console.log(`Uploads directory set to: ${uploadsDir}`);
+
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -52,8 +52,17 @@ async function clearQdrantCollection(collectionName = 'documents') {
   return new Promise((resolve, reject) => {
     console.log(`Clearing Qdrant collection: ${collectionName}`);
     
-    // Corrected path to the utils directory
-    const pythonScript = path.join(__dirname, '..', 'python', 'utils', 'qdrant_utils.py');
+    // Use path.resolve for more reliable path handling
+    const pythonScript = path.resolve(__dirname, '..', 'python', 'utils', 'qdrant_utils.py');
+    console.log(`Attempting to run Python script at: ${pythonScript}`);
+    
+    // Verify script exists
+    if (!fs.existsSync(pythonScript)) {
+      console.error(`Python script not found at: ${pythonScript}`);
+      reject(new Error('Qdrant utility script not found'));
+      return;
+    }
+
     const pythonProcess = spawn('python', [
       pythonScript, 
       'reset_collection',
@@ -113,36 +122,61 @@ async function clearUploadsDirectory() {
   try {
     // Clear images directory
     const imagesDir = path.join(uploadsDir, 'images');
+    console.log(`Checking images directory: ${imagesDir}`);
+    
     if (fs.existsSync(imagesDir)) {
-      // Read all files in the directory
       const files = fs.readdirSync(imagesDir);
+      console.log(`Found ${files.length} files in images directory`);
       
-      // Delete each file
       for (const file of files) {
         const filePath = path.join(imagesDir, file);
-        fs.unlinkSync(filePath);
-      }
-      
-      console.log(`Cleared ${files.length} files from images directory`);
-    }
-
-    // Clear main uploads directory (only PDF files)
-    if (fs.existsSync(uploadsDir)) {
-      const files = fs.readdirSync(uploadsDir);
-      
-      let deletedCount = 0;
-      for (const file of files) {
-        const filePath = path.join(uploadsDir, file);
-        // Only delete files, not directories
-        if (fs.statSync(filePath).isFile() && file.toLowerCase().endsWith('.pdf')) {
-          fs.unlinkSync(filePath);
-          deletedCount++;
+        try {
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+            console.log(`Deleted image: ${filePath}`);
+          }
+        } catch (err) {
+          console.error(`Error deleting image ${filePath}:`, err);
         }
       }
       
-      console.log(`Cleared ${deletedCount} PDF files from uploads directory`);
+      // Try to remove the images directory if empty
+      try {
+        fs.rmdirSync(imagesDir);
+        console.log('Removed images directory');
+      } catch (err) {
+        console.error('Error removing images directory:', err);
+      }
+    } else {
+      console.log('Images directory does not exist');
+    }
+
+    // Clear main uploads directory
+    console.log(`Checking uploads directory: ${uploadsDir}`);
+    if (fs.existsSync(uploadsDir)) {
+      const files = fs.readdirSync(uploadsDir);
+      console.log(`Found ${files.length} files in uploads directory`);
+      
+      for (const file of files) {
+        const filePath = path.join(uploadsDir, file);
+        try {
+          // Skip if it's a directory (we already handled images dir)
+          if (fs.statSync(filePath).isDirectory()) {
+            console.log(`Skipping directory: ${filePath}`);
+            continue;
+          }
+          
+          fs.unlinkSync(filePath);
+          console.log(`Deleted file: ${filePath}`);
+        } catch (err) {
+          console.error(`Error deleting file ${filePath}:`, err);
+        }
+      }
+    } else {
+      console.log('Uploads directory does not exist');
     }
     
+    console.log('Uploads directory cleared successfully');
     return true;
   } catch (error) {
     console.error('Error clearing uploads directory:', error);
@@ -183,8 +217,24 @@ async function performFullCleanup() {
     
     // 4. Close MongoDB connection
     if (mongoose.connection.readyState === 1) {
-      await mongoose.connection.close();
-      console.log('MongoDB connection closed');
+      try {
+        await mongoose.connection.close();
+        console.log('MongoDB connection closed');
+      } catch (err) {
+        console.error('Error closing MongoDB connection:', err);
+      }
+    }
+    
+    // 5. Close server
+    try {
+      await new Promise((resolve) => {
+        server.close(() => {
+          console.log('Server closed');
+          resolve();
+        });
+      });
+    } catch (err) {
+      console.error('Error closing server:', err);
     }
     
     console.log('Cleanup summary:');
@@ -193,27 +243,39 @@ async function performFullCleanup() {
     console.log(`- Uploads directory: ${uploadsCleared ? 'Cleared ✓' : 'Failed ✗'}`);
     console.log('Application cleanup completed.');
     
+    return {
+      qdrantCleared,
+      mongoCleared,
+      uploadsCleared
+    };
   } catch (error) {
     console.error('Unexpected error during cleanup:', error);
+    return {
+      qdrantCleared,
+      mongoCleared,
+      uploadsCleared
+    };
   }
 }
 
 // Register server shutdown handlers
 process.on('SIGINT', async () => {
   console.log('\nServer shutting down (SIGINT)...');
-  await performFullCleanup();
-  process.exit(0);
+  const result = await performFullCleanup();
+  console.log('Shutdown complete with results:', result);
+  process.exit(result.qdrantCleared && result.mongoCleared && result.uploadsCleared ? 0 : 1);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\nServer shutting down (SIGTERM)...');
-  await performFullCleanup();
-  process.exit(0);
+  const result = await performFullCleanup();
+  console.log('Shutdown complete with results:', result);
+  process.exit(result.qdrantCleared && result.mongoCleared && result.uploadsCleared ? 0 : 1);
 });
 
-// Close gracefully on uncaught exceptions as well
 process.on('uncaughtException', async (error) => {
   console.error('Uncaught Exception:', error);
-  await performFullCleanup();
+  const result = await performFullCleanup();
+  console.log('Shutdown complete with results:', result);
   process.exit(1);
 });
