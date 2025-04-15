@@ -1,21 +1,29 @@
-// D:\rag-app\frontend\src\components\PDFUploader.js
+// FILE: frontend/src/components/PDFUploader.js (Full Code)
 
 import React, { useState, useRef } from 'react';
-import { uploadPDF } from '../api';
+import { uploadPDF } from '../api'; // Assumes api.js handles the fetch
 import './PDFUploader.css';
 
 const PDFUploader = ({ onUpload }) => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  // Remove uploadProgress state as backend now waits - use simple 'uploading' state
+  // const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
-    setFile(selectedFile);
-    setError(null);
-    setUploadProgress(0);
+    if (selectedFile && selectedFile.type === "application/pdf") {
+        setFile(selectedFile);
+        setError(null); // Clear error on new file selection
+    } else {
+        setFile(null);
+        setError("Please select a valid PDF file.");
+        if (fileInputRef.current) {
+            fileInputRef.current.value = ''; // Clear the input field
+        }
+    }
   };
 
   const handleUpload = async () => {
@@ -24,82 +32,78 @@ const PDFUploader = ({ onUpload }) => {
       return;
     }
 
+    setUploading(true);
+    setError(null);
+    // Remove progress simulation - backend handles the wait now
+
     try {
-      setUploading(true);
-      setUploadProgress(10); // Start progress
-
-      // Simulate progress during upload
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          const newProgress = prev + Math.random() * 20;
-          return newProgress > 90 ? 90 : newProgress; // Cap at 90% until complete
-        });
-      }, 500);
-
+      // uploadPDF now waits for backend processing
       const response = await uploadPDF(file);
-      
-      clearInterval(progressInterval);
-      
-      if (response.success) {
-        setUploadProgress(100);
-        setFile(null);
+
+      if (response.success && response.pdf) {
+        logger.info(`Upload and processing successful for ${response.pdf.originalName}`);
+        setFile(null); // Clear the selected file state
         if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+          fileInputRef.current.value = ''; // Clear the actual file input element
         }
-        setTimeout(() => {
-          onUpload();
-          setUploadProgress(0);
-        }, 1000);
+        // Call the callback passed from parent (RAGInterface) to refresh the list
+        if (onUpload) {
+          onUpload(); // This should trigger loadPDFs in RAGInterface
+        }
       } else {
-        setError('Upload failed: ' + response.message);
-        setUploadProgress(0);
+        // Handle failure response from backend
+        const errorMessage = `Upload failed: ${response.message || 'Unknown error from server'}`;
+        logger.error(errorMessage);
+        setError(errorMessage);
       }
     } catch (err) {
-      console.error('Error in handleUpload:', err);
-      setError('Error uploading PDF');
-      setUploadProgress(0);
+      // Handle network errors or other exceptions during the fetch
+      logger.error('Error during handleUpload:', err);
+      const networkError = `Error uploading file: ${err.message || 'Network error or server unreachable'}`;
+      setError(networkError);
     } finally {
-      setUploading(false);
+      setUploading(false); // Set uploading false whether success or failure
     }
+  };
+
+  // Helper logger (can be removed if console is sufficient)
+  const logger = {
+      info: console.log,
+      warn: console.warn,
+      error: console.error
   };
 
   return (
     <div className="pdf-uploader">
       <div className="file-input-container">
-        <input 
-          type="file" 
+        <input
+          type="file"
           id="pdf-upload"
           ref={fileInputRef}
-          accept="application/pdf" 
-          onChange={handleFileChange} 
+          accept="application/pdf"
+          onChange={handleFileChange}
           disabled={uploading}
           className="file-input"
         />
-        <label htmlFor="pdf-upload" className="file-label">
+        <label htmlFor="pdf-upload" className={`file-label ${uploading ? 'disabled' : ''}`}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
             <path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M13,15V9H11V15H8L12,19L16,15H13M13,7V3.5L18.5,9H13V7Z" />
           </svg>
           <span>{file ? file.name : 'Choose PDF file'}</span>
         </label>
       </div>
-      
-      {uploadProgress > 0 && (
-        <div className="progress-container">
-          <div 
-            className="progress-bar" 
-            style={{ width: `${uploadProgress}%` }}
-          ></div>
-        </div>
-      )}
-      
-      <button 
+
+      {/* Remove determinate progress bar, show generic loading state */}
+      {/* {uploadProgress > 0 && (...) } */}
+
+      <button
         className="upload-button btn btn-primary"
-        onClick={handleUpload} 
-        disabled={uploading || !file}
+        onClick={handleUpload}
+        disabled={uploading || !file} // Disable if uploading or no file
       >
-        {uploading ? 'Uploading...' : 'Upload Document'}
+        {uploading ? 'Processing...' : 'Upload & Process'} {/* Update button text */}
       </button>
-      
+
       {error && <div className="error-message">{error}</div>}
     </div>
   );
