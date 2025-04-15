@@ -1,865 +1,264 @@
+# FILE: python/local_llm.py
+# (Adds pdf_id argument and filtering to Qdrant search)
+
 import argparse
 import json
 import logging
 import re
 import sys
 import requests
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models # Import models for Filter
 from sentence_transformers import SentenceTransformer
+from llm.ollama_llm import OllamaLLM
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def detect_command_type(query):
-    """Detect the type of command from the user query."""
-    query = query.lower()
+# --- Configuration ---
+QDRANT_HOST = "localhost"
+QDRANT_PORT = 6333
+EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+LLM_MODEL_NAME = 'tinyllama'
+DEFAULT_COLLECTION = 'documents'
+CONTEXT_RETRIEVAL_LIMIT = 5
+MAX_CONTEXT_CHAR_LIMIT = 4096 # Keep updated limit
+MAX_HISTORY_TOKENS = 500
+# --- End Configuration ---
 
-    if any(term in query for term in ["summarize", "summary", "summarize document", "give full summary"]):
-        return "summary"
-    elif re.search(r"define\s+([a-z\s]+)", query):
-        term = re.search(r"define\s+([a-z\s]+)", query).group(1).strip()
-        return "definition", term
-    elif any(term in query for term in ["create questions", "sample questions", "generate questions"]):
-        return "questions"
-    elif "list topics" in query or "main topics" in query or "key topics" in query:
-        return "topics"
-    elif "explain each topic" in query or "explain all topics" in query:
-        return "explain_topics"
-    else:
-        return "regular_query"
+# --- Client/Model Initialization (Keep as before) ---
+embedding_model = None
+llm = None
+try:
+    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    logger.info(f"Embedding model '{EMBEDDING_MODEL_NAME}' loaded.")
+except Exception as e: logger.critical(f"CRITICAL: Embedding model load failed: {e}", exc_info=True); sys.exit(1)
+try:
+    llm = OllamaLLM(model_name=LLM_MODEL_NAME)
+    logger.info(f"LLM instance for '{LLM_MODEL_NAME}' created.")
+except Exception as e: logger.critical(f"CRITICAL: LLM init failed: {e}", exc_info=True); sys.exit(1)
 
-def generate_summary(client, collection_name):
-    """Generate a comprehensive summary of the document with complete page content."""
-    logger.info(f"Generating summary for collection: {collection_name}")
+def get_qdrant_client():
+    try:
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=20)
+        client.get_collections(); logger.info(f"Connected to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
+        return client
+    except Exception as e: logger.error(f"Failed to connect to Qdrant: {str(e)}"); raise ConnectionError(f"Could not connect to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}") from e
+# --- End Client/Model Initialization ---
+
+# --- Core RAG Functions ---
+
+# *** MODIFIED retrieve_context to accept and use pdf_id for filtering ***
+def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT):
+    """Retrieve context from Qdrant for a specific PDF ID based on query."""
+    if not embedding_model: raise RuntimeError("Embedding model is not loaded.")
+    if not pdf_id_filter:
+         logger.error("pdf_id_filter is required for retrieving context.")
+         return [] # Cannot retrieve without knowing which document
 
     try:
-        # First, verify the collection exists
-        collections = client.get_collections()
-        collection_exists = any(c.name == collection_name for c in collections.collections)
-        
-        if not collection_exists:
-            return {
-                "answer": f"Collection '{collection_name}' does not exist.",
-                "sources": []
-            }
+        query_embedding = embedding_model.encode(query).tolist()
 
-        # Get all points from the collection
-        search_result = client.scroll(
-            collection_name=collection_name,
-            limit=100,
-            with_payload=True
+        # *** CREATE QDRANT FILTER ***
+        qdrant_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="pdf_id", # The field stored in the payload
+                    match=models.MatchValue(value=pdf_id_filter)
+                )
+            ]
         )
+        logger.info(f"Searching collection '{collection_name}' (limit={limit}) with filter for pdf_id='{pdf_id_filter}'...")
 
-        points = search_result[0]
-        logger.info(f"Retrieved {len(points)} points from collection")
-
-        if not points:
-            return {
-                "answer": "I couldn't find any content to summarize.",
-                "sources": []
-            }
-
-        # Sort points by page number
-        points.sort(key=lambda x: x.payload.get('page', 0))
-
-        # Extract text content from each page
-        page_contents = []
-        for point in points:
-            page_num = point.payload.get('page', 0)
-            text = point.payload.get('text', '')
-
-            # Skip empty text
-            if not text or text.strip() == '':
-                continue
-
-            page_contents.append({
-                'page': page_num,
-                'text': text.strip(),
-                'document': point.payload.get('document', 'Unknown')
-            })
-
-        # Create a structured summary
-        total_pages = len(page_contents)
-
-        summary = f"Document Summary: {page_contents[0]['document']}\n\n"
-        summary += f"This document contains {total_pages} pages of content.\n\n\n"
-        summary += f"Key Content By Page:\n\n"
-
-        # Add content from each page without truncation
-        for page in page_contents:
-            page_num = page['page']
-            text = page['text']
-
-            summary += f"Page {page_num}:\n{text}\n\n"
-
-        # Add usage instructions
-        summary += "\nHow to use this document:\n\n"
-        summary += "You can ask specific questions about any topic in the document for detailed information.\n\n"
-        summary += "Try queries like:\n"
-        summary += "• What does the document say about [specific topic]?\n"
-        summary += "• Define [term] from the document\n"
-        summary += "• Generate sample questions from the document\n"
-        summary += "• List the main topics in this document\n"
-
-        # Create sources for the first few pages
-        sources = [{'page': page['page'], 'document': page['document']} for page in page_contents[:5]]
-
-        return {
-            "answer": summary,
-            "sources": sources
-        }
-
-    except Exception as e:
-        logger.error(f"Error generating summary: {str(e)}")
-        return {
-            "answer": f"I encountered an error while generating the summary: {str(e)}",
-            "sources": []
-        }
-
-def clean_format_text(text):
-    """Clean and format text for better readability."""
-    import re
-    
-    # Remove reference markers
-    text = re.sub(r'\*\*Reference \d+( \(Page \d+\))?\*\*:', '', text)
-    
-    # Remove heading markers at beginning
-    text = re.sub(r'^# [^\n]+\n', '', text)
-    text = re.sub(r'^## [^\n]+\n', '', text)
-    
-    # Clean up multiple newlines
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    
-    return text.strip()
-
-def format_bullet_points(text):
-    """Ensure bullet points are properly formatted."""
-    import re
-    
-    # Replace inline bullet points with properly formatted ones
-    text = re.sub(r'([.!?])\s+[●○•]\s+', r'\1\n\n• ', text)
-    text = re.sub(r'\n[●○•]\s+', '\n• ', text)
-    
-    # Convert circular bullets to standard bullet points
-    text = text.replace('●', '•')
-    text = text.replace('○', '  •')
-    
-    return text
-
-def generate_definition(client, collection_name, term):
-    """Find and generate a definition for a specific term in the document."""
-    try:
-        logger.info(f"Starting definition generation for term '{term}' from collection {collection_name}")
-
-        # Verify collection exists
-        collections = client.get_collections()
-        collection_exists = any(c.name == collection_name for c in collections.collections)
-        
-        if not collection_exists:
-            return {
-                "answer": f"Collection '{collection_name}' does not exist.",
-                "sources": []
-            }
-
-        # Create an embedding for the term
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        query_embedding = model.encode(f"definition of {term}").tolist()
-
-        # Search for content related to this term using search instead of query_points
         search_results = client.search(
             collection_name=collection_name,
             query_vector=query_embedding,
-            limit=15,  # Get more results for better context
+            query_filter=qdrant_filter, # *** APPLY FILTER ***
+            limit=limit,
             with_payload=True
         )
+        logger.info(f"Retrieved {len(search_results)} results from Qdrant for pdf_id '{pdf_id_filter}'.")
 
-        if not search_results:
-            return {
-                "answer": f"I couldn't find a definition for '{term}' in the document.",
-                "sources": []
-            }
-
-        # Extract and format results
-        definition_parts = []
-        definition_parts.append(f"# Definition of '{term}'\n")
-
-        # Look for sentences containing the term
-        term_pattern = re.compile(r'(.*\b' + re.escape(term) + r'\b[^.!?]*[.!?])', re.IGNORECASE)
-
-        # Also look for similar terms (e.g., COCOMO vs COCOMO model)
-        term_words = term.lower().split()
-        similar_patterns = []
-
-        # Create patterns for partial matches with 2 or more words
-        if len(term_words) >= 2:
-            for i in range(len(term_words)):
-                partial_term = ' '.join(term_words[:i] + term_words[i+1:])
-                if len(partial_term.split()) >= 1:  # At least one word
-                    similar_patterns.append(re.compile(r'(.*\b' + re.escape(partial_term) + r'\b[^.!?]*[.!?])', re.IGNORECASE))
-
-        definition_sentences = []
-        sources = []
-        found_paragraphs = set()  # Track paragraphs to avoid duplication
-
-        # First pass: look for exact matches
-        for result in search_results:
-            payload = result.payload if hasattr(result, 'payload') else result
-            text = payload.get('text', '')
-            matches = term_pattern.findall(text)
-
-            if matches:
-                for match in matches:
-                    if match not in found_paragraphs:
-                        definition_sentences.append(match)
-                        found_paragraphs.add(match)
-
-            sources.append({
-                "page": payload.get('page', 0),
-                "text": text[:200] + "..." if len(text) > 200 else text,
-                "document": payload.get('source', 'Document'),
-                "score": getattr(result, 'score', 1.0) if hasattr(result, 'score') else 1.0
-            })
-
-        # Second pass: look for similar terms if exact matches weren't found
-        if len(definition_sentences) < 3:
-            for pattern in similar_patterns:
-                for result in search_results:
-                    payload = result.payload if hasattr(result, 'payload') else result
-                    text = payload.get('text', '')
-                    matches = pattern.findall(text)
-
-                    if matches:
-                        for match in matches:
-                            if match not in found_paragraphs:
-                                definition_sentences.append(match)
-                                found_paragraphs.add(match)
-
-                # If we have enough definitions now, break
-                if len(definition_sentences) >= 5:
-                    break
-
-        # Format the answer
-        if definition_sentences:
-            definition_parts.append("Based on the document, here's the definition and related information about this term:\n")
-
-            # Include full paragraphs for better context - up to 10 sentences
-            for i, sentence in enumerate(definition_sentences[:10]):
-                definition_parts.append(f"**{i+1}.** {sentence.strip()}\n")
-        else:
-            # If no exact sentence matches, use the relevant sections
-            definition_parts.append("I couldn't find an explicit definition, but here's relevant information about this term:\n")
-
-            for i, result in enumerate(search_results[:5]):
-                payload = result.payload if hasattr(result, 'payload') else result
-                text = payload.get('text', '')
-
-                # Include full text for better context
-                definition_parts.append(f"**Reference {i+1} (Page {payload.get('page', 0)})**: {text}\n")
-
-        # Add an overall summary if multiple pieces of information were found
-        if len(definition_sentences) > 1 or (not definition_sentences and len(search_results) > 1):
-            definition_parts.append("\n## Summary\n")
-            definition_parts.append(f"The term '{term}' appears to be related to {', '.join([result.payload.get('text', '')[:50].strip() + '...' for result in search_results[:3]])}. You can ask follow-up questions for more specific aspects of this concept.\n")
-
-        return {
-            "answer": '\n'.join(definition_parts),
-            "sources": sources[:5]  # Limit to top 5 sources
-        }
-
-    except Exception as e:
-        logger.error(f"Error generating definition: {str(e)}", exc_info=True)
-        return {
-            "answer": f"Sorry, I encountered an error finding the definition: {str(e)}",
-            "sources": []
-        }
-
-def generate_questions(client, collection_name):
-    """Generate sample questions based on the document content."""
-    try:
-        # Verify collection exists
-        collections = client.get_collections()
-        collection_exists = any(c.name == collection_name for c in collections.collections)
-        
-        if not collection_exists:
-            return {
-                "answer": f"Collection '{collection_name}' does not exist.",
-                "sources": []
-            }
-
-        # Get points from the collection
-        all_points = []
-        offset = None
-        limit = 50
-
-        while True:
-            points_batch, next_offset = client.scroll(
-                collection_name=collection_name,
-                limit=limit,
-                offset=offset,
-                with_payload=True
-            )
-
-            all_points.extend(points_batch)
-
-            if next_offset is None or len(all_points) >= 100:
-                break
-
-            offset = next_offset
-
-        if not all_points:
-            return {
-                "answer": "I couldn't find any content to generate questions from.",
-                "sources": []
-            }
-
-        # Extract text content
-        text_points = []
-        for point in all_points:
-            payload = point.payload if hasattr(point, 'payload') else point
-            if 'text' in payload and payload.get('text'):
-                text_points.append(point)
-
-        if not text_points:
-            return {
-                "answer": "I couldn't find any text content to generate questions from.",
-                "sources": []
-            }
-
-        # Sort by page number
-        text_points.sort(key=lambda p: p.payload.get('page', 0) if hasattr(p, 'payload') else p.get('page', 0))
-
-        # Generate questions based on content
-        questions = []
-        sources = []
-
-        # Create generic question patterns
-        question_patterns = [
-            "What is {0}?",
-            "Explain the concept of {0} in detail.",
-            "How does {0} relate to {1} in the context of this document?",
-            "What are the main components or characteristics of {0}?",
-            "Why is {0} important in this field?",
-            "Describe the process of {0} as explained in the document.",
-            "What are the advantages and disadvantages of {0}?",
-            "Compare and contrast {0} and {1} based on the document.",
-            "How is {0} implemented or applied in practice?",
-            "What challenges or limitations are associated with {0}?",
-            "What is the purpose of {0} in the context of {1}?",
-            "How has {0} evolved over time according to the document?",
-            "What are the key principles behind {0}?",
-            "How would you calculate or measure {0}?",
-            "What factors influence {0}?"
+        # Filter results to ensure they have valid text payload (redundant if only text stored, good practice)
+        valid_results = [
+            hit for hit in search_results
+            if hit.payload and isinstance(hit.payload.get("text"), str) and hit.payload.get("text").strip()
         ]
-
-        # Extract potential topics
-        topics = set()
-        full_text = ""
-
-        for point in text_points:
-            payload = point.payload if hasattr(point, 'payload') else point
-            text = payload.get('text', '')
-            full_text += " " + text
-
-            # Add this as a source if we don't have too many
-            if len(sources) < 5:
-                sources.append({
-                    "page": payload.get('page', 0),
-                    "text": text[:200] + "..." if len(text) > 200 else text,
-                    "document": payload.get('source', 'Document')
-                })
-
-        # Find capitalized terms or terms that might be important topics
-        topic_matches = re.findall(r'\b([A-Z][a-zA-Z]*(?:\s+[a-zA-Z]+){0,3})\b', full_text)
-        topics.update(topic_matches)
-
-        # Add acronyms and all-caps terms
-        acronym_matches = re.findall(r'\b([A-Z]{2,})\b', full_text)
-        topics.update(acronym_matches)
-
-        # Find terms before colons (often definitions)
-        colon_matches = re.findall(r'([a-zA-Z\s]+):', full_text)
-        topics.update([match.strip() for match in colon_matches if len(match.strip()) > 3])
-
-        # Find terms with numbers (like "COCOMO-II", "Type 1", etc.)
-        numeric_matches = re.findall(r'\b([a-zA-Z]+[\-\s][0-9IVX]+)\b', full_text)
-        topics.update(numeric_matches)
-
-        # Filter out too short or too long topics
-        filtered_topics = [topic for topic in topics if 3 < len(topic) < 30]
-
-        # Get the most important topics based on frequency
-        topic_count = {}
-        for topic in filtered_topics:
-            if topic.lower() in topic_count:
-                topic_count[topic.lower()] += 1
-            else:
-                topic_count[topic.lower()] = 1
-
-        # Sort topics by frequency
-        sorted_topics = sorted(topic_count.items(), key=lambda x: x[1], reverse=True)
-        top_topics = [item[0] for item in sorted_topics[:20]]  # Top 20 topics
-
-        # Generate questions about the topics
-        for i, pattern in enumerate(question_patterns):
-            if i >= 15 or i >= len(top_topics):  # Limit to 15 questions
-                break
-
-            topic = top_topics[i]
-
-            # Find a second topic that's different from the first
-            second_topic = None
-            for t in top_topics:
-                if t != topic:
-                    second_topic = t
-                    break
-
-            if second_topic is None:
-                second_topic = topic
-
-            # Format the question
-            if "{1}" in pattern:
-                question = pattern.format(topic.title(), second_topic.title())
-            else:
-                question = pattern.format(topic.title())
-
-            questions.append(question)
-
-        # Format the response
-        answer_parts = []
-        answer_parts.append("# Sample Questions About This Document\n")
-
-        if questions:
-            answer_parts.append("Here are some questions you could ask about the content in this document:\n")
-
-            for i, question in enumerate(questions, 1):
-                answer_parts.append(f"{i}. {question}")
-
-            answer_parts.append("\nThese questions are based on key topics found in the document. You can ask any of these questions or formulate your own specific questions about the content.")
-        else:
-            answer_parts.append("I couldn't generate specific questions from the content. Try asking about specific topics in the document.")
-
-        return {
-            "answer": '\n'.join(answer_parts),
-            "sources": sources
-        }
-
+        if len(valid_results) < len(search_results):
+             logger.warning(f"Filtered out {len(search_results) - len(valid_results)} results lacking valid text payload (unexpected with filter).")
+        return valid_results
     except Exception as e:
-        logger.error(f"Error generating questions: {str(e)}", exc_info=True)
-        return {
-            "answer": f"Sorry, I encountered an error generating questions: {str(e)}",
-            "sources": []
-        }
+        logger.error(f"Error retrieving context from Qdrant: {e}", exc_info=True)
+        return []
 
-def generate_topics(client, collection_name):
-    """Extract and list the main topics covered in the document."""
-    try:
-        # Verify collection exists
-        collections = client.get_collections()
-        collection_exists = any(c.name == collection_name for c in collections.collections)
-        
-        if not collection_exists:
-            return {
-                "answer": f"Collection '{collection_name}' does not exist.",
-                "sources": []
-            }
-
-        # Get content from the collection
-        all_points = []
-        offset = None
-        limit = 50
-
-        while True:
-            points_batch, next_offset = client.scroll(
-                collection_name=collection_name,
-                limit=limit,
-                offset=offset,
-                with_payload=True
-            )
-
-            all_points.extend(points_batch)
-
-            if next_offset is None or len(all_points) >= 100:
-                break
-
-            offset = next_offset
-
-        if not all_points:
-            return {
-                "answer": "I couldn't find any content to extract topics from.",
-                "sources": []
-            }
-
-        # Extract text content
-        text_points = []
-        for point in all_points:
-            payload = point.payload if hasattr(point, 'payload') else point
-            if 'text' in payload and payload.get('text'):
-                text_points.append(point)
-
-        if not text_points:
-            return {
-                "answer": "I couldn't find any text content to extract topics from.",
-                "sources": []
-            }
-
-        # Concatenate content
-        all_text = " ".join([point.payload.get('text', '') if hasattr(point, 'payload') else point.get('text', '') for point in text_points])
-
-        # Extract potential topics (capitalized phrases, phrases before colons, numeric sections)
-        topic_patterns = [
-            r'\b([A-Z][a-zA-Z]*(?:\s+[A-Z]?[a-zA-Z]*){0,3})\b',  # Capitalized terms
-            r'([^.!?:]+):',  # Phrases before colons
-            r'(\d+(?:\.\d+)*)\s+([^.!?]+)',  # Numbered sections
-            r'•\s*([^•\n]+)'  # Bullet points
-        ]
-
-        topics = []
-
-        for pattern in topic_patterns:
-            matches = re.findall(pattern, all_text)
-            for match in matches:
-                if isinstance(match, tuple):
-                    # For tuple matches, use the last group
-                    topic = match[-1]
-                else:
-                    topic = match
-
-                # Clean up the topic
-                topic = topic.strip()
-                if len(topic) > 5 and len(topic) < 50:  # Reasonable topic length
-                    topics.append(topic)
-
-        # Remove duplicates and sort by frequency
-        topic_count = {}
-        for topic in topics:
-            topic_lower = topic.lower()
-            if topic_lower in topic_count:
-                topic_count[topic_lower]['count'] += 1
-            else:
-                topic_count[topic_lower] = {'text': topic, 'count': 1}
-
-        # Sort by count (descending)
-        sorted_topics = sorted(topic_count.values(), key=lambda x: x['count'], reverse=True)
-
-        # Format the response
-        answer_parts = []
-        answer_parts.append("# Main Topics in This Document\n")
-
-        if sorted_topics:
-            answer_parts.append("Here are the key topics covered in this document:\n")
-
-            # Group topics by pages they appear on
-            topic_pages = {}
-            for topic in sorted_topics[:30]:  # Top 30 topics
-                topic_text = topic['text']
-                topic_pages[topic_text] = set()
-
-                for point in text_points:
-                    payload = point.payload if hasattr(point, 'payload') else point
-                    if topic_text.lower() in payload.get('text', '').lower():
-                        topic_pages[topic_text].add(payload.get('page', 0))
-
-            # Format the topic list with page references
-            for i, topic in enumerate(sorted_topics[:30], 1):
-                topic_text = topic['text']
-                pages = sorted(topic_pages[topic_text])
-
-                if pages:
-                    page_str = f"(Pages: {', '.join(map(str, pages))})"
-                else:
-                    page_str = ""
-
-                answer_parts.append(f"{i}. **{topic_text}** {page_str}")
-
-        else:
-            answer_parts.append("I couldn't identify specific topics in this document.")
-
-        # Create sources from the first few pages
-        sources = []
-        used_pages = set()
-
-        for point in text_points:
-            payload = point.payload if hasattr(point, 'payload') else point
-            page = payload.get('page', 0)
-            if page not in used_pages and len(sources) < 5:
-                sources.append({
-                    "page": page,
-                    "text": payload.get('text', '')[:200] + "..." if len(payload.get('text', '')) > 200 else payload.get('text', ''),
-                    "document": payload.get('source', 'Document')
-                })
-                used_pages.add(page)
-
-        return {
-            "answer": '\n'.join(answer_parts),
-            "sources": sources
-        }
-
-    except Exception as e:
-        logger.error(f"Error extracting topics: {str(e)}", exc_info=True)
-        return {
-            "answer": f"Sorry, I encountered an error extracting topics: {str(e)}",
-            "sources": []
-        }
-
-def explain_topics(client, collection_name):
-    """Explain each topic in the document in detail."""
-    try:
-        # Verify collection exists
-        collections = client.get_collections()
-        collection_exists = any(c.name == collection_name for c in collections.collections)
-        
-        if not collection_exists:
-            return {
-                "answer": f"Collection '{collection_name}' does not exist.",
-                "sources": []
-            }
-
-        # First get the topics
-        topics_result = generate_topics(client, collection_name)
-        
-        if "I couldn't identify specific topics" in topics_result["answer"]:
-            return {
-                "answer": "I couldn't identify specific topics to explain. The document may not contain clearly defined topics.",
-                "sources": []
-            }
-            
-        # Extract topic names from the result
-        topic_pattern = r'\*\*(.*?)\*\*'
-        topics = re.findall(topic_pattern, topics_result["answer"])
-        
-        if not topics:
-            return {
-                "answer": "I found topics but couldn't extract them properly for detailed explanation.",
-                "sources": []
-            }
-            
-        # Limit to top 10 topics
-        topics = topics[:10]
-        
-        # For each topic, find relevant content
-        explanations = []
-        all_sources = []
-        
-        for topic in topics:
-            # Create an embedding for the topic
-            model = SentenceTransformer('all-MiniLM-L6-v2')
-            query_embedding = model.encode(f"explain {topic}").tolist()
-            
-            # Search for content related to this topic
-            search_results = client.search(
-                collection_name=collection_name,
-                query_vector=query_embedding,
-                limit=3,  # Get top 3 results per topic
-                with_payload=True
-            )
-            
-            if search_results:
-                explanation = f"## {topic}\n\n"
-                
-                # Combine the content from the search results
-                content = []
-                for result in search_results:
-                    payload = result.payload if hasattr(result, 'payload') else result
-                    text = payload.get('text', '')
-                    if text:
-                        content.append(text)
-                        
-                        # Add to sources if not too many
-                        if len(all_sources) < 15:
-                            all_sources.append({
-                                "page": payload.get('page', 0),
-                                "text": text[:200] + "..." if len(text) > 200 else text,
-                                "document": payload.get('source', 'Document'),
-                                "topic": topic
-                            })
-                
-                if content:
-                    # Join the content and add to explanations
-                    explanation += "\n".join(content)
-                    explanations.append(explanation)
-            
-        if explanations:
-            answer = "# Detailed Topic Explanations\n\n"
-            answer += "Here are detailed explanations for the main topics in the document:\n\n"
-            answer += "\n\n".join(explanations)
-            
-            return {
-                "answer": answer,
-                "sources": all_sources[:10]  # Limit to 10 sources
-            }
-        else:
-            return {
-                "answer": "I couldn't find detailed explanations for the topics in the document.",
-                "sources": []
-            }
-            
-    except Exception as e:
-        logger.error(f"Error explaining topics: {str(e)}", exc_info=True)
-        return {
-            "answer": f"Sorry, I encountered an error explaining the topics: {str(e)}",
-            "sources": []
-        }
-
-def process_regular_query(query, client, collection_name):
-    """Process a regular query by searching for relevant content."""
-    logger.info(f"Processing regular query: {query}")
-
-    try:
-        # Verify collection exists
-        collections = client.get_collections()
-        collection_exists = any(c.name == collection_name for c in collections.collections)
-        
-        if not collection_exists:
-            return {
-                "answer": f"Collection '{collection_name}' does not exist.",
-                "sources": []
-            }
-
-        # Generate embedding for the query
-        model = SentenceTransformer('all-MiniLM-L6-v2')
-        embedding = model.encode(query).tolist()
-        
-        if not embedding:
-            return {"answer": "I couldn't generate an embedding for your query. Please try again.", "sources": []}
-
-        # Search for similar content in Qdrant
-        search_result = client.search(
-            collection_name=collection_name,
-            query_vector=embedding,
-            limit=10
-        )
-
-        if not search_result:
-            logger.info("No relevant content found")
-            return {"answer": "I couldn't find any relevant information.", "sources": []}
-
-        # Extract content and relevance from the search results
-        context = []
-        sources = []
-
-        for hit in search_result:
-            payload = hit.payload
-
-            # Extract text - handle different possible payload structures
-            text = ""
-            if "text" in payload:
-                text = payload["text"]
-            elif "content" in payload:
-                text = payload["content"]
-
-            # Add context and source information
-            if text and text.strip():  # Only add non-empty text
-                context.append({
-                    "text": text,
-                    "score": hit.score,
-                    "page": payload.get("page", "Unknown"),
-                    "document": payload.get("document_name", "Unknown")
-                })
-
-                sources.append({
-                    "page": payload.get("page", "Unknown"),
-                    "document": payload.get("document_name", "Unknown"),
-                    "score": hit.score
-                })
-
-        if not context:
-            logger.info("No text content found in results")
-            return {"answer": "I found matches but couldn't extract useful text content.", "sources": []}
-
-        # Create a formatted answer from the retrieved content
-        answer = format_answer(query, context)
-
-        return {
-            "answer": answer,
-            "sources": sources[:5]  # Limit to top 5 sources
-        }
-
-    except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
-        return {"answer": f"I encountered an error while processing your query: {str(e)}", "sources": []}
-
-def format_answer(query, context):
-    """Format the answer in a clean, readable way."""
-    # Sort context by relevance score
-    sorted_context = sorted(context, key=lambda x: x.get("score", 0), reverse=True)
-
-    # Extract text from the top results
-    content_texts = [item["text"] for item in sorted_context[:5]]
-    combined_text = "\n\n".join(content_texts)
-
-    # Clean up the text
-    answer = clean_format_text(combined_text)
-
-    # Format bullet points properly
-    answer = format_bullet_points(answer)
-
-    return answer
-
-def main():
-    """Main function to process the query."""
-    parser = argparse.ArgumentParser(description='Process a query for RAG')
-    parser.add_argument('query', type=str, help='The query to process')
-    parser.add_argument('--collection_name', type=str, default='documents', help='Qdrant collection name')
-
-    args = parser.parse_args()
-    query = args.query
-    collection_name = args.collection_name
-
-    try:
-        # Connect to Qdrant and verify connection
-        client = QdrantClient(host="localhost", port=6333)
+# format_context_for_llm remains the same
+def format_context_for_llm(results):
+    context_str = ""; sources = []
+    if not results: return context_str, sources
+    logger.info("Formatting context for LLM...")
+    for i, hit in enumerate(results):
         try:
-            client.get_collections()  # Test connection
-        except Exception as e:
-            logger.error(f"Failed to connect to Qdrant: {str(e)}")
-            error_response = {
-                "answer": f"Failed to connect to Qdrant database: {str(e)}",
-                "sources": []
-            }
-            print(json.dumps(error_response))
-            sys.exit(1)
+            payload = hit.payload if isinstance(hit.payload, dict) else {}
+            text = payload.get("text", "")
+            page = payload.get("page", "N/A")
+            doc_name = payload.get("source", "Unknown Document")
+            score = hit.score if hasattr(hit, 'score') else 0.0
+            if text and text.strip():
+                context_str += f"Source [{i+1}] (Page: {page}, Document: {doc_name}, Score: {score:.3f}):\n{text}\n\n"
+                sources.append({"id": i + 1, "page": page, "document": doc_name, "score": score})
+        except Exception as e: logger.warning(f"Failed format hit {i}: {e}")
+    return context_str.strip(), sources
 
-        # Generate embedding for the query
-        logger.info(f"Generating embedding for query: {query}")
+# estimate_tokens remains the same
+def estimate_tokens(text): return len(text.split())
 
-        # Detect command type
-        command = detect_command_type(query)
-
-        # Process based on command type
-        if command == "summary":
-            logger.info(f"Generating document summary")
-            result = generate_summary(client, collection_name)
-        elif isinstance(command, tuple) and command[0] == "definition":
-            term = command[1]
-            logger.info(f"Generating definition for term: {term}")
-            result = generate_definition(client, collection_name, term)
-        elif command == "questions":
-            logger.info(f"Generating sample questions")
-            result = generate_questions(client, collection_name)
-        elif command == "topics":
-            logger.info(f"Extracting main topics")
-            result = generate_topics(client, collection_name)
-        elif command == "explain_topics":
-            logger.info(f"Explaining topics in detail")
-            result = explain_topics(client, collection_name)
-        else:
-            logger.info(f"Processing regular query for collection: {collection_name}")
-            result = process_regular_query(query, client, collection_name)
-
-        # Print the result as JSON
-        print(json.dumps(result))
-
+# generate_rag_response remains the same (takes context string, doesn't need pdf_id directly)
+def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
+    if not llm: raise RuntimeError("LLM is not initialized.")
+    if not system_instruction:
+        system_instruction = ("...") # Default prompt from previous step
+    history_str = ""
+    if chat_history: # Format history (same as before)
+        token_count = 0
+        for turn in reversed(chat_history):
+            turn_text = f"User: {turn.get('user', '')}\nAssistant: {turn.get('assistant', '')}\n"
+            turn_tokens = estimate_tokens(turn_text)
+            if token_count + turn_tokens > MAX_HISTORY_TOKENS: break
+            history_str = turn_text + history_str; token_count += turn_tokens
+        if history_str: history_str = f"Previous Conversation:\n---\n{history_str.strip()}\n---\n\n"
+    if context_str and len(context_str) > MAX_CONTEXT_CHAR_LIMIT: # Truncate
+        logger.warning(f"Context length ({len(context_str)}) exceeds limit ({MAX_CONTEXT_CHAR_LIMIT}), truncating.")
+        context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT] + "..."
+    if not context_str:
+         prompt_for_llm = f"{history_str}Instruction: {system_instruction}\n\nUser Question: {query}\n\nContext: [No relevant context provided]\n\nAssistant Answer:"
+    else:
+        prompt_for_llm = (f"{history_str}Instruction: {system_instruction}\n\nContext:\n---\n{context_str}\n---\n\nUser Question: {query}\n\nAssistant Answer (Cite sources like [1]):")
+    logger.info(f"Sending request to LLM '{LLM_MODEL_NAME}'...")
+    try:
+        response = llm.generate_response(prompt_for_llm)
+        logger.info("Received response from LLM.")
+        response = response.split("Assistant Answer")[-1].strip(':').strip()
+        return response
     except Exception as e:
-        logger.error(f"Error: {str(e)}", exc_info=True)
-        error_response = {
-            "answer": f"Sorry, I encountered an error: {str(e)}",
-            "sources": []
-        }
-        print(json.dumps(error_response))
-        return 1
+        logger.error(f"LLM generation failed: {e}", exc_info=True)
+        return "Sorry, an error occurred during LLM generation."
 
-    return 0
+# --- Command Processing (modified to pass pdf_id_filter) ---
+
+def detect_command_type(query):
+    # Same detection logic as before
+    query_lower = query.lower().strip()
+    if query_lower.startswith("extract keywords") or query_lower.startswith("list keywords"): return "keywords"
+    if any(term in query_lower for term in ["explain each topic", "explain all topics"]): return "explain_topics"
+    if "list topics" in query_lower or "main topics" in query_lower or "key topics" in query_lower: return "topics"
+    if query_lower.startswith("summarize"): return "summary"
+    if query_lower.startswith("define "):
+        match = re.match(r"define\s+(.+)", query, re.IGNORECASE)
+        if match:
+            term = match.group(1).strip().rstrip('?.!'); term = re.sub(r'[^\w\s-]', '', term);
+            if term: return "definition", term
+    if any(term in query_lower for term in ["create questions", "sample questions", "generate questions"]): return "questions"
+    return "regular_query"
+
+# *** MODIFIED process_command to accept and pass pdf_id_filter ***
+def process_command(client, collection_name, query, chat_history, pdf_id_filter, command_type, command_details=None):
+    logger.info(f"Processing command: {command_type} for PDF ID: {pdf_id_filter}")
+    retrieval_query = query; system_instruction = None; limit = 5; query_for_llm = query
+    # Define command specifics (same prompts as before)
+    if command_type == "summary":
+        retrieval_query = "Overall document content summary key points"; limit = 15
+        system_instruction = "Summarize the text comprehensively based ONLY on the provided context..."; query_for_llm = "Summarize."
+    elif command_type == "definition":
+        term = command_details; limit = 7
+        if not term: return {"answer": "Please specify term.", "sources": []}
+        retrieval_query = f"Definition of '{term}'"; system_instruction = f"Based ONLY on context, define '{term}'..."; query_for_llm = f"Define '{term}'."
+    elif command_type == "questions":
+        retrieval_query = "Key points for question generation"; limit = 10
+        system_instruction = "Based ONLY on context, generate 3-5 insightful questions..."; query_for_llm = "Generate questions."
+    elif command_type == "topics":
+         retrieval_query = "Main themes and topics"; limit = 15
+         system_instruction = "Identify and list main topics ONLY from context..."; query_for_llm = "List main topics."
+    elif command_type == "explain_topics":
+         retrieval_query = "Detailed explanation of main topics"; limit = 15
+         system_instruction = "Identify main topics in context and explain each briefly, based ONLY on context..."; query_for_llm = "Explain main topics."
+    elif command_type == "keywords":
+        retrieval_query = "Keywords and key entities"; limit = 10
+        system_instruction = "Extract main keywords and named entities ONLY from the provided context..."; query_for_llm = "Extract keywords."
+    else:
+        logger.error(f"Unhandled command type '{command_type}'.")
+        return process_regular_query_command(client, collection_name, query, chat_history, pdf_id_filter) # Fallback
+
+    # Execute retrieval **with filter** and generation
+    retrieved_context = retrieve_context(client, collection_name, retrieval_query, pdf_id_filter, limit=limit)
+    context_str, sources = format_context_for_llm(retrieved_context)
+
+    if not context_str:
+        answer = f"Could not retrieve relevant context for command '{command_type}' from the specified document."
+        if command_type == "definition": answer = f"Could not find context for '{command_details}' in the specified document."
+        return {"answer": answer, "sources": []}
+
+    logger.info(f"Generating LLM response for command '{command_type}'...")
+    answer = generate_rag_response(query_for_llm, context_str, chat_history, system_instruction)
+    return {"answer": answer, "sources": sources}
+
+
+# *** MODIFIED process_regular_query_command to accept and pass pdf_id_filter ***
+def process_regular_query_command(client, collection_name, query, chat_history, pdf_id_filter):
+    """Handles a regular query using RAG, filtered by pdf_id."""
+    logger.info(f"Processing regular query for PDF ID {pdf_id_filter}: {query[:50]}...")
+    retrieved_context = retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT)
+    context_str, sources = format_context_for_llm(retrieved_context)
+
+    # Use the default RAG system prompt (includes citation request)
+    answer = generate_rag_response(query, context_str, chat_history, system_prompt=None)
+    return {"answer": answer, "sources": sources}
+
+# --- Main Execution (modified to handle pdf_id) ---
+def main():
+    parser = argparse.ArgumentParser(description='Process a query for RAG using local LLM')
+    parser.add_argument('query', type=str, help='The query to process')
+    parser.add_argument('--collection_name', type=str, default=DEFAULT_COLLECTION, help='Qdrant collection name')
+    # *** ADD pdf_id argument ***
+    parser.add_argument('--pdf_id', required=True, help='MongoDB ID of the PDF to filter by')
+    parser.add_argument('--history', type=str, default='[]', help='Chat history as a JSON string')
+    args = parser.parse_args()
+
+    if not embedding_model or not llm:
+         logger.critical("Essential AI models did not load. Cannot process query.")
+         result = {"answer": "Error: AI models failed to load.", "sources": []}
+         print(json.dumps(result)); sys.exit(1)
+
+    try: # Parse history
+        chat_history = json.loads(args.history)
+        if not isinstance(chat_history, list): raise ValueError("History must be a list.")
+        # Add more validation if needed
+    except Exception as e: logger.error(f"Invalid chat history: {e}"); chat_history = []
+
+    result = {}
+    try:
+        qdrant_client = get_qdrant_client()
+        command_info = detect_command_type(args.query)
+        command_name = command_info[0] if isinstance(command_info, tuple) else command_info
+        command_details = command_info[1] if isinstance(command_info, tuple) else None
+        logger.info(f"Processing query for PDF '{args.pdf_id}' as command: {command_name}")
+
+        if command_name == "regular_query":
+             # *** Pass pdf_id to handler ***
+             result = process_regular_query_command(qdrant_client, args.collection_name, args.query, chat_history, args.pdf_id)
+        else:
+             # *** Pass pdf_id to handler ***
+             result = process_command(qdrant_client, args.collection_name, args.query, chat_history, args.pdf_id, command_name, command_details)
+
+    except (ConnectionError, RuntimeError) as e:
+         logger.error(f"Error: {e}", exc_info=True)
+         result = {"answer": f"Error: {e}", "sources": []}
+         print(json.dumps(result)); sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        result = {"answer": f"Sorry, an unexpected error occurred: {e}", "sources": []}
+        print(json.dumps(result)); sys.exit(1)
+
+    print(json.dumps(result)) # Output JSON result
+    sys.exit(0)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
