@@ -1,9 +1,11 @@
 /* FILE: frontend/src/components/RAGInterface.css */
 
 .rag-app {
-  /* Base styles handled by App.css */
+  /* Base layout handled by App.css */
 }
 
+/* REMOVE or COMMENT OUT old .controls-section rules */
+/*
 .controls-section {
   display: flex;
   flex-wrap: wrap;
@@ -12,22 +14,34 @@
   margin-bottom: 1.5rem;
   gap: 1.5rem;
 }
+*/
 
-.upload-card {
-  flex: 1 1 500px;
-  min-width: 300px;
-  border-color: var(--ghibli-panel-border); /* Use theme border */
+/* NEW: Style for the upload section container */
+.upload-section {
+  margin-bottom: 1rem; /* Space below upload */
 }
 
+/* Ensure upload card within the section takes full width */
+.upload-card {
+  /* remove width constraints if any were added previously */
+  /* max-width: none; */
+  flex: none; /* Override previous flex setting if needed */
+  width: 100%; /* Explicitly set width */
+  margin-bottom: 0; /* Remove bottom margin if only item in its section */
+}
+
+/* NEW: Style for the reset button section */
 .reset-section {
   display: flex;
-  align-items: center;
-  flex-shrink: 0;
+  justify-content: flex-end; /* Align button to the right */
+  margin-bottom: 1.5rem; /* Space below reset button */
+  padding: 0; /* Adjust padding if needed */
 }
 
+/* Keep content section grid layout */
 .content-section {
   display: grid;
-  grid-template-columns: minmax(250px, 1fr) 3fr; /* Keep layout */
+  grid-template-columns: minmax(250px, 1fr) 3fr;
   gap: 1.5rem;
   min-height: 600px;
 }
@@ -36,10 +50,10 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-color: var(--ghibli-panel-border); /* Use theme border */
+  border-color: var(--ghibli-panel-border);
 }
 .documents-card h2 {
-    color: var(--ghibli-text-main); /* Ensure heading color */
+    color: var(--ghibli-text-main);
 }
 
 .documents-list {
@@ -52,42 +66,35 @@
 .document-item {
   display: flex;
   align-items: center;
-  padding: 0.65rem 0.9rem; /* Slightly adjust padding */
+  padding: 0.65rem 0.9rem;
   border-radius: var(--ghibli-border-radius);
   margin-bottom: 0.75rem;
   cursor: pointer;
   transition: var(--ghibli-transition);
   border: 1px solid var(--ghibli-panel-border);
-  background-color: #fff; /* White background */
+  background-color: #fff;
 }
-
 .document-item:hover {
-  background-color: #f7f7f7; /* Very light gray hover */
+  background-color: #f7f7f7;
   border-color: var(--ghibli-accent-green);
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
-
 .document-item.selected {
-  background-color: var(--ghibli-accent-green); /* Use accent green for selected */
+  background-color: var(--ghibli-accent-green);
   color: #fff;
   border-color: var(--ghibli-accent-green);
   box-shadow: none;
 }
-.document-item.selected .document-name {
-    color: #fff;
-}
-.document-item.selected .document-pages {
-    color: rgba(255, 255, 255, 0.85);
-}
+.document-item.selected .document-name,
+.document-item.selected .document-pages,
 .document-item.selected .document-icon svg {
+    color: #fff;
     fill: #fff;
 }
-
-/* Processing state */
 .document-item.processing {
-    opacity: 0.7;
+    opacity: 0.6;
     cursor: not-allowed;
-    background-color: #f0f0f0; /* Lighter grey */
+    background-color: #f0f0f0;
     border-style: dashed;
 }
 .document-item.processing:hover {
@@ -96,30 +103,18 @@
 }
 
 .document-icon { margin-right: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.document-icon svg { fill: var(--ghibli-accent-green); width: 20px; height: 20px; } /* Green icon */
-
+.document-icon svg { fill: var(--ghibli-accent-green); width: 20px; height: 20px; }
 .document-info { flex: 1; overflow: hidden; }
 .document-name { font-weight: 600; margin-bottom: 0.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ghibli-text-main); }
 .document-pages { font-size: 0.8rem; color: var(--ghibli-text-secondary); }
 
 .chat-section { min-height: 600px; display: flex; }
-.chat-section > .card { width: 100%; display: flex; flex-direction: column; background-color: #fff; border-color: var(--ghibli-panel-border); } /* Ensure card bg */
+.chat-section > .card { width: 100%; display: flex; flex-direction: column; background-color: #fff; border-color: var(--ghibli-panel-border); }
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  color: var(--ghibli-text-secondary);
-  text-align: center;
-  height: 100%;
-}
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; color: var(--ghibli-text-secondary); text-align: center; height: 100%; }
 .empty-state svg { width: 50px; height: 50px; margin-bottom: 1rem; fill: var(--ghibli-text-secondary); opacity: 0.6; }
-
 .select-prompt-card { height: 100%; display: flex; align-items: center; justify-content: center; border-color: var(--ghibli-panel-border); }
 
-/* Spinner animation (keep as before) */
 @keyframes spin { to { transform: rotate(360deg); } }
 .document-icon svg > path[d*="M12,4a8"] { animation: spin 1s linear infinite; transform-origin: center; }
 
@@ -128,7 +123,4 @@
   .documents-card { max-height: 35vh; min-height: 180px; }
   .chat-section { min-height: 55vh; }
 }
-@media (max-width: 600px) {
-  .controls-section { flex-direction: column; align-items: stretch; }
-  .reset-section { align-self: flex-end; margin-top: 1rem; }
-}
+/* Removed media query for controls-section as it's no longer flex */
