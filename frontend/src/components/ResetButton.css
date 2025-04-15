@@ -4,25 +4,25 @@
   position: relative;
 }
 
-/* Use standard .btn .btn-danger styling defined in App.css */
+/* Button uses .btn .btn-danger from App.css */
 .reset-button {
-    /* Inherits from .btn and .btn-danger */
+  /* Styles inherited */
 }
 
+/* Confirm Dialog Styling */
 .confirm-dialog {
   position: absolute;
-  top: calc(100% + 10px); /* Position below button */
+  top: calc(100% + 8px); /* Position below button */
   right: 0;
-  width: 320px; /* Slightly wider */
+  width: 320px;
   margin-top: 0.5rem;
   z-index: 100;
-  /* Apply card styling from App.css */
-  background-color: var(--sl-panel-bg);
-  border-radius: var(--sl-border-radius);
-  border: 1px solid var(--sl-danger); /* Warning border */
-  backdrop-filter: blur(5px);
+  /* Use card styles but with warning colors */
+  background-color: #fff; /* White background */
+  border-radius: var(--ghibli-border-radius);
+  border: 1px solid var(--ghibli-accent-yellow); /* Yellow border */
   padding: 1.25rem;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--ghibli-shadow);
 }
 
 .confirm-header {
@@ -30,17 +30,16 @@
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 1rem;
-  color: var(--sl-warning); /* Yellow warning color */
+  color: var(--ghibli-accent-yellow); /* Yellow warning */
 }
 .confirm-header h4 {
   margin: 0;
-  color: var(--sl-warning);
-  font-family: 'Inter', sans-serif;
+  color: var(--ghibli-accent-yellow);
+  font-family: 'Nunito', sans-serif; /* Use main font */
   font-size: 1.1rem;
-  text-shadow: none;
 }
 .confirm-header svg {
-    fill: var(--sl-warning);
+    fill: var(--ghibli-accent-yellow);
     width: 20px;
     height: 20px;
     flex-shrink: 0;
@@ -48,35 +47,32 @@
 
 .confirm-dialog p {
   margin-bottom: 1.25rem;
-  color: var(--sl-text-primary); /* Use primary text color */
+  color: var(--ghibli-text-main); /* Main text color */
   font-size: 0.9rem;
 }
 
 .confirm-actions {
   display: flex;
   gap: 0.75rem;
-  justify-content: flex-end; /* Align buttons right */
+  justify-content: flex-end;
 }
 
-/* Spinner Styling */
+/* Spinner uses white for contrast on colored buttons */
 .spinner {
   display: inline-block;
-  width: 1em; /* Size relative to font */
-  height: 1em;
+  width: 1em; height: 1em;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  border-top-color: #fff; /* White spinner on colored button */
+  border-top-color: #fff;
   animation: spin 1s linear infinite;
-  margin-right: 0.5em; /* Use em for spacing relative to font */
-  vertical-align: middle; /* Align with text */
+  margin-right: 0.5em;
+  vertical-align: middle;
 }
-
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Error Message specific to dialog */
 .confirm-dialog .error-message {
   margin-top: 1rem;
-  color: var(--sl-danger);
+  color: var(--ghibli-accent-red); /* Theme red */
   font-size: 0.85rem;
   text-align: left;
 }

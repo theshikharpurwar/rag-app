@@ -1,133 +1,109 @@
 /* FILE: frontend/src/components/RAGInterface.css */
 
 .rag-app {
-  /* Base layout handled by App.css */
+  /* Base styles handled by App.css */
 }
 
 .controls-section {
   display: flex;
-  flex-wrap: wrap; /* Allow wrapping on smaller screens */
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 1.5rem;
-  gap: 1.5rem; /* Add gap for spacing */
+  gap: 1.5rem;
 }
 
 .upload-card {
-  flex: 1 1 500px; /* Allow shrinking but prefer 500px */
-  min-width: 300px; /* Prevent excessive shrinking */
+  flex: 1 1 500px;
+  min-width: 300px;
+  border-color: var(--ghibli-panel-border); /* Use theme border */
 }
 
 .reset-section {
   display: flex;
   align-items: center;
-  flex-shrink: 0; /* Prevent reset button from shrinking */
+  flex-shrink: 0;
 }
 
 .content-section {
   display: grid;
-  /* Adjust columns: make sidebar slightly smaller */
-  grid-template-columns: minmax(250px, 1fr) 3fr;
+  grid-template-columns: minmax(250px, 1fr) 3fr; /* Keep layout */
   gap: 1.5rem;
-  min-height: 600px; /* Ensure minimum height */
+  min-height: 600px;
 }
 
 .documents-card {
-  height: 100%; /* Fill grid cell height */
+  height: 100%;
   display: flex;
   flex-direction: column;
+  border-color: var(--ghibli-panel-border); /* Use theme border */
+}
+.documents-card h2 {
+    color: var(--ghibli-text-main); /* Ensure heading color */
 }
 
 .documents-list {
-  flex-grow: 1; /* Allow list to fill space */
-  overflow-y: auto; /* Add scrollbar if needed */
-  padding-right: 5px; /* Space for scrollbar */
-  margin-top: 1rem; /* Space below header */
+  flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 5px;
+  margin-top: 1rem;
 }
 
 .document-item {
   display: flex;
   align-items: center;
-  padding: 0.75rem 1rem;
-  border-radius: var(--sl-border-radius);
+  padding: 0.65rem 0.9rem; /* Slightly adjust padding */
+  border-radius: var(--ghibli-border-radius);
   margin-bottom: 0.75rem;
   cursor: pointer;
-  transition: var(--sl-transition);
-  border: 1px solid rgba(26, 126, 255, 0.2); /* Subtle border */
-  background-color: rgba(26, 126, 255, 0.05); /* Slight bg tint */
+  transition: var(--ghibli-transition);
+  border: 1px solid var(--ghibli-panel-border);
+  background-color: #fff; /* White background */
 }
 
 .document-item:hover {
-  background-color: rgba(26, 126, 255, 0.15);
-  border-color: var(--sl-border);
+  background-color: #f7f7f7; /* Very light gray hover */
+  border-color: var(--ghibli-accent-green);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
 .document-item.selected {
-  background-color: var(--sl-border);
-  color: #fff; /* White text on selection */
-  border-color: var(--sl-primary-glow);
-  box-shadow: var(--sl-glow-shadow);
+  background-color: var(--ghibli-accent-green); /* Use accent green for selected */
+  color: #fff;
+  border-color: var(--ghibli-accent-green);
+  box-shadow: none;
+}
+.document-item.selected .document-name {
+    color: #fff;
 }
 .document-item.selected .document-pages {
-    color: rgba(255, 255, 255, 0.8); /* Lighter secondary text when selected */
+    color: rgba(255, 255, 255, 0.85);
 }
 .document-item.selected .document-icon svg {
-    fill: #fff; /* White icon when selected */
+    fill: #fff;
 }
 
-/* Style for processing items */
+/* Processing state */
 .document-item.processing {
-    opacity: 0.6;
+    opacity: 0.7;
     cursor: not-allowed;
-    background-color: rgba(100, 100, 120, 0.1);
-    border-color: rgba(100, 100, 120, 0.3);
+    background-color: #f0f0f0; /* Lighter grey */
+    border-style: dashed;
 }
 .document-item.processing:hover {
-    background-color: rgba(100, 100, 120, 0.15); /* Slightly lighter hover */
+    background-color: #f0f0f0;
+    border-color: var(--ghibli-panel-border);
 }
 
+.document-icon { margin-right: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.document-icon svg { fill: var(--ghibli-accent-green); width: 20px; height: 20px; } /* Green icon */
 
-.document-icon {
-  margin-right: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.document-icon svg {
-    fill: var(--sl-primary-glow); /* Icon color */
-    width: 20px;
-    height: 20px;
-}
+.document-info { flex: 1; overflow: hidden; }
+.document-name { font-weight: 600; margin-bottom: 0.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ghibli-text-main); }
+.document-pages { font-size: 0.8rem; color: var(--ghibli-text-secondary); }
 
-.document-info {
-  flex: 1;
-  overflow: hidden; /* Prevent long names from breaking layout */
-}
-
-.document-name {
-  font-weight: 500;
-  margin-bottom: 0.1rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.document-pages {
-  font-size: 0.8rem;
-  color: var(--sl-text-secondary);
-}
-
-.chat-section {
-  min-height: 600px; /* Ensure chat section takes height */
-  display: flex; /* Use flex to allow chat interface to grow */
-}
-
-.chat-section > .card {
-    width: 100%; /* Make chat interface fill the section */
-    display: flex; /* Ensure chat interface itself uses flex */
-    flex-direction: column;
-}
+.chat-section { min-height: 600px; display: flex; }
+.chat-section > .card { width: 100%; display: flex; flex-direction: column; background-color: #fff; border-color: var(--ghibli-panel-border); } /* Ensure card bg */
 
 .empty-state {
   display: flex;
@@ -135,54 +111,24 @@
   align-items: center;
   justify-content: center;
   padding: 3rem 1rem;
-  color: var(--sl-text-secondary);
+  color: var(--ghibli-text-secondary);
   text-align: center;
-  height: 100%; /* Fill container */
-}
-
-.empty-state svg {
-  width: 50px;
-  height: 50px;
-  margin-bottom: 1rem;
-  fill: var(--sl-text-secondary);
-  opacity: 0.5;
-}
-
-.select-prompt-card {
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
+.empty-state svg { width: 50px; height: 50px; margin-bottom: 1rem; fill: var(--ghibli-text-secondary); opacity: 0.6; }
 
-/* Spinner for processing icon */
+.select-prompt-card { height: 100%; display: flex; align-items: center; justify-content: center; border-color: var(--ghibli-panel-border); }
+
+/* Spinner animation (keep as before) */
 @keyframes spin { to { transform: rotate(360deg); } }
-.document-icon svg > path[d*="M12,4a8"] { /* Target spinner path */
-  animation: spin 1s linear infinite;
-  transform-origin: center;
+.document-icon svg > path[d*="M12,4a8"] { animation: spin 1s linear infinite; transform-origin: center; }
+
+@media (max-width: 900px) {
+  .content-section { grid-template-columns: 1fr; }
+  .documents-card { max-height: 35vh; min-height: 180px; }
+  .chat-section { min-height: 55vh; }
 }
-
-
-@media (max-width: 900px) { /* Adjust breakpoint */
-  .content-section {
-    grid-template-columns: 1fr; /* Stack on smaller screens */
-  }
-  .documents-card {
-     max-height: 40vh; /* Limit height when stacked */
-     min-height: 200px;
-  }
-  .chat-section {
-      min-height: 50vh; /* Ensure chat has enough space */
-  }
-}
-
 @media (max-width: 600px) {
-    .controls-section {
-        flex-direction: column;
-        align-items: stretch; /* Stretch items full width */
-    }
-     .reset-section {
-        align-self: flex-end; /* Move reset button to the right */
-        margin-top: 1rem;
-    }
+  .controls-section { flex-direction: column; align-items: stretch; }
+  .reset-section { align-self: flex-end; margin-top: 1rem; }
 }

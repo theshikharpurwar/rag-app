@@ -5,10 +5,10 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  padding: 0; /* Removed padding */
-  background-color: transparent; /* Inherit from card */
-  border: none; /* Remove default card border if applied here */
-  box-shadow: none; /* Remove default card shadow */
+  padding: 0;
+  background-color: #fff; /* Panel background */
+  border-radius: var(--ghibli-border-radius); /* Match card radius */
+  border: 1px solid var(--ghibli-panel-border);
 }
 
 .chat-header {
@@ -16,60 +16,34 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.8rem 1.25rem;
-  /* Use panel background, slightly lighter */
-  background-color: rgba(26, 126, 255, 0.1);
-  border-bottom: 1px solid rgba(26, 126, 255, 0.3);
-  color: var(--sl-text-header);
-  border-top-left-radius: var(--sl-border-radius);
-  border-top-right-radius: var(--sl-border-radius);
+  background-color: #e8f5e9; /* Light green header */
+  border-bottom: 1px solid #c8e6c9;
+  color: var(--ghibli-text-main); /* Dark text on light header */
+  border-top-left-radius: var(--ghibli-border-radius);
+  border-top-right-radius: var(--ghibli-border-radius);
 }
 
-.chat-title {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.chat-title svg {
-    fill: var(--sl-primary-glow);
-}
-
+.chat-title { display: flex; align-items: center; gap: 0.75rem; }
+.chat-title svg { fill: var(--ghibli-accent-green); } /* Green icon */
 .chat-title h3 {
   margin: 0;
   font-size: 1.1rem;
-  color: var(--sl-text-header);
+  color: var(--ghibli-text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 300px; /* Adjust as needed */
-  font-family: 'Inter', sans-serif; /* Use standard font here */
-  text-shadow: none; /* Remove glow */
+  max-width: 300px;
+  font-family: 'Nunito', sans-serif; /* Use main font */
 }
 
-.chat-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
+.chat-actions { display: flex; gap: 0.5rem; }
 .icon-button {
-  background: none;
-  border: none;
-  color: var(--sl-primary-glow);
-  cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--sl-transition);
+  background: none; border: none; color: var(--ghibli-accent-green); /* Green icon */
+  cursor: pointer; padding: 0.25rem; border-radius: 50%; display: flex;
+  align-items: center; justify-content: center; transition: var(--ghibli-transition);
 }
-.icon-button:hover {
-  background-color: rgba(26, 126, 255, 0.2);
-  color: #fff;
-}
-.icon-button svg {
-    fill: currentColor;
-}
+.icon-button:hover { background-color: rgba(0, 0, 0, 0.05); }
+.icon-button svg { fill: currentColor; }
 
 .chat-messages {
   flex: 1;
@@ -77,212 +51,142 @@
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  background-color: var(--sl-panel-bg-opaque); /* Darker bg for messages */
+  gap: 1.25rem; /* Slightly smaller gap */
+  background-color: #f9f9f9; /* Very light grey message area */
 }
 
 .welcome-message {
   text-align: center;
-  padding: 2rem;
-  background-color: var(--sl-panel-bg);
-  border-radius: var(--sl-border-radius);
-  border: 1px solid rgba(26, 126, 255, 0.2);
-  margin: 1rem 0;
+  padding: 1.5rem;
+  background-color: #fff; /* White bg */
+  border-radius: var(--ghibli-border-radius);
+  border: 1px solid var(--ghibli-panel-border);
+  margin: 1rem auto; /* Center horizontally */
+  max-width: 80%;
 }
-.welcome-message h4 {
-  margin-bottom: 0.5rem;
-  color: var(--sl-primary-glow);
-  font-family: 'Inter', sans-serif;
-}
-.welcome-message p {
-  color: var(--sl-text-secondary);
-}
+.welcome-message h4 { margin-bottom: 0.5rem; color: var(--ghibli-accent-green); font-family: 'Nunito', sans-serif; }
+.welcome-message p { color: var(--ghibli-text-secondary); }
 
-.message {
-  display: flex;
-  gap: 0.75rem;
-  max-width: 85%;
-}
+.message { display: flex; gap: 0.75rem; max-width: 80%; } /* Slightly narrower max */
 .message.user { align-self: flex-end; flex-direction: row-reverse; }
 .message.assistant { align-self: flex-start; }
 
 .message-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: 1px solid rgba(26, 126, 255, 0.3);
+  width: 32px; height: 32px; border-radius: 50%;
+  background-color: #e0e0e0; /* Neutral grey bg */
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; border: 1px solid #ccc;
 }
-.message-avatar svg { width: 18px; height: 18px; }
-.message.user .message-avatar { background-color: var(--sl-border); }
-.message.user .message-avatar svg { fill: var(--sl-background); }
-.message.assistant .message-avatar { background-color: var(--sl-accent-secondary); }
+.message-avatar svg { width: 18px; height: 18px; fill: #555; }
+.message.user .message-avatar { background-color: var(--ghibli-accent-blue); border-color: #6fbfdf;} /* Sky blue user */
+.message.user .message-avatar svg { fill: #fff; }
+.message.assistant .message-avatar { background-color: var(--ghibli-accent-green); border-color: #5f8a6b;} /* Green assistant */
 .message.assistant .message-avatar svg { fill: #fff; }
 
 .message-content {
-  padding: 0.75rem 1rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  padding: 0.7rem 1rem; /* Slightly less padding */
+  border-radius: 12px; /* More rounded */
+  box-shadow: var(--ghibli-shadow);
   position: relative;
-  border: 1px solid transparent;
+  border: 1px solid var(--ghibli-panel-border);
 }
 .message.user .message-content {
-  background-color: var(--sl-border);
-  color: #fff;
-  border-bottom-right-radius: 0;
-  border-color: var(--sl-primary-glow);
+  background-color: var(--ghibli-accent-blue);
+  color: var(--ghibli-text-main); /* Dark text on light blue */
+  border-color: #7bc3e2;
+  border-bottom-right-radius: 4px; /* Slightly less rounded corner */
 }
 .message.assistant .message-content {
-  background-color: var(--sl-panel-bg);
-  color: var(--sl-text-primary);
-  border-bottom-left-radius: 0;
-  border-color: rgba(26, 126, 255, 0.3);
+  background-color: #fff; /* White bg for assistant */
+  color: var(--ghibli-text-main);
+  border-bottom-left-radius: 4px;
 }
 
 .message-text { line-height: 1.5; white-space: pre-wrap; }
-
 .message-meta {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 0.5rem;
-  font-size: 0.7rem; /* Smaller timestamp */
-  color: var(--sl-text-secondary);
-  opacity: 0.7;
+  display: flex; justify-content: flex-end; margin-top: 0.4rem;
+  font-size: 0.7rem; color: var(--ghibli-text-secondary); opacity: 0.8;
 }
-.message.user .message-meta { color: rgba(255, 255, 255, 0.7); }
+.message.user .message-meta { color: rgba(58, 53, 50, 0.7); } /* Darker secondary text */
 
 /* Sources Styling */
 .message-sources {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1); /* Lighter border inside assistant bubble */
-  font-size: 0.8rem;
+  margin-top: 0.6rem; padding-top: 0.6rem;
+  border-top: 1px solid var(--ghibli-panel-border);
+  font-size: 0.75rem; /* Slightly smaller sources */
 }
-.sources-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--sl-text-secondary);
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-.sources-header svg { fill: currentColor; width: 14px; height: 14px;}
+.sources-header { display: flex; align-items: center; gap: 0.4rem; color: var(--ghibli-text-secondary); margin-bottom: 0.4rem; font-weight: 600; }
+.sources-header svg { fill: currentColor; width: 13px; height: 13px;}
 .sources-list { list-style: none; padding: 0; margin: 0; }
-.source-item {
-  display: flex;
-  align-items: center;
-  padding: 0.15rem 0;
-  gap: 0.5rem;
-  color: var(--sl-text-secondary);
-}
-.source-page { font-weight: 500; color: var(--sl-primary-glow); }
+.source-item { display: flex; align-items: center; padding: 0.1rem 0; gap: 0.5rem; color: var(--ghibli-text-secondary); }
+.source-page { font-weight: 600; color: var(--ghibli-accent-green); } /* Green page number */
 .source-document { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.source-score { width: 40px; height: 5px; background-color: rgba(255, 255, 255, 0.1); border-radius: 3px; overflow: hidden; }
-.score-bar { height: 100%; background-color: var(--sl-primary-glow); }
+.source-score { width: 35px; height: 5px; background-color: #eee; border-radius: 3px; overflow: hidden; border: 1px solid #ddd;}
+.score-bar { height: 100%; background-color: var(--ghibli-accent-green); }
 
 /* Typing Indicator */
 .typing-indicator { display: flex; align-items: center; gap: 4px; padding: 5px 0; }
-.typing-indicator span { width: 7px; height: 7px; border-radius: 50%; background-color: var(--sl-text-secondary); animation: typing 1.2s infinite ease-in-out; }
+.typing-indicator span { width: 6px; height: 6px; border-radius: 50%; background-color: var(--ghibli-text-secondary); animation: typing 1.2s infinite ease-in-out; }
 .typing-indicator span:nth-child(1) { animation-delay: 0s; }
 .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
 .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes typing { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-4px); opacity: 1;} }
+@keyframes typing { 0%, 100% { transform: translateY(0); opacity: 0.6; } 50% { transform: translateY(-3px); opacity: 1;} }
 
 /* Chat Input Area */
 .chat-input {
   display: flex;
-  padding: 1rem 1.25rem;
+  padding: 0.8rem 1rem; /* Less padding */
   gap: 0.75rem;
-  background-color: var(--sl-panel-bg-opaque); /* Slightly different bg */
-  border-top: 1px solid rgba(26, 126, 255, 0.3);
+  background-color: #e8e4dd; /* Slightly darker cream */
+  border-top: 1px solid var(--ghibli-panel-border);
   position: relative;
 }
 .input-container { flex: 1; position: relative; display: flex; }
 
 .chat-input input {
   flex: 1;
-  padding: 0.7rem 2.8rem 0.7rem 1.1rem; /* Adjust padding for button */
-  border: 1px solid rgba(26, 126, 255, 0.3);
-  border-radius: 1.5rem; /* Rounded input */
+  padding: 0.65rem 2.5rem 0.65rem 1rem; /* Adjust padding */
+  border: 1px solid var(--ghibli-panel-border);
+  border-radius: 1.25rem; /* More rounded input */
   font-size: 1rem;
-  background-color: rgba(10, 10, 20, 0.7); /* Darker input bg */
-  color: var(--sl-text-primary);
-  transition: var(--sl-transition);
+  background-color: #fff;
+  color: var(--ghibli-text-main);
+  transition: var(--ghibli-transition);
 }
-.chat-input input::placeholder { color: var(--sl-text-secondary); opacity: 0.8; }
+.chat-input input::placeholder { color: var(--ghibli-text-secondary); opacity: 0.9; }
 .chat-input input:focus {
   outline: none;
-  border-color: var(--sl-primary-glow);
-  background-color: var(--sl-panel-bg);
-  box-shadow: var(--sl-glow-shadow);
+  border-color: var(--ghibli-accent-green);
+  box-shadow: 0 0 0 2px rgba(112, 160, 123, 0.2);
 }
 
 /* Command Button */
-.command-button {
-  position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--sl-text-secondary);
-  cursor: pointer;
-  padding: 0.25rem;
-}
-.command-button:hover { color: var(--sl-primary-glow); }
-.command-button svg { width: 20px; height: 20px; }
+.command-button { position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--ghibli-text-secondary); cursor: pointer; padding: 0.25rem; }
+.command-button:hover { color: var(--ghibli-accent-green); }
+.command-button svg { width: 18px; height: 18px; }
 
 /* Commands Dropdown */
 .commands-dropdown {
-  position: absolute;
-  bottom: calc(100% + 0.5rem); /* Position above input */
-  left: 0;
-  right: 0; /* Span full width */
-  background-color: var(--sl-panel-bg-opaque);
-  border: 1px solid rgba(26, 126, 255, 0.3);
-  border-radius: var(--sl-border-radius);
-  box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.4);
-  max-height: 250px;
-  overflow-y: auto;
-  z-index: 10;
+  position: absolute; bottom: calc(100% + 0.5rem); left: 0; right: 0;
+  background-color: #fff; border: 1px solid var(--ghibli-panel-border);
+  border-radius: var(--ghibli-border-radius); box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  max-height: 250px; overflow-y: auto; z-index: 10;
 }
-.command-item {
-  padding: 0.75rem 1rem;
-  cursor: pointer;
-  transition: var(--sl-transition);
-  border-bottom: 1px solid rgba(26, 126, 255, 0.1);
-}
+.command-item { padding: 0.6rem 1rem; cursor: pointer; transition: var(--ghibli-transition); border-bottom: 1px solid #eee; }
 .command-item:last-child { border-bottom: none; }
-.command-item:hover { background-color: rgba(26, 126, 255, 0.1); }
-.command-text { font-weight: 500; margin-bottom: 0.25rem; color: var(--sl-text-primary); }
-.command-description { font-size: 0.8rem; color: var(--sl-text-secondary); }
+.command-item:hover { background-color: #f0f0f0; }
+.command-text { font-weight: 600; margin-bottom: 0.15rem; color: var(--ghibli-text-main); }
+.command-description { font-size: 0.75rem; color: var(--ghibli-text-secondary); }
 
 /* Send Button */
 .send-button {
-  background-color: var(--sl-border);
-  color: #000; /* Black icon on blue bg */
-  border: none;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: var(--sl-transition);
-  flex-shrink: 0; /* Prevent shrinking */
+  background-color: var(--ghibli-accent-green);
+  color: #fff;
+  border: none; width: 38px; height: 38px; /* Slightly smaller */
+  border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; transition: var(--ghibli-transition);
+  flex-shrink: 0; box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
-.send-button:hover:not(:disabled) {
-  background-color: var(--sl-primary-glow);
-  box-shadow: var(--sl-glow-shadow);
-}
-.send-button:disabled {
-  background-color: rgba(160, 165, 176, 0.2);
-  color: var(--sl-text-secondary);
-  cursor: not-allowed;
-}
-.send-button svg { width: 20px; height: 20px; fill: currentColor; }
+.send-button:hover:not(:disabled) { background-color: #5a8a66; box-shadow: 0 2px 4px rgba(0,0,0,0.15); }
+.send-button:disabled { background-color: #ccc; color: #888; cursor: not-allowed; box-shadow: none;}
+.send-button svg { width: 18px; height: 18px; fill: currentColor; }
