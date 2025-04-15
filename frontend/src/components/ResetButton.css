@@ -1,23 +1,28 @@
-/* D:\rag-app\frontend\src\components\ResetButton.css */
+/* FILE: frontend/src/components/ResetButton.css */
 
 .reset-button-container {
   position: relative;
 }
 
+/* Use standard .btn .btn-danger styling defined in App.css */
 .reset-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+    /* Inherits from .btn and .btn-danger */
 }
 
 .confirm-dialog {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 10px); /* Position below button */
   right: 0;
-  width: 300px;
+  width: 320px; /* Slightly wider */
   margin-top: 0.5rem;
   z-index: 100;
+  /* Apply card styling from App.css */
+  background-color: var(--sl-panel-bg);
+  border-radius: var(--sl-border-radius);
+  border: 1px solid var(--sl-danger); /* Warning border */
+  backdrop-filter: blur(5px);
   padding: 1.25rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
 }
 
 .confirm-header {
@@ -25,43 +30,53 @@
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 1rem;
-  color: var(--warning-color);
+  color: var(--sl-warning); /* Yellow warning color */
 }
-
 .confirm-header h4 {
   margin: 0;
-  color: var(--warning-color);
+  color: var(--sl-warning);
+  font-family: 'Inter', sans-serif;
+  font-size: 1.1rem;
+  text-shadow: none;
+}
+.confirm-header svg {
+    fill: var(--sl-warning);
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
 }
 
 .confirm-dialog p {
   margin-bottom: 1.25rem;
-  color: var(--gray-700);
+  color: var(--sl-text-primary); /* Use primary text color */
+  font-size: 0.9rem;
 }
 
 .confirm-actions {
   display: flex;
   gap: 0.75rem;
+  justify-content: flex-end; /* Align buttons right */
 }
 
-.error-message {
-  margin-top: 1rem;
-  color: var(--danger-color);
-  font-size: 0.9rem;
-}
-
+/* Spinner Styling */
 .spinner {
   display: inline-block;
-  width: 16px;
-  height: 16px;
+  width: 1em; /* Size relative to font */
+  height: 1em;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  border-top-color: white;
-  animation: spin 1s ease-in-out infinite;
-  margin-right: 0.5rem;
+  border-top-color: #fff; /* White spinner on colored button */
+  animation: spin 1s linear infinite;
+  margin-right: 0.5em; /* Use em for spacing relative to font */
+  vertical-align: middle; /* Align with text */
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Error Message specific to dialog */
+.confirm-dialog .error-message {
+  margin-top: 1rem;
+  color: var(--sl-danger);
+  font-size: 0.85rem;
+  text-align: left;
 }
