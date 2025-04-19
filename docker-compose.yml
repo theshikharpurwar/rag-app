@@ -1,4 +1,4 @@
-# FILE: docker-compose.yml (Simplified for Host Ollama setup)
+# FILE: docker-compose.yml (Final version for Setup A)
 
 services:
   frontend:
@@ -11,33 +11,33 @@ services:
 
   backend:
     build:
-      context: ./backend # This context now includes the backend Dockerfile
-      dockerfile: Dockerfile # The Dockerfile installs Node, Python, and copies code
+      context: ./backend # Contains Dockerfile installing Node & Python
+      dockerfile: Dockerfile
     ports:
       - "5000:5000"
     volumes:
-      # Mount uploads volume so backend and spawned python can access
+      # Mount uploads for persistence AND access by python scripts
       - ./backend/uploads:/app/uploads
     environment:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
-      # *** Crucial for Python script to find HOST Ollama ***
-      - OLLAMA_HOST_URL=http://host.docker.internal:11434 # For Docker Desktop (Windows/Mac)
-      # On Linux host, might need different setup (e.g., --network host or host IP)
-      - NODE_ENV=production
-      - QDRANT_HOST=qdrant # Python script needs this if using getenv
+      - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      # ** Crucial: URL for Python script inside container to reach Ollama on HOST **
+      - OLLAMA_HOST_URL=http://host.docker.internal:11434 # For Docker Desktop
+      - NODE_ENV=production
     depends_on:
       - mongo
       - qdrant
     restart: unless-stopped
-    # Add network if needed for host.docker.internal on older Docker versions
-    # networks:
-    #   - default
+    # Required on some Docker setups (like older Docker Desktop or some Linux)
+    # for host.docker.internal DNS to work reliably from container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   mongo:
-    image: mongo:latest
-    ports:
-      - "27017:27017"
+    image: mongo:6.0
+    # ports: # Only expose if needed for external access
+    #   - "27017:27017"
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
@@ -45,8 +45,8 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "6333:6333" # Expose REST API to host
+      # - "6334:6334" # gRPC
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
@@ -54,6 +54,3 @@ services:
 volumes:
   qdrant_data:
   mongo_data:
-
-# networks: # Define if needed
-#   default:
