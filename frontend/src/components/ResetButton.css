@@ -1,82 +1,14 @@
 /* FILE: frontend/src/components/ResetButton.css */
+/* (Ghibli Theme) */
 
-.reset-button-container {
-  position: relative;
-}
-
-/* Use standard .btn .btn-danger styling defined in App.css */
-.reset-button {
-    /* Inherits from .btn and .btn-danger */
-}
-
-.confirm-dialog {
-  position: absolute;
-  top: calc(100% + 10px); /* Position below button */
-  right: 0;
-  width: 320px; /* Slightly wider */
-  margin-top: 0.5rem;
-  z-index: 100;
-  /* Apply card styling from App.css */
-  background-color: var(--sl-panel-bg);
-  border-radius: var(--sl-border-radius);
-  border: 1px solid var(--sl-danger); /* Warning border */
-  backdrop-filter: blur(5px);
-  padding: 1.25rem;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-}
-
-.confirm-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-  color: var(--sl-warning); /* Yellow warning color */
-}
-.confirm-header h4 {
-  margin: 0;
-  color: var(--sl-warning);
-  font-family: 'Inter', sans-serif;
-  font-size: 1.1rem;
-  text-shadow: none;
-}
-.confirm-header svg {
-    fill: var(--sl-warning);
-    width: 20px;
-    height: 20px;
-    flex-shrink: 0;
-}
-
-.confirm-dialog p {
-  margin-bottom: 1.25rem;
-  color: var(--sl-text-primary); /* Use primary text color */
-  font-size: 0.9rem;
-}
-
-.confirm-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end; /* Align buttons right */
-}
-
-/* Spinner Styling */
-.spinner {
-  display: inline-block;
-  width: 1em; /* Size relative to font */
-  height: 1em;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top-color: #fff; /* White spinner on colored button */
-  animation: spin 1s linear infinite;
-  margin-right: 0.5em; /* Use em for spacing relative to font */
-  vertical-align: middle; /* Align with text */
-}
-
+.reset-button-container { position: relative; }
+.reset-button { /* Uses .btn .btn-danger */ }
+.confirm-dialog { position: absolute; top: calc(100% + 8px); right: 0; width: 320px; margin-top: 0.5rem; z-index: 100; background-color: #fff; border-radius: var(--ghibli-border-radius); border: 1px solid var(--ghibli-accent-yellow); padding: 1.25rem; box-shadow: var(--ghibli-shadow); }
+.confirm-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; color: var(--ghibli-accent-yellow); }
+.confirm-header h4 { margin: 0; color: var(--ghibli-accent-yellow); font-family: 'Nunito', sans-serif; font-size: 1.1rem; }
+.confirm-header svg { fill: var(--ghibli-accent-yellow); width: 20px; height: 20px; flex-shrink: 0; }
+.confirm-dialog p { margin-bottom: 1.25rem; color: var(--ghibli-text-main); font-size: 0.9rem; }
+.confirm-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s linear infinite; margin-right: 0.5em; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* Error Message specific to dialog */
-.confirm-dialog .error-message {
-  margin-top: 1rem;
-  color: var(--sl-danger);
-  font-size: 0.85rem;
-  text-align: left;
-}
+.confirm-dialog .error-message { margin-top: 1rem; color: var(--ghibli-accent-red); font-size: 0.85rem; text-align: left; }

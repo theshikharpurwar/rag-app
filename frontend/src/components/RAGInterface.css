@@ -1,188 +1,78 @@
 /* FILE: frontend/src/components/RAGInterface.css */
+/* (Ghibli Theme + Layout Changes) */
 
-.rag-app {
-  /* Base layout handled by App.css */
+.rag-app { /* Base styles handled by App.css */ }
+
+/* Style for the upload section container */
+.upload-section {
+  margin-bottom: 1rem; /* Space below upload */
 }
-
-.controls-section {
-  display: flex;
-  flex-wrap: wrap; /* Allow wrapping on smaller screens */
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 1.5rem;
-  gap: 1.5rem; /* Add gap for spacing */
-}
-
 .upload-card {
-  flex: 1 1 500px; /* Allow shrinking but prefer 500px */
-  min-width: 300px; /* Prevent excessive shrinking */
+  width: 100%;
+  margin-bottom: 0;
+  border-color: var(--ghibli-panel-border);
 }
+.upload-card h2 { color: var(--ghibli-text-main); }
 
+
+/* Style for the reset button section */
 .reset-section {
   display: flex;
-  align-items: center;
-  flex-shrink: 0; /* Prevent reset button from shrinking */
+  justify-content: flex-end; /* Align button to the right */
+  margin-bottom: 1.5rem; /* Space below reset button */
+  padding: 0;
 }
 
+/* Main Content Grid */
 .content-section {
   display: grid;
-  /* Adjust columns: make sidebar slightly smaller */
   grid-template-columns: minmax(250px, 1fr) 3fr;
   gap: 1.5rem;
-  min-height: 600px; /* Ensure minimum height */
+  min-height: 600px;
 }
 
 .documents-card {
-  height: 100%; /* Fill grid cell height */
-  display: flex;
-  flex-direction: column;
-}
-
-.documents-list {
-  flex-grow: 1; /* Allow list to fill space */
-  overflow-y: auto; /* Add scrollbar if needed */
-  padding-right: 5px; /* Space for scrollbar */
-  margin-top: 1rem; /* Space below header */
-}
-
-.document-item {
-  display: flex;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  border-radius: var(--sl-border-radius);
-  margin-bottom: 0.75rem;
-  cursor: pointer;
-  transition: var(--sl-transition);
-  border: 1px solid rgba(26, 126, 255, 0.2); /* Subtle border */
-  background-color: rgba(26, 126, 255, 0.05); /* Slight bg tint */
-}
-
-.document-item:hover {
-  background-color: rgba(26, 126, 255, 0.15);
-  border-color: var(--sl-border);
-}
-
-.document-item.selected {
-  background-color: var(--sl-border);
-  color: #fff; /* White text on selection */
-  border-color: var(--sl-primary-glow);
-  box-shadow: var(--sl-glow-shadow);
-}
-.document-item.selected .document-pages {
-    color: rgba(255, 255, 255, 0.8); /* Lighter secondary text when selected */
-}
-.document-item.selected .document-icon svg {
-    fill: #fff; /* White icon when selected */
-}
-
-/* Style for processing items */
-.document-item.processing {
-    opacity: 0.6;
-    cursor: not-allowed;
-    background-color: rgba(100, 100, 120, 0.1);
-    border-color: rgba(100, 100, 120, 0.3);
-}
-.document-item.processing:hover {
-    background-color: rgba(100, 100, 120, 0.15); /* Slightly lighter hover */
-}
-
-
-.document-icon {
-  margin-right: 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.document-icon svg {
-    fill: var(--sl-primary-glow); /* Icon color */
-    width: 20px;
-    height: 20px;
-}
-
-.document-info {
-  flex: 1;
-  overflow: hidden; /* Prevent long names from breaking layout */
-}
-
-.document-name {
-  font-weight: 500;
-  margin-bottom: 0.1rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.document-pages {
-  font-size: 0.8rem;
-  color: var(--sl-text-secondary);
-}
-
-.chat-section {
-  min-height: 600px; /* Ensure chat section takes height */
-  display: flex; /* Use flex to allow chat interface to grow */
-}
-
-.chat-section > .card {
-    width: 100%; /* Make chat interface fill the section */
-    display: flex; /* Ensure chat interface itself uses flex */
-    flex-direction: column;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  color: var(--sl-text-secondary);
-  text-align: center;
-  height: 100%; /* Fill container */
-}
-
-.empty-state svg {
-  width: 50px;
-  height: 50px;
-  margin-bottom: 1rem;
-  fill: var(--sl-text-secondary);
-  opacity: 0.5;
-}
-
-.select-prompt-card {
   height: 100%;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  border-color: var(--ghibli-panel-border);
 }
+.documents-card h2 { color: var(--ghibli-text-main); }
 
-/* Spinner for processing icon */
+.documents-list { flex-grow: 1; overflow-y: auto; padding-right: 5px; margin-top: 1rem; }
+
+.document-item {
+  display: flex; align-items: center; padding: 0.65rem 0.9rem;
+  border-radius: var(--ghibli-border-radius); margin-bottom: 0.75rem;
+  cursor: pointer; transition: var(--ghibli-transition);
+  border: 1px solid var(--ghibli-panel-border); background-color: #fff;
+}
+.document-item:hover { background-color: #f7f7f7; border-color: var(--ghibli-accent-green); box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.document-item.selected { background-color: var(--ghibli-accent-green); color: #fff; border-color: var(--ghibli-accent-green); box-shadow: none; }
+.document-item.selected .document-name,
+.document-item.selected .document-pages,
+.document-item.selected .document-icon svg { color: #fff; fill: #fff; }
+.document-item.processing { opacity: 0.7; cursor: not-allowed; background-color: #f0f0f0; border-style: dashed; }
+.document-item.processing:hover { background-color: #f0f0f0; border-color: var(--ghibli-panel-border); }
+
+.document-icon { margin-right: 0.75rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.document-icon svg { fill: var(--ghibli-accent-green); width: 20px; height: 20px; }
+.document-info { flex: 1; overflow: hidden; }
+.document-name { font-weight: 600; margin-bottom: 0.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ghibli-text-main); }
+.document-pages { font-size: 0.8rem; color: var(--ghibli-text-secondary); }
+
+.chat-section { min-height: 600px; display: flex; }
+.chat-section > .card { width: 100%; display: flex; flex-direction: column; background-color: #fff; border-color: var(--ghibli-panel-border); }
+
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem 1rem; color: var(--ghibli-text-secondary); text-align: center; height: 100%; }
+.empty-state svg { width: 50px; height: 50px; margin-bottom: 1rem; fill: var(--ghibli-text-secondary); opacity: 0.6; }
+.select-prompt-card { height: 100%; display: flex; align-items: center; justify-content: center; border-color: var(--ghibli-panel-border); }
+
 @keyframes spin { to { transform: rotate(360deg); } }
-.document-icon svg > path[d*="M12,4a8"] { /* Target spinner path */
-  animation: spin 1s linear infinite;
-  transform-origin: center;
-}
+.document-icon svg > path[d*="M12,4a8"] { animation: spin 1s linear infinite; transform-origin: center; }
 
-
-@media (max-width: 900px) { /* Adjust breakpoint */
-  .content-section {
-    grid-template-columns: 1fr; /* Stack on smaller screens */
-  }
-  .documents-card {
-     max-height: 40vh; /* Limit height when stacked */
-     min-height: 200px;
-  }
-  .chat-section {
-      min-height: 50vh; /* Ensure chat has enough space */
-  }
-}
-
-@media (max-width: 600px) {
-    .controls-section {
-        flex-direction: column;
-        align-items: stretch; /* Stretch items full width */
-    }
-     .reset-section {
-        align-self: flex-end; /* Move reset button to the right */
-        margin-top: 1rem;
-    }
+@media (max-width: 900px) {
+  .content-section { grid-template-columns: 1fr; }
+  .documents-card { max-height: 35vh; min-height: 180px; }
+  .chat-section { min-height: 55vh; }
 }
