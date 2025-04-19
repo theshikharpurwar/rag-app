@@ -1,5 +1,4 @@
-// FILE: frontend/src/components/RAGInterface.js
-// (Ghibli Theme context - Layout with Reset button moved)
+// FILE: frontend/src/components/RAGInterface.js (Full Code)
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { fetchPDFs } from '../api';
@@ -16,7 +15,8 @@ const RAGInterface = () => {
   const [selectedPdf, setSelectedPdf] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // processingPdfIds state removed assuming backend wait implementation is kept
+  // *** ADDED STATE to track processing PDFs ***
+  const [processingPdfIds, setProcessingPdfIds] = useState(new Set());
 
   const loadPDFs = useCallback(async (selectFirst = false) => {
     logger.info("Loading PDFs...");
@@ -27,23 +27,29 @@ const RAGInterface = () => {
       if (response.success) {
         const fetchedPdfs = response.pdfs || [];
         setPdfs(fetchedPdfs);
-        logger.info(`Fetched ${fetchedPdfs.length} PDFs.`);
-        // Update selection logic robustly
+        logger.info(`Workspaceed ${fetchedPdfs.length} PDFs.`);
+
+        // Update selection logic
         setSelectedPdf(prev => {
            const currentId = prev?._id;
            const stillExists = currentId ? fetchedPdfs.some(pdf => pdf._id === currentId) : false;
            if (stillExists) {
                const updatedCurrentPdf = fetchedPdfs.find(pdf => pdf._id === currentId);
-               return updatedCurrentPdf || null; // Return updated or null if gone
+               return updatedCurrentPdf ? updatedCurrentPdf : null; // Return updated data or null if somehow missing
            } else if (selectFirst && fetchedPdfs.length > 0) {
-               return fetchedPdfs[0]; // Select first if requested and available
+               // If told to select first (e.g., after initial load or reset)
+               return fetchedPdfs[0];
            } else {
-               return null; // Otherwise no selection
+               // Otherwise, keep null or previous valid selection if it wasn't found
+               return null;
            }
         });
       } else {
-        const errorMsg = 'Failed to fetch PDFs: ' + (response.message || 'Server error');
-        logger.error(errorMsg); setError(errorMsg); setPdfs([]); setSelectedPdf(null);
+        const errorMsg = 'Failed to fetch PDFs: ' + (response.message || 'Unknown server error');
+        logger.error(errorMsg);
+        setError(errorMsg);
+        setPdfs([]);
+        setSelectedPdf(null);
       }
     } catch (err) {
       const errorMsg = 'Error fetching PDFs: ' + (err.message || 'Network error');
@@ -55,22 +61,36 @@ const RAGInterface = () => {
 
   useEffect(() => { loadPDFs(true); }, [loadPDFs]);
 
-  const handlePdfUploadSuccess = () => { logger.info("Upload complete, reloading PDF list."); loadPDFs(); };
-  const handleResetSuccess = () => { logger.info("System reset complete."); setPdfs([]); setSelectedPdf(null); };
+  const handlePdfUploadSuccess = () => {
+    logger.info("Upload successful, reloading PDF list.");
+    // No need to manage processingPdfIds here anymore, as the upload API waits.
+    // Simply reload the list to get the latest data including the new PDF.
+    loadPDFs();
+  };
+
+  const handleResetSuccess = () => {
+    logger.info("System reset successful, clearing local state.");
+    setPdfs([]);
+    setSelectedPdf(null);
+    // Optionally reload PDFs after reset if needed, or leave list empty
+    // loadPDFs(true);
+  };
 
   const handleSelectPdf = (pdf) => {
+      // *** PREVENT SELECTION if PDF is not processed ***
       if (pdf.processed === false) {
-           logger.warn(`PDF ${pdf.originalName} is still processing.`);
-           setError(`"${pdf.originalName}" is processing...`);
-           setTimeout(() => setError(null), 3000);
-           return;
+           logger.warn(`PDF ${pdf.originalName} is still processing. Selection prevented.`);
+           // Optionally show a temporary message to the user
+           setError(`Document "${pdf.originalName}" is still processing. Please wait.`);
+           setTimeout(() => setError(null), 3000); // Clear message after 3s
+           return; // Do not select
       }
       setSelectedPdf(pdf);
       setError(null);
   };
 
   return (
-    <div className="rag-app ghibli-theme"> {/* Ensure theme class is present */}
+    <div className="rag-app">
       <header className="app-header">
         <div className="container">
           <h1>Local RAG Application</h1>
@@ -78,17 +98,15 @@ const RAGInterface = () => {
       </header>
 
       <main className="container">
-        {/* Section for Upload - takes full width */}
-        <div className="upload-section"> {/* Use this class for styling */}
+        <div className="controls-section">
           <div className="card upload-card">
             <h2>Upload Document</h2>
             <PDFUploader onUpload={handlePdfUploadSuccess} />
           </div>
-        </div>
-
-        {/* Section for Reset Button - MOVED HERE */}
-        <div className="reset-section">
-          <ResetButton onReset={handleResetSuccess} />
+          <div className="reset-section">
+            {/* Pass the success handler */}
+            <ResetButton onReset={handleResetSuccess} />
+          </div>
         </div>
 
         {/* Loading/Error Messages */}
@@ -114,7 +132,12 @@ const RAGInterface = () => {
                       style={{ cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.6 : 1 }}
                     >
                       <div className="document-icon">
-                        {isProcessing ? <SpinnerIcon /> : <PdfIcon /> }
+                        {/* Use different icon or add spinner if processing */}
+                        {isProcessing ? (
+                           <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12,4a8,8,0,0,1,7.89,6.7A1.53,1.53,0,0,0,21.38,12h0a1.5,1.5,0,0,0,1.48-1.75,11,11,0,0,0-21.72,0A1.5,1.5,0,0,0,2.62,12h0a1.53,1.53,0,0,0,1.49-1.3A8,8,0,0,1,12,4Z"><animateTransform attributeName="transform" type="rotate" dur="0.75s" values="0 12 12;360 12 12" repeatCount="indefinite"/></path></svg>
+                        ) : (
+                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>
+                        )}
                       </div>
                       <div className="document-info">
                         <div className="document-name">{pdf.originalName}</div>
@@ -126,8 +149,11 @@ const RAGInterface = () => {
                   );
                 })}
               </div>
-            ) : !loading && (
-              <div className="empty-state"> <PdfIcon /> <p>No documents uploaded yet</p> </div>
+            ) : !loading && ( // Only show empty state if not loading and no PDFs
+              <div className="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>
+                <p>No documents uploaded yet</p>
+              </div>
             )}
           </div>
 
@@ -137,14 +163,18 @@ const RAGInterface = () => {
               <ChatInterface pdf={selectedPdf} />
             ) : (
               <div className="card select-prompt-card">
-                <div className="empty-state"> <ChatIcon /> <p>{selectedPdf && selectedPdf.processed === false ? `"${selectedPdf.originalName}" is processing...` : "Select a processed document to start chatting"}</p> </div>
+                <div className="empty-state">
+                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M20,16H6L4,18V4H20" /></svg>
+                  {/* Show appropriate message */}
+                  <p>{selectedPdf && selectedPdf.processed === false ? `"${selectedPdf.originalName}" is processing...` : "Select a processed document to start chatting"}</p>
+                </div>
               </div>
             )}
           </div>
         </div>
       </main>
 
-       <footer className="app-footer">
+      <footer className="app-footer">
          <div className="container">
            <p>Powered by Ollama ({LLM_MODEL_NAME}) & Sentence Transformers ({EMBEDDING_MODEL_NAME})</p>
          </div>
@@ -164,3 +194,8 @@ const ChatIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 2
 
 
 export default RAGInterface;
+
+// Placeholder SVG icons if you need them inline
+const SpinnerIcon = () => <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><path d="M12,4a8,8,0,0,1,7.89,6.7A1.53,1.53,0,0,0,21.38,12h0a1.5,1.5,0,0,0,1.48-1.75,11,11,0,0,0-21.72,0A1.5,1.5,0,0,0,2.62,12h0a1.53,1.53,0,0,0,1.49-1.3A8,8,0,0,1,12,4Z"><animateTransform attributeName="transform" type="rotate" dur="0.75s" values="0 12 12;360 12 12" repeatCount="indefinite"/></path></svg>;
+const PdfIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>;
+const ChatIcon = () => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path fill="currentColor" d="M20,2H4A2,2 0 0,0 2,4V22L6,18H20A2,2 0 0,0 22,16V4A2,2 0 0,0 20,2M20,16H6L4,18V4H20" /></svg>;

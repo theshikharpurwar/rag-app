@@ -1,47 +1,59 @@
-version: '3.8'
+# FILE: docker-compose.yml (Simplified for Host Ollama setup)
 
 services:
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
-    volumes:
-      - backend-uploads:/app/backend/uploads
-    environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - MONGO_URI=mongodb://mongodb:27017/rag_app
-    depends_on:
-      - mongodb
-    networks:
-      - rag-network
-
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.frontend
+      dockerfile: Dockerfile
     ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-    networks:
-      - rag-network
+      - "3000:80"
+    restart: unless-stopped
 
-  mongodb:
+  backend:
+    build:
+      context: ./backend # This context now includes the backend Dockerfile
+      dockerfile: Dockerfile # The Dockerfile installs Node, Python, and copies code
+    ports:
+      - "5000:5000"
+    volumes:
+      # Mount uploads volume so backend and spawned python can access
+      - ./backend/uploads:/app/uploads
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/rag_db
+      # *** Crucial for Python script to find HOST Ollama ***
+      - OLLAMA_HOST_URL=http://host.docker.internal:11434 # For Docker Desktop (Windows/Mac)
+      # On Linux host, might need different setup (e.g., --network host or host IP)
+      - NODE_ENV=production
+      - QDRANT_HOST=qdrant # Python script needs this if using getenv
+      - QDRANT_PORT=6333
+    depends_on:
+      - mongo
+      - qdrant
+    restart: unless-stopped
+    # Add network if needed for host.docker.internal on older Docker versions
+    # networks:
+    #   - default
+
+  mongo:
     image: mongo:latest
     ports:
       - "27017:27017"
     volumes:
-      - mongodb-data:/data/db
-    networks:
-      - rag-network
+      - mongo_data:/data/db
+    restart: unless-stopped
 
-networks:
-  rag-network:
-    driver: bridge
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
 
 volumes:
-  backend-uploads:
-  mongodb-data:
+  qdrant_data:
+  mongo_data:
+
+# networks: # Define if needed
+#   default:
