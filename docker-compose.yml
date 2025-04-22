@@ -1,43 +1,40 @@
-# FILE: docker-compose.yml (Final version for Setup A)
+# FILE: docker-compose.yml (Corrected Build Context for Backend)
 
 services:
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: ./frontend # Context is the frontend dir
+      dockerfile: Dockerfile # Dockerfile is inside ./frontend/
     ports:
       - "3000:80"
     restart: unless-stopped
 
   backend:
     build:
-      context: ./backend # Contains Dockerfile installing Node & Python
-      dockerfile: Dockerfile
+      # *** FIX: Set context to project root ***
+      context: .
+      # *** FIX: Specify the Dockerfile path relative to the context ***
+      dockerfile: backend/Dockerfile
     ports:
       - "5000:5000"
     volumes:
-      # Mount uploads for persistence AND access by python scripts
+      # Mount from host's backend/uploads to container's /app/uploads
       - ./backend/uploads:/app/uploads
     environment:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      # ** Crucial: URL for Python script inside container to reach Ollama on HOST **
       - OLLAMA_HOST_URL=http://host.docker.internal:11434 # For Docker Desktop
       - NODE_ENV=production
     depends_on:
       - mongo
       - qdrant
     restart: unless-stopped
-    # Required on some Docker setups (like older Docker Desktop or some Linux)
-    # for host.docker.internal DNS to work reliably from container.
-    extra_hosts:
+    extra_hosts: # Keep this for host.docker.internal resolution
       - "host.docker.internal:host-gateway"
 
   mongo:
     image: mongo:6.0
-    # ports: # Only expose if needed for external access
-    #   - "27017:27017"
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
@@ -45,8 +42,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     ports:
-      - "6333:6333" # Expose REST API to host
-      # - "6334:6334" # gRPC
+      - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped

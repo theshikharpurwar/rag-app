@@ -1,37 +1,40 @@
 # FILE: backend/Dockerfile
-# Combined Node.js backend and Python environment for Setup A
+# (Paths adjusted for root build context)
 
 FROM node:18-bookworm-slim
 
 WORKDIR /app
 
-# Install Python 3 pip and potentially build tools
+# Install Python & Dependencies (Paths relative to WORKDIR /app)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-dev \
-    # Add other system libs if python deps need them (e.g., build-essential)
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python Dependencies
+# *** FIX: Copy requirements from python dir relative to root context ***
 COPY python/requirements.txt ./python_requirements.txt
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r python_requirements.txt
 
-# Copy all python code
+# *** FIX: Copy python code dir relative to root context ***
+# This copies the entire content of ./python into /app/python within the container
 COPY python ./python/
 
 # Install Node.js Dependencies
-COPY package.json ./
-COPY package-lock.json* ./
+# *** FIX: Copy package files from backend dir relative to root context ***
+COPY backend/package.json ./
+COPY backend/package-lock.json* ./
 RUN npm ci --only=production --legacy-peer-deps
 
 # Copy Application Code
-COPY . .
+# *** FIX: Copy backend code dir relative to root context ***
+# This copies the content of ./backend into /app within the container
+COPY backend .
 
-# Create uploads directory structure
+# Create uploads directory (path relative to WORKDIR /app)
 RUN mkdir -p /app/uploads/images
 
 EXPOSE 5000
 ENV PATH="/usr/local/bin:${PATH}"
-CMD [ "node", "server.js" ]
+CMD [ "node", "server.js" ] # server.js is now at /app/server.js
