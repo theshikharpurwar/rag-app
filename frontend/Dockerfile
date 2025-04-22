@@ -2,14 +2,13 @@
 # (Corrected for npm workspaces - uses root lockfile)
 
 # Stage 1: Build the React application using Node 20+
-# Use Node 20+ as required by react-router
+# Use Node 20+ as required by react-router (addressing previous warning)
 FROM node:20-alpine as build
 
-# Set base working directory to represent project root in build stage
+# Set base working directory (represents project root in this stage)
 WORKDIR /app
 
 # Copy the root package.json AND the root package-lock.json
-# These define the workspaces and lock ALL dependencies
 COPY package.json ./
 COPY package-lock.json ./
 
@@ -18,7 +17,8 @@ COPY package-lock.json ./
 COPY frontend/package.json ./frontend/
 
 # Install ONLY the frontend workspace dependencies using the root lock file
-# Use the --workspace flag. Add --include-workspace-root if needed.
+# Use the --workspace flag. Add --include-workspace-root if frontend depends on root deps.
+# Using --legacy-peer-deps based on previous logs, remove if not needed.
 RUN npm ci --workspace=frontend --legacy-peer-deps
 
 # Copy the rest of the frontend source code into its subdirectory
@@ -34,7 +34,7 @@ RUN npm run build
 FROM nginx:1.25-alpine
 # Copy built assets from the build stage's frontend/build directory
 COPY --from=build /app/frontend/build /usr/share/nginx/html
-# Optional: Copy custom Nginx config if needed for routing
+# Optional: Copy custom Nginx config if needed for SPA routing
 # COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
