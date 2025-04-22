@@ -2,13 +2,13 @@
 # (Corrected for npm workspaces - uses root lockfile)
 
 # Stage 1: Build the React application using Node 20+
-# Use Node 20+ as required by react-router (addressing previous warning)
 FROM node:20-alpine as build
 
 # Set base working directory (represents project root in this stage)
 WORKDIR /app
 
 # Copy the root package.json AND the root package-lock.json
+# These define the workspaces and lock ALL dependencies
 COPY package.json ./
 COPY package-lock.json ./
 
@@ -17,7 +17,7 @@ COPY package-lock.json ./
 COPY frontend/package.json ./frontend/
 
 # Install ONLY the frontend workspace dependencies using the root lock file
-# Use the --workspace flag. Add --include-workspace-root if frontend depends on root deps.
+# Use the --workspace flag. Add --include-workspace-root if needed.
 # Using --legacy-peer-deps based on previous logs, remove if not needed.
 RUN npm ci --workspace=frontend --legacy-peer-deps
 
