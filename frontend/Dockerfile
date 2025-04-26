@@ -1,28 +1,26 @@
 # FILE: frontend/Dockerfile
-# (Workspace-Aware Version - Added DISABLE_ESLINT_PLUGIN)
+# (Workspace-Aware Version - Install ALL root deps first)
 
 # Stage 1: Build the React application using Node 20+
 FROM node:20-alpine as build
 
 WORKDIR /app # Root context
 
-# Copy root package.json AND root package-lock.json
+# Copy the root package.json AND the root package-lock.json
 COPY package.json ./
 COPY package-lock.json ./
 
-# Copy frontend-specific package.json
-COPY frontend/package.json ./frontend/
+# --- FIX: Install ALL dependencies using the root lockfile ---
+# This ensures ESLint and other potentially hoisted dev dependencies are present
+# Remove the --workspace=frontend flag here
+RUN npm ci --legacy-peer-deps
 
-# Install ONLY frontend workspace dependencies using root lockfile
-RUN npm ci --workspace=frontend --legacy-peer-deps
-
-# Copy frontend source code
+# Copy the rest of the frontend source code into its subdirectory
+# (We still need frontend/package.json for the build script later)
 COPY frontend ./frontend/
 
-# --- FIX: Disable ESLint plugin during build ---
-ENV DISABLE_ESLINT_PLUGIN=true
-
-# Run build from root, targeting the workspace
+# --- FIX: Run build from the ROOT (/app) targeting the frontend workspace ---
+# The build script itself is defined in frontend/package.json
 RUN npm run build --workspace=frontend
 
 # Stage 2: Serve the build output with Nginx
