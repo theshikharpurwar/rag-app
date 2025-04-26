@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     python3-dev \
     python3-venv \
-    # Add other system libs if required by python dependencies here
+    # Add other system libs if required by python dependencies here (e.g., build-essential)
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Create and activate virtual environment ---
 RUN python3 -m venv /opt/venv
-# Activate venv for subsequent RUN commands and set it in PATH for CMD
+# Add venv python/pip to path permanently for subsequent RUN/CMD/ENTRYPOINT
 ENV PATH="/opt/venv/bin:$PATH"
 
 # --- Install Python Dependencies into venv ---
