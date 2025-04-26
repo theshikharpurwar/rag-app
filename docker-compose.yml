@@ -1,36 +1,35 @@
-# FILE: docker-compose.yml (Corrected Build Context for Backend)
+# FILE: docker-compose.yml (Corrected Frontend Build Context)
 
 services:
   frontend:
     build:
-      context: ./frontend # Context is the frontend dir
-      dockerfile: Dockerfile # Dockerfile is inside ./frontend/
+      # *** FIX: Set context to project root for frontend build ***
+      context: .
+      # *** FIX: Specify Dockerfile path relative to the new context ***
+      dockerfile: frontend/Dockerfile
     ports:
       - "3000:80"
     restart: unless-stopped
 
   backend:
     build:
-      # *** FIX: Set context to project root ***
-      context: .
-      # *** FIX: Specify the Dockerfile path relative to the context ***
-      dockerfile: backend/Dockerfile
+      context: . # Correctly set to root
+      dockerfile: backend/Dockerfile # Correct path
     ports:
       - "5000:5000"
     volumes:
-      # Mount from host's backend/uploads to container's /app/uploads
       - ./backend/uploads:/app/uploads
     environment:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
-      - OLLAMA_HOST_URL=http://host.docker.internal:11434 # For Docker Desktop
+      - OLLAMA_HOST_URL=http://host.docker.internal:11434
       - NODE_ENV=production
     depends_on:
       - mongo
       - qdrant
     restart: unless-stopped
-    extra_hosts: # Keep this for host.docker.internal resolution
+    extra_hosts:
       - "host.docker.internal:host-gateway"
 
   mongo:
