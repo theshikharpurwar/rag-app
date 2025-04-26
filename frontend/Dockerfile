@@ -1,5 +1,5 @@
 # FILE: frontend/Dockerfile
-# (Workspace-Aware - Install All Deps - Run build from frontend dir with relative path script)
+# (Workspace-Aware - Copying root node_modules into frontend dir before build)
 
 # Stage 1: Build the React application using Node 20+
 FROM node:20-alpine as build
@@ -10,17 +10,21 @@ WORKDIR /app # Root context
 COPY package.json ./
 COPY package-lock.json ./
 
-# Install ALL dependencies using the root lockfile first
-# This ensures react-scripts is in /app/node_modules/.bin
+# Install ALL dependencies using the root lockfile into /app/node_modules
 RUN npm ci --legacy-peer-deps
 
-# Copy the rest of the frontend source code into its subdirectory
+# Copy the frontend source code into its subdirectory
 COPY frontend ./frontend/
+
+# *** FIX: Copy the installed root node_modules INTO the frontend directory ***
+# This makes dependencies available relative to the frontend directory
+RUN cp -a /app/node_modules ./frontend/
 
 # Set the working directory to the frontend code
 WORKDIR /app/frontend
 
-# Run the build script (defined in frontend/package.json, which now uses relative path)
+# Run the build script (using the script defined in frontend/package.json)
+# It should now find react-scripts in ./node_modules/.bin relative to this WORKDIR
 RUN npm run build
 
 # Stage 2: Serve the build output with Nginx
