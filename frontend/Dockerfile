@@ -1,5 +1,5 @@
 # FILE: frontend/Dockerfile
-# (Corrected for npm workspaces - uses root lockfile)
+# (Workspace-Aware Version - Use THIS content)
 
 # Stage 1: Build the React application using Node 20+
 FROM node:20-alpine as build
