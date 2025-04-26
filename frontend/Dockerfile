@@ -1,5 +1,5 @@
 # FILE: frontend/Dockerfile
-# (Workspace-Aware Version - Install ALL root deps first)
+# (Workspace-Aware - Install All Deps - Run build from frontend dir with relative path script)
 
 # Stage 1: Build the React application using Node 20+
 FROM node:20-alpine as build
@@ -10,18 +10,18 @@ WORKDIR /app # Root context
 COPY package.json ./
 COPY package-lock.json ./
 
-# --- FIX: Install ALL dependencies using the root lockfile ---
-# This ensures ESLint and other potentially hoisted dev dependencies are present
-# Remove the --workspace=frontend flag here
+# Install ALL dependencies using the root lockfile first
+# This ensures react-scripts is in /app/node_modules/.bin
 RUN npm ci --legacy-peer-deps
 
 # Copy the rest of the frontend source code into its subdirectory
-# (We still need frontend/package.json for the build script later)
 COPY frontend ./frontend/
 
-# --- FIX: Run build from the ROOT (/app) targeting the frontend workspace ---
-# The build script itself is defined in frontend/package.json
-RUN npm run build --workspace=frontend
+# Set the working directory to the frontend code
+WORKDIR /app/frontend
+
+# Run the build script (defined in frontend/package.json, which now uses relative path)
+RUN npm run build
 
 # Stage 2: Serve the build output with Nginx
 FROM nginx:1.25-alpine
