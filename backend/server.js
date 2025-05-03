@@ -19,11 +19,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/rag_app', {
+const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/rag_app';
+mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('MongoDB connected'))
+.then(() => console.log(`MongoDB connected at ${mongoURI}`))
 .catch(err => console.error('MongoDB connection error:', err));
 
 // Ensure uploads directory exists (corrected to point to backend/uploads)
@@ -53,7 +54,12 @@ async function clearQdrantCollection(collectionName = 'documents') {
     console.log(`Clearing Qdrant collection: ${collectionName}`);
     
     // Use path.resolve for more reliable path handling
-    const pythonScript = path.resolve(__dirname, '..', 'python', 'utils', 'qdrant_utils.py');
+    // In Docker, Python scripts are at /app/python
+    const pythonScript = path.resolve(
+      process.env.PYTHONPATH || path.join(__dirname, '..', 'python'), 
+      'utils', 
+      'qdrant_utils.py'
+    );
     console.log(`Attempting to run Python script at: ${pythonScript}`);
     
     // Verify script exists
@@ -63,7 +69,7 @@ async function clearQdrantCollection(collectionName = 'documents') {
       return;
     }
 
-    const pythonProcess = spawn('python', [
+    const pythonProcess = spawn('python3', [
       pythonScript, 
       'reset_collection',
       '--collection_name', 

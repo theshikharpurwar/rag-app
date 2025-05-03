@@ -1,6 +1,8 @@
 // D:\rag-app\frontend\src\api.js
 
-const API_URL = 'http://localhost:5000/api';
+// Allow configuring the API URL via environment variable at build time
+// For containerized environment it will work with relative URL
+const API_URL = process.env.REACT_APP_API_URL || '/api';
 
 // Upload a PDF file
 export const uploadPDF = async (file) => {

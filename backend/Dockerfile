@@ -8,44 +8,50 @@ FROM node:18-bookworm-slim
 # Set working directory
 WORKDIR /app
 
-# Install Python build dependencies (if needed for some pip packages), then cleanup
+# Install Python and required system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-full \
     python3-pip \
+    python3-venv \
     python3-dev \
-    # Add any other system libs needed by Python packages (e.g., for PyMuPDF if needed)
-    # build-essential libpoppler-cpp-dev pkg-config python3-tk etc.
+    # Add any other system libs needed by Python packages
+    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# --- Install Python Dependencies ---
-# Copy only requirements first to leverage Docker cache
+# Set up Python virtual environment
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
+ENV PYTHONPATH="/app/python"
+
+# Copy Python requirements first
 COPY python/requirements.txt ./python_requirements.txt
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r python_requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r ./python_requirements.txt
 
-# Copy all python code (needed for running scripts)
-# Ensure embeddings/, llm/, utils/ are included if they exist in your python dir
-COPY python ./python/
+# Copy Python scripts to maintain proper structure
+COPY python /app/python
 
-# --- Install Node.js Dependencies ---
-# Copy package files first
-COPY package.json ./
-COPY package-lock.json* ./
-# Install production Node dependencies
+# Change to backend directory for Node.js operations
+WORKDIR /app/backend
+
+# Copy Node.js package files and install dependencies
+COPY backend/package.json backend/package-lock.json* ./
 RUN npm ci --only=production
 
-# --- Copy Application Code ---
-# Copy the rest of the backend code AFTER installing dependencies
-COPY . .
+# Copy the rest of the backend code
+COPY backend/ .
 
-# Create uploads directory structure (ensure correct path relative to WORKDIR /app)
-# This will be inside the container at /app/uploads
-RUN mkdir -p /app/uploads/images
+# Create uploads directory structure
+RUN mkdir -p ./uploads/images
 
 # Expose the port the Node server listens on
 EXPOSE 5000
 
-# Command to run the backend server
-# Ensure Python3 is in the PATH or use python3 explicitly in spawn
-ENV PATH="/usr/local/bin:${PATH}" 
-CMD [ "node", "server.js" ]
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=5000
+
+# Command to run the server
+CMD ["node", "server.js"]

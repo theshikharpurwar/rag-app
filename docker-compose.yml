@@ -7,32 +7,33 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:80"
+    depends_on:
+      - backend
     restart: unless-stopped
 
   backend:
     build:
-      context: ./backend # This context now includes the backend Dockerfile
-      dockerfile: Dockerfile # The Dockerfile installs Node, Python, and copies code
+      context: .
+      dockerfile: ./backend/Dockerfile
     ports:
       - "5000:5000"
     volumes:
-      # Mount uploads volume so backend and spawned python can access
-      - ./backend/uploads:/app/uploads
+      # Mount uploads volume for persistent storage
+      - uploads_data:/app/uploads
     environment:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
-      # *** Crucial for Python script to find HOST Ollama ***
-      - OLLAMA_HOST_URL=http://host.docker.internal:11434 # For Docker Desktop (Windows/Mac)
-      # On Linux host, might need different setup (e.g., --network host or host IP)
+      # For accessing Ollama on the host machine
+      - OLLAMA_HOST_URL=http://host.docker.internal:11434
       - NODE_ENV=production
-      - QDRANT_HOST=qdrant # Python script needs this if using getenv
+      - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
     depends_on:
       - mongo
       - qdrant
     restart: unless-stopped
-    # Add network if needed for host.docker.internal on older Docker versions
-    # networks:
-    #   - default
+    # This helps to ensure host.docker.internal works on all platforms
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   mongo:
     image: mongo:latest
@@ -54,6 +55,7 @@ services:
 volumes:
   qdrant_data:
   mongo_data:
+  uploads_data:
 
 # networks: # Define if needed
 #   default:
