@@ -1,7 +1,6 @@
 pdf2image
 transformers
 torch
-colpali-engine
 qdrant-client
 sentence-transformers
 numpy

@@ -1,7 +1,7 @@
 {
     "name": "rag-app",
     "version": "1.0.0",
-    "description": "A local Multimodal RAG application using Qwen2.5-VL and MERN stack",
+    "description": "A local Multimodal RAG application using Ollama and MERN stack",
     "private": true,
     "workspaces": {
         "packages": [

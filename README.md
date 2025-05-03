@@ -9,57 +9,40 @@ A Retrieval Augmented Generation (RAG) application that lets you ask questions a
 
 ### Windows Users:
 
-Simply run the `start.bat` file by double-clicking on it. This script will:
-1. Check if Docker Desktop is installed and running
-2. Check if Ollama is installed and running
-3. Install required models if needed
-4. Start all the necessary services
+1. **Ensure Prerequisites are Met:**
+   - Install [Docker Desktop](https://www.docker.com/products/docker-desktop) and make sure it is **running**.
+   - Install [Ollama](https://ollama.com/download) and make sure it is **running**.
+   - Download the required model: `ollama pull tinyllama`
+
+2. **Run the Start Script:**
+   - Double-click on `start.bat`.
+   - This script uses hardcoded paths based on your system (`C:\Program Files\Docker...` and `C:\Users\Shikhar Purwar...`). If Docker or Ollama are installed elsewhere, you may need to edit the script.
 
 ### Linux/Mac Users:
 
-1. Make the start script executable:
-   ```bash
-   chmod +x start.sh
-   ```
+1. **Ensure Prerequisites are Met:**
+   - Install Docker (Docker Desktop for Mac, Docker Engine for Linux).
+   - Install Docker Compose (usually included with Docker Desktop, may need separate install on Linux).
+   - Make sure the Docker service is **running**.
+   - Install [Ollama](https://ollama.com/download).
+   - Make sure Ollama is **running**.
+   - Download the required model: `ollama pull tinyllama`
 
-2. Run the script:
-   ```bash
-   ./start.sh
-   ```
+2. **Run the Start Script:**
+   - Open your terminal.
+   - Navigate to the project directory.
+   - Make the script executable: `chmod +x start.sh`
+   - Run the script: `./start.sh`
 
-**Both scripts will help you download and install any missing components.**
+**The scripts will then build and start the application containers.**
 
 ## Detailed Setup (Manual Method)
 
-If you prefer to set things up manually, follow these steps:
+If you prefer to set things up manually *after* installing prerequisites:
 
-### 1. Install Prerequisites
-
-1. **Docker Desktop** (or Docker Engine on Linux)
-   - Download and install from [Docker's website](https://www.docker.com/products/docker-desktop)
-   - Make sure Docker is running
-
-2. **Ollama**
-   - Download and install from [Ollama's website](https://ollama.com/download)
-   - Start Ollama after installation
-
-### 2. Download Required AI Model
-
-Run this command in your terminal or command prompt:
-
-```bash
-ollama pull tinyllama
-```
-
-This downloads a small but capable AI model called TinyLlama that will run on your computer.
-
-### 3. Start the Application
-
-From the project directory, run:
-
-```bash
-docker-compose up -d
-```
+1. **Install Prerequisites** (Docker, Ollama - see above)
+2. **Download AI Model**: `ollama pull tinyllama`
+3. **Start Application**: From the project directory, run `docker-compose up --build -d`
 
 Wait for all services to start (this might take several minutes on the first run).
 
@@ -89,17 +72,17 @@ docker-compose down
 ## Troubleshooting
 
 ### Docker Issues
-- Make sure Docker Desktop is running
-- Try restarting Docker Desktop if you encounter issues
+- Make sure Docker Desktop/Engine is running
+- Try restarting Docker if you encounter issues
 - On Windows, ensure Docker Desktop is using WSL2 for better performance
-- On Linux, ensure your user is in the docker group: `sudo usermod -aG docker $USER`
+- On Linux, ensure your user is in the docker group: `sudo usermod -aG docker $USER` (then log out/in)
 
 ### Ollama Issues
 - Verify Ollama is running
 - If you get errors about the model not being found, try running `ollama pull tinyllama` again
 
 ### Application Issues
-- If the application doesn't start correctly, try running `docker-compose down` followed by `docker-compose up -d`
+- If the application doesn't start correctly, try running `docker-compose down` followed by `docker-compose up --build -d`
 - Check the logs with `docker-compose logs`
 
 ### Not Enough Memory
