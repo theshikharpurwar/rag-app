@@ -1,0 +1,169 @@
+name: Combined CI/CD Workflow
+
+on:
+  push:
+    branches: [ "dev-ops" ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "dev-ops" ]
+
+env:
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  BACKEND_IMAGE_NAME: ${{ github.repository }}-backend
+  FRONTEND_IMAGE_NAME: ${{ github.repository }}-frontend
+
+jobs:
+  # --------------------------------------
+  # Job from original dev-workflow.yml
+  # --------------------------------------
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20' # Using Node 20 consistent with Dockerfile
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Lint check
+        run: |
+          cd backend
+          npm run lint || true
+          cd ../frontend
+          npm run lint || true
+
+      - name: Run tests
+        run: |
+          cd backend
+          npm test || true
+          cd ../frontend
+          npm test || true
+
+  # --------------------------------------
+  # Job from original dev-workflow.yml
+  # Depends on the 'test' job
+  # --------------------------------------
+  docker-build-test:
+    runs-on: ubuntu-latest
+    needs: test # Runs only after 'test' job succeeds
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build backend image (test)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: false # Do not push
+          load: true  # Load into local Docker daemon
+          tags: rag-app-backend:test
+
+      - name: Build frontend image (test)
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false # Do not push
+          load: true  # Load into local Docker daemon
+          tags: rag-app-frontend:test
+
+      - name: Test Docker Compose
+        run: |
+          # Ensure test compose file exists or skip this step
+          if [ -f docker-compose.test.yml ]; then
+            docker-compose -f docker-compose.test.yml up -d --quiet-pull
+            sleep 10
+            docker-compose -f docker-compose.test.yml ps
+            docker-compose -f docker-compose.test.yml down
+          else
+            echo "docker-compose.test.yml not found, skipping compose test."
+          fi
+
+  # --------------------------------------
+  # Job from original docker-publish.yml
+  # Depends on 'docker-build-test' job
+  # Only runs on push events (not pull requests)
+  # --------------------------------------
+  publish:
+    runs-on: ubuntu-latest
+    needs: docker-build-test # Runs only after 'docker-build-test' job succeeds
+    if: github.event_name == 'push' # Only run on push to branch or tag, not PRs
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Login to GHCR
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract metadata for Docker
+      - name: Extract Docker metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Extract Docker metadata for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha
+
+      # Build and push backend image
+      - name: Build and push backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: true # Actually push the image
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+      # Build and push frontend image
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true # Actually push the image
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }} 

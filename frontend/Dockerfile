@@ -10,7 +10,7 @@ ENV CI=false
 
 COPY package.json ./
 # Use npm install instead of npm ci for better compatibility
-RUN npm install --legacy-peer-deps
+RUN npm install
 COPY . .
 # Add --verbose to see what's failing in the build
 RUN npm run build --verbose || (echo "Build failed, showing package.json:" && cat package.json && exit 1)
