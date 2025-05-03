@@ -1,2 +1,5 @@
 /node_modules
 /package-lock.jsoncache/models--vidore--colpaligemma-3b-pt-448-base/blobs/ 
+/backend/node_modules
+/backend/uploads/images
+/backend/uploads/*.pdf

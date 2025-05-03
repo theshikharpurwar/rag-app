@@ -18,10 +18,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(process)d] [%(lev
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant") # Service name from compose
+# Using localhost instead of Docker service names for local development
+QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost") # Changed from "qdrant" to "localhost"
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 # Ollama runs on the HOST machine
-OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://host.docker.internal:11434")
+OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434") # Changed from "http://host.docker.internal:11434"
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
@@ -31,6 +32,61 @@ CONTEXT_RETRIEVAL_LIMIT = 5
 MAX_CONTEXT_CHAR_LIMIT = 4096 # Keep updated limit
 MAX_HISTORY_TOKENS = 500
 # --- End Configuration ---
+
+def check_dependencies():
+    """Check if Qdrant and Ollama are running and provide guidance if not."""
+    missing_services = []
+    guidance = []
+
+    # Check Qdrant
+    try:
+        logger.info(f"Checking connection to Qdrant at {QDRANT_HOST}:{QDRANT_PORT}...")
+        client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=5)
+        client.get_collections()
+        logger.info("✓ Qdrant is running")
+    except Exception as e:
+        logger.error(f"✗ Qdrant connection failed: {e}")
+        missing_services.append("Qdrant")
+        guidance.append("""
+To run Qdrant locally:
+1. Install Docker
+2. Run: docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant
+Or install Qdrant directly from https://qdrant.tech/documentation/install/
+        """)
+
+    # Check Ollama
+    try:
+        logger.info(f"Checking connection to Ollama at {OLLAMA_HOST_URL}...")
+        response = requests.get(f"{OLLAMA_HOST_URL}/api/tags", timeout=5)
+        if response.status_code == 200:
+            logger.info("✓ Ollama is running")
+            models = response.json().get("models", [])
+            if not any(m.get("name", "").startswith(LLM_MODEL_NAME) for m in models):
+                logger.warning(f"Model '{LLM_MODEL_NAME}' not found in Ollama")
+                guidance.append(f"""
+Ollama is running but the model '{LLM_MODEL_NAME}' is not available.
+To pull the model, run: ollama pull {LLM_MODEL_NAME}
+                """)
+        else:
+            logger.error(f"✗ Ollama returned unexpected status: {response.status_code}")
+            missing_services.append("Ollama")
+    except Exception as e:
+        logger.error(f"✗ Ollama connection failed: {e}")
+        missing_services.append("Ollama")
+        guidance.append("""
+To run Ollama locally:
+1. Download from https://ollama.com/download
+2. Install and start the Ollama application
+3. Pull a model: ollama pull tinyllama
+        """)
+
+    if missing_services:
+        logger.error(f"Required services not available: {', '.join(missing_services)}")
+        for guide in guidance:
+            logger.info(guide)
+        return False
+    
+    return True
 
 # --- Client/Model Initialization ---
 embedding_model = None
@@ -45,16 +101,9 @@ except Exception as e:
 
 try:
     logger.info(f"Initializing LLM: {LLM_MODEL_NAME} targeting {OLLAMA_API_BASE}")
-    llm = OllamaLLM(model_name=LLM_MODEL_NAME)
-    # *** IMPORTANT: Ensure OllamaLLM uses OLLAMA_API_BASE for its requests ***
-    # This line attempts to set it if the class supports it after init.
-    # Ideally, modify OllamaLLM to accept api_base in __init__.
-    if hasattr(llm, 'api_base'):
-         llm.api_base = OLLAMA_API_BASE
-    else:
-         logger.warning("Cannot dynamically set api_base on OllamaLLM instance. Ensure class uses OLLAMA_API_BASE.")
-
+    llm = OllamaLLM(model_name=LLM_MODEL_NAME, api_base=OLLAMA_API_BASE)
     logger.info(f"LLM instance for '{LLM_MODEL_NAME}' created.")
+    
     # Check connection to host Ollama
     try:
         test_response = requests.get(f"{OLLAMA_HOST_URL}/api/tags", timeout=5)
@@ -218,6 +267,17 @@ def main():
     parser.add_argument('--pdf_id', required=True, help='MongoDB ID of the PDF to filter by')
     parser.add_argument('--history', type=str, default='[]', help='Chat history as a JSON string')
     args = parser.parse_args()
+
+    # Check if dependencies are available
+    logger.info("Checking required services...")
+    if not check_dependencies():
+        result = {
+            "answer": "Error: Required services (Qdrant and/or Ollama) are not available. "
+                     "Please check the console output for instructions on how to install and run them.",
+            "sources": []
+        }
+        print(json.dumps(result))
+        sys.exit(1)
 
     if not embedding_model or not llm: # Check models loaded
          logger.critical("Models did not load."); result = {"answer": "Error: AI models failed.", "sources": []}

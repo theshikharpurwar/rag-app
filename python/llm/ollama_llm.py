@@ -14,20 +14,24 @@ class OllamaLLM:
     Class to generate text responses using the Ollama API
     """
 
-    def __init__(self, model_name='phi2'):
+    def __init__(self, model_name='phi2', api_base=None):
         """
         Initialize the OllamaLLM with a model
 
         Args:
             model_name (str): Name of the Ollama model to use
+            api_base (str, optional): Base URL for Ollama API. Defaults to http://localhost:11434/api
         """
         logger.info(f"Initializing OllamaLLM with model: {model_name}")
         self.model_name = model_name
-        self.api_base = "http://localhost:11434/api"
+        self.api_base = api_base if api_base else "http://localhost:11434/api"
+        logger.info(f"Using Ollama API at: {self.api_base}")
 
         # Verify that Ollama is running and the model is available
         try:
-            response = requests.get(f"{self.api_base}/tags")
+            # Extract the base URL without the /api suffix for the tags endpoint
+            base_url = self.api_base.rsplit('/api', 1)[0]
+            response = requests.get(f"{base_url}/api/tags")
             if response.status_code == 200:
                 available_models = [model['name'] for model in response.json().get('models', [])]
                 if model_name not in available_models:
@@ -39,7 +43,7 @@ class OllamaLLM:
                 logger.warning(f"Could not check available models. Status code: {response.status_code}")
         except Exception as e:
             logger.error(f"Error checking Ollama API: {str(e)}")
-            logger.warning("Make sure Ollama is running on localhost:11434")
+            logger.warning(f"Make sure Ollama is running at {self.api_base}")
 
     def generate_response(self, prompt, context=None, max_tokens=1000, temperature=0.7):
         """
@@ -72,7 +76,8 @@ class OllamaLLM:
             }
 
             # Make the request to the Ollama API
-            response = requests.post(f"{self.api_base}/generate", json=payload)
+            logger.info(f"Sending request to: {self.api_base}/generate")
+            response = requests.post(f"{self.api_base}/generate", json=payload, timeout=60)
 
             if response.status_code == 200:
                 # Extract the response text
@@ -89,6 +94,16 @@ class OllamaLLM:
                 logger.error(error_msg)
                 return f"Sorry, I encountered an error: {error_msg}"
 
+        except requests.exceptions.Timeout:
+            error_msg = f"Request to Ollama API timed out at {self.api_base}"
+            logger.error(error_msg)
+            return f"Sorry, the Ollama API request timed out. Please ensure Ollama is running at {self.api_base.split('/api')[0]}."
+        
+        except requests.exceptions.ConnectionError:
+            error_msg = f"Could not connect to Ollama API at {self.api_base}"
+            logger.error(error_msg)
+            return f"Sorry, I could not connect to the Ollama API. Please ensure Ollama is running at {self.api_base.split('/api')[0]}."
+            
         except Exception as e:
             error_msg = f"Error generating response: {str(e)}"
             logger.error(error_msg)
