@@ -1,7 +1,7 @@
 # FILE: frontend/Dockerfile
 
 # Stage 1: Build the React application
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 WORKDIR /app
 
 # Set build-time environment variables
