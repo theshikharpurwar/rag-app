@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-youruser/rag-app}-frontend:${TAG:-latest}
+    restart: always
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - rag-network
+
+  backend:
+    image: ${REGISTRY:-ghcr.io}/${GITHUB_REPOSITORY:-youruser/rag-app}-backend:${TAG:-latest}
+    restart: always
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/rag_db
+      - OLLAMA_HOST_URL=${OLLAMA_HOST_URL:-http://host.docker.internal:11434}
+      - LLM_MODEL=${LLM_MODEL:-tinyllama}
+      - NODE_ENV=production
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    volumes:
+      - rag_uploads:/app/backend/uploads
+    depends_on:
+      - mongo
+      - qdrant
+    networks:
+      - rag-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  mongo:
+    image: mongo:latest
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - rag-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: always
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - rag-network
+
+volumes:
+  qdrant_data:
+  mongo_data:
+  rag_uploads:
+
+networks:
+  rag-network:
+    driver: bridge 

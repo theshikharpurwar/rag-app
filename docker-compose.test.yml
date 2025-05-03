@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: rag-app-frontend:test
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - test-network
+
+  backend:
+    image: rag-app-backend:test
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/rag_test_db
+      - OLLAMA_HOST_URL=http://host.docker.internal:11434
+      - LLM_MODEL=tinyllama
+      - NODE_ENV=test
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    volumes:
+      - /tmp/rag-test-uploads:/app/backend/uploads
+    depends_on:
+      - mongo
+      - qdrant
+    networks:
+      - test-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  mongo:
+    image: mongo:latest
+    volumes:
+      - /tmp/rag-test-mongo:/data/db
+    networks:
+      - test-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    volumes:
+      - /tmp/rag-test-qdrant:/qdrant/storage
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge 

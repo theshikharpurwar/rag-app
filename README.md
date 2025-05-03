@@ -36,6 +36,24 @@ A Retrieval Augmented Generation (RAG) application that lets you ask questions a
 
 **The scripts will then build and start the application containers.**
 
+## Production Deployment with GitHub Container Registry
+
+For production deployment using pre-built containers from GitHub Container Registry (GHCR):
+
+1. **Log in to GitHub Container Registry**:
+   ```bash
+   echo $GITHUB_TOKEN | docker login ghcr.io -u YOURUSERNAME --password-stdin
+   ```
+
+2. **Deploy using Docker Compose**:
+   ```bash
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+
+For detailed deployment instructions, see the [DEPLOYMENT.md](DEPLOYMENT.md) guide.
+
+> **Note:** The CI/CD workflow is configured to build and publish images when pushing to the `dev-ops` branch.
+
 ## Detailed Setup (Manual Method)
 
 If you prefer to set things up manually *after* installing prerequisites:

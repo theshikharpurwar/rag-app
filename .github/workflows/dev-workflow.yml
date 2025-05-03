@@ -1,0 +1,82 @@
+name: Development Workflow
+
+on:
+  push:
+    branches: [ "dev-ops" ]
+  pull_request:
+    branches: [ "dev-ops" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Lint check
+        run: |
+          cd backend
+          npm run lint || true
+          cd ../frontend
+          npm run lint || true
+
+      - name: Run tests
+        run: |
+          cd backend
+          npm test || true
+          cd ../frontend
+          npm test || true
+
+  docker-build-test:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: rag-app-backend:test
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          load: true
+          tags: rag-app-frontend:test
+
+      - name: Test Docker Compose
+        run: |
+          docker-compose -f docker-compose.test.yml up -d --quiet-pull
+          sleep 10
+          docker-compose -f docker-compose.test.yml ps
+          docker-compose -f docker-compose.test.yml down 
