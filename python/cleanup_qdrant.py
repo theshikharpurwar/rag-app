@@ -2,6 +2,7 @@
 
 import sys
 import logging
+import os
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 
@@ -23,7 +24,9 @@ def clear_collection(collection_name):
         logger.info(f"Clearing collection: {collection_name}")
 
         # Initialize Qdrant client
-        client = QdrantClient("localhost", port=6333)
+        qdrant_host = os.environ.get("QDRANT_HOST", "localhost")
+        qdrant_port = int(os.environ.get("QDRANT_PORT", 6333))
+        client = QdrantClient(qdrant_host, port=qdrant_port)
 
         # Check if collection exists
         try:

@@ -3,8 +3,13 @@
 # Stage 1: Build the React application
 FROM node:18-alpine as build
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --legacy-peer-deps
+
+# Set build-time environment variables
+ENV REACT_APP_API_URL=http://localhost:5000/api
+
+COPY package.json ./
+# Use npm install instead of npm ci for better compatibility
+RUN npm install --legacy-peer-deps
 COPY . .
 RUN npm run build
 

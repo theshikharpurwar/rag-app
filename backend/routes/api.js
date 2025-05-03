@@ -41,7 +41,16 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
       // Use absolute path for script if running from different context
       logger.info(`Spawning: ${pythonExecutable} ${pythonArgs.join(' ')}`);
-      const pythonProcess = spawn(pythonExecutable, pythonArgs);
+      
+      // Pass environment variables explicitly to ensure they're available in the spawned process
+      const env = {
+        ...process.env,
+        QDRANT_HOST: process.env.QDRANT_HOST || 'qdrant',
+        QDRANT_PORT: process.env.QDRANT_PORT || '6333'
+      };
+      logger.info(`Using QDRANT_HOST=${env.QDRANT_HOST}, QDRANT_PORT=${env.QDRANT_PORT}`);
+      
+      const pythonProcess = spawn(pythonExecutable, pythonArgs, { env });
 
       let scriptOutput = "";
       let scriptError = "";
@@ -106,7 +115,16 @@ router.post('/query', async (req, res) => {
     if (history && Array.isArray(history)) { pythonArgs.push('--history', JSON.stringify(history)); }
 
     logger.info(`Spawning: ${pythonExecutable} ${pythonArgs.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')}`); // Log command properly
-    const pythonProcess = spawn(pythonExecutable, pythonArgs);
+    
+    // Pass environment variables explicitly to ensure they're available in the spawned process
+    const env = {
+      ...process.env,
+      QDRANT_HOST: process.env.QDRANT_HOST || 'qdrant', 
+      QDRANT_PORT: process.env.QDRANT_PORT || '6333'
+    };
+    logger.info(`Using QDRANT_HOST=${env.QDRANT_HOST}, QDRANT_PORT=${env.QDRANT_PORT}`);
+    
+    const pythonProcess = spawn(pythonExecutable, pythonArgs, { env });
 
     let pythonOutput = ''; let pythonError = '';
     pythonProcess.stdout.on('data', (data) => { pythonOutput += data.toString(); });
@@ -130,8 +148,51 @@ router.post('/query', async (req, res) => {
 
 // Reset route
 router.post('/reset', async (req, res) => {
-    // ... (Keep the reset logic as provided previously - it uses spawn for qdrant_utils) ...
-    logger.info('Received request to reset system.'); try { await PDFModel.deleteMany({}); /*... clear uploads ...*/ logger.info(`Running Qdrant reset script...`); const pythonScript = path.resolve(__dirname, '../../python/utils/qdrant_utils.py'); const pythonProcess = spawn('python', [pythonScript, 'reset_collection']); /* ... handle process ... */ res.status(200).json({ success: true, message: 'System reset initiated.' }); } catch (err) { logger.error('Reset failed:', err); res.status(500).json({ success: false, message: 'Error resetting system' }); }
+    logger.info('Received request to reset system.');
+    try {
+        await PDFModel.deleteMany({});
+        
+        // Clear uploads directory
+        const uploadsDir = path.resolve(__dirname, '../uploads');
+        fs.readdir(uploadsDir, (err, files) => {
+            if (err) logger.error('Error reading uploads directory:', err);
+            else {
+                files.forEach(file => {
+                    if (file !== '.gitkeep') {
+                        fs.unlink(path.join(uploadsDir, file), err => {
+                            if (err) logger.error(`Error deleting file ${file}:`, err);
+                        });
+                    }
+                });
+            }
+        });
+        
+        logger.info(`Running Qdrant reset script...`);
+        const pythonScript = path.resolve(__dirname, '../../python/utils/qdrant_utils.py');
+        
+        // Pass environment variables explicitly to ensure they're available in the spawned process
+        const env = {
+            ...process.env,
+            QDRANT_HOST: process.env.QDRANT_HOST || 'qdrant',
+            QDRANT_PORT: process.env.QDRANT_PORT || '6333'
+        };
+        logger.info(`Using QDRANT_HOST=${env.QDRANT_HOST}, QDRANT_PORT=${env.QDRANT_PORT}`);
+        
+        const pythonProcess = spawn('python', [pythonScript, 'reset_collection'], { env });
+        
+        pythonProcess.stdout.on('data', (data) => {
+            logger.info(`Reset script output: ${data}`);
+        });
+        
+        pythonProcess.stderr.on('data', (data) => {
+            logger.error(`Reset script error: ${data}`);
+        });
+        
+        res.status(200).json({ success: true, message: 'System reset initiated.' });
+    } catch (err) {
+        logger.error('Reset failed:', err);
+        res.status(500).json({ success: false, message: 'Error resetting system' });
+    }
 });
 
 module.exports = router;

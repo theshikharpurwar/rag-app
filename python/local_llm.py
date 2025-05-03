@@ -18,11 +18,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(process)d] [%(lev
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-# Using localhost instead of Docker service names for local development
-QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost") # Changed from "qdrant" to "localhost"
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
+# Using environment variables for all connections
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 # Ollama runs on the HOST machine
-OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434") # Changed from "http://host.docker.internal:11434"
+OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434")
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'

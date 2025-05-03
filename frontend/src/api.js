@@ -1,6 +1,7 @@
 // D:\rag-app\frontend\src\api.js
 
-// Allow configuring the API URL via environment variable at build time
+// Import API_URL from config
+import { API_URL } from './config';
 
 // Upload a PDF file
 export const uploadPDF = async (file) => {

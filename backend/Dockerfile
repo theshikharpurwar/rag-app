@@ -37,8 +37,8 @@ COPY python /app/python
 WORKDIR /app/backend
 
 # Copy Node.js package files and install dependencies
-COPY backend/package.json backend/package-lock.json* ./
-RUN npm ci --only=production
+COPY backend/package.json ./
+RUN npm install --production
 
 # Copy the rest of the backend code
 COPY backend/ .

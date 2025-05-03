@@ -4,6 +4,7 @@ import logging
 import requests
 import json
 import time
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -14,7 +15,7 @@ class OllamaLLM:
     Class to generate text responses using the Ollama API
     """
 
-    def __init__(self, model_name='phi2', api_base=None):
+    def __init__(self, model_name=None, api_base=None):
         """
         Initialize the OllamaLLM with a model
 
@@ -22,9 +23,14 @@ class OllamaLLM:
             model_name (str): Name of the Ollama model to use
             api_base (str, optional): Base URL for Ollama API. Defaults to http://localhost:11434/api
         """
-        logger.info(f"Initializing OllamaLLM with model: {model_name}")
-        self.model_name = model_name
-        self.api_base = api_base if api_base else "http://localhost:11434/api"
+        # Get model from environment variable or use the provided one or default to phi2
+        self.model_name = model_name or os.environ.get('LLM_MODEL', 'phi2')
+        logger.info(f"Initializing OllamaLLM with model: {self.model_name}")
+
+        # Get the API base URL from the environment or use the provided one
+        # The OLLAMA_HOST_URL env var is expected to end with the base URL (e.g., http://host.docker.internal:11434)
+        ollama_host = os.environ.get('OLLAMA_HOST_URL', 'http://localhost:11434')
+        self.api_base = api_base if api_base else f"{ollama_host}/api"
         logger.info(f"Using Ollama API at: {self.api_base}")
 
         # Verify that Ollama is running and the model is available
@@ -34,11 +40,11 @@ class OllamaLLM:
             response = requests.get(f"{base_url}/api/tags")
             if response.status_code == 200:
                 available_models = [model['name'] for model in response.json().get('models', [])]
-                if model_name not in available_models:
-                    logger.warning(f"Model {model_name} not found in available models: {available_models}")
-                    logger.info(f"You may need to run: ollama pull {model_name}")
+                if self.model_name not in available_models:
+                    logger.warning(f"Model {self.model_name} not found in available models: {available_models}")
+                    logger.info(f"You may need to run: ollama pull {self.model_name}")
                 else:
-                    logger.info(f"Model {model_name} is available")
+                    logger.info(f"Model {self.model_name} is available")
             else:
                 logger.warning(f"Could not check available models. Status code: {response.status_code}")
         except Exception as e:

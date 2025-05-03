@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
 VECTOR_SIZE = 384
-QDRANT_HOST = "localhost"
-QDRANT_PORT = 6333
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 DEFAULT_COLLECTION = 'documents'
 IMAGE_SAVE_DIR_RELATIVE = "images"
 RENDERING_DPI = 150

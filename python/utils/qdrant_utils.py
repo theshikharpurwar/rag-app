@@ -5,14 +5,15 @@ import logging
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 import sys
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-QDRANT_HOST = "localhost"
-QDRANT_PORT = 6333
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 DEFAULT_COLLECTION = "documents"
 DEFAULT_VECTOR_SIZE = 384 # Match all-MiniLM-L6-v2
 # --- End Configuration ---
