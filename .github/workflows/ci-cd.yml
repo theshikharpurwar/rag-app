@@ -57,12 +57,31 @@ jobs:
           npm test || true
 
   # --------------------------------------
-  # Job from original dev-workflow.yml
-  # Depends on the 'test' job
+  # Split into separate frontend and backend build jobs
+  # Both depend on the 'test' job
   # --------------------------------------
-  docker-build-test:
+  frontend-build-test:
     runs-on: ubuntu-latest
-    needs: test # Runs only after 'test' job succeeds
+    needs: test
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build frontend image (test)
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          load: true
+          tags: rag-app-frontend:test
+
+  backend-build-test:
+    runs-on: ubuntu-latest
+    needs: test
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -75,18 +94,9 @@ jobs:
         with:
           context: .
           file: ./backend/Dockerfile
-          push: false # Do not push
-          load: true  # Load into local Docker daemon
+          push: false
+          load: true
           tags: rag-app-backend:test
-
-      - name: Build frontend image (test)
-        uses: docker/build-push-action@v4
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: false # Do not push
-          load: true  # Load into local Docker daemon
-          tags: rag-app-frontend:test
 
       - name: Test Docker Compose
         run: |
@@ -102,13 +112,13 @@ jobs:
 
   # --------------------------------------
   # Job from original docker-publish.yml
-  # Depends on 'docker-build-test' job
+  # Now depends on both build test jobs
   # Only runs on push events (not pull requests)
   # --------------------------------------
   publish:
     runs-on: ubuntu-latest
-    needs: docker-build-test # Runs only after 'docker-build-test' job succeeds
-    if: github.event_name == 'push' # Only run on push to branch or tag, not PRs
+    needs: [frontend-build-test, backend-build-test]
+    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -148,22 +158,22 @@ jobs:
             type=ref,event=branch
             type=sha
 
-      # Build and push backend image
-      - name: Build and push backend image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./backend/Dockerfile
-          push: true # Actually push the image
-          tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }}
-
-      # Build and push frontend image
+      # Build and push frontend image first
       - name: Build and push frontend image
         uses: docker/build-push-action@v4
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
-          push: true # Actually push the image
+          push: true
           tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }} 
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+
+      # Then build and push backend image
+      - name: Build and push backend image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }} 
