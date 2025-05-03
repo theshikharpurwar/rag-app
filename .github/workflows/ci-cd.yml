@@ -89,6 +89,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin
+          docker compose version
+
       - name: Build backend image (test)
         uses: docker/build-push-action@v4
         with:
@@ -102,10 +108,10 @@ jobs:
         run: |
           # Ensure test compose file exists or skip this step
           if [ -f docker-compose.test.yml ]; then
-            docker-compose -f docker-compose.test.yml up -d --quiet-pull
+            docker compose -f docker-compose.test.yml up -d --quiet-pull
             sleep 10
-            docker-compose -f docker-compose.test.yml ps
-            docker-compose -f docker-compose.test.yml down
+            docker compose -f docker-compose.test.yml ps
+            docker compose -f docker-compose.test.yml down
           else
             echo "docker-compose.test.yml not found, skipping compose test."
           fi
