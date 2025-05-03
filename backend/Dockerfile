@@ -1,22 +1,20 @@
 # FILE: backend/Dockerfile
 # Combined Node.js backend and Python environment
 
-# Use a Node base image that includes Python or makes it easy to install
-# Node 18 includes Python 3.11 in some variants (e.g., bookworm)
-FROM node:18-bookworm-slim
+# Stage 1: Build slim Python environment with only needed dependencies
+FROM node:20-bookworm-slim
 
 # Set working directory
 WORKDIR /app
 
-# Install Python and required system dependencies
+# Install only the minimal Python dependencies needed
+# Avoid installing unnecessary build tools and dev packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
-    python3-full \
     python3-pip \
     python3-venv \
-    python3-dev \
-    # Add any other system libs needed by Python packages
-    build-essential \
+    # Avoid installing python3-dev and build-essential
+    # as we'll use pre-built wheels where possible
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,7 +25,22 @@ ENV PYTHONPATH="/app/python"
 
 # Copy Python requirements first
 COPY python/requirements.txt ./python_requirements.txt
+
+# Install Python dependencies with specific options to avoid CUDA/unnecessary libraries
+# Set environment variables to prevent PyTorch from installing CUDA
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # Prevent PyTorch from installing CUDA
+    TORCH_CUDA_ARCH_LIST="None" \
+    USE_CUDA=0 \
+    USE_CUDNN=0 \
+    FORCE_CPU=1
+
+# Install only CPU versions of PyTorch and other packages
 RUN pip install --no-cache-dir --upgrade pip && \
+    # Install specific CPU-only version of torch
+    pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html && \
+    # Install the rest of the requirements
     pip install --no-cache-dir -r ./python_requirements.txt
 
 # Copy Python scripts to maintain proper structure

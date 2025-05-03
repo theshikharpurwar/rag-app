@@ -1,6 +1,8 @@
 pdf2image
+# Use CPU-only versions of these packages
 transformers
-torch
+# torch is installed separately in Dockerfile with CPU-only option
+# torch
 qdrant-client
 sentence-transformers
 numpy
