@@ -12,6 +12,7 @@ from qdrant_client import QdrantClient, models # Import models for Filter
 from sentence_transformers import SentenceTransformer
 # Assuming OllamaLLM class is correctly defined in llm/ollama_llm.py
 from llm.ollama_llm import OllamaLLM
+import time
 
 # Configure logging (ensure level is appropriate for debugging if needed)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(process)d] [%(levelname)s] %(message)s')
@@ -141,108 +142,43 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
     if not pdf_id_filter: logger.error("pdf_id_filter required"); return []
     logger.info(f"retrieve_context called with pdf_id_filter: '{pdf_id_filter}'")
     
-    # Increase default retrieval limit for better coverage
-    actual_limit = limit * 2  # Double the requested limit to get more potential matches
-    
     try:
-        # Process the query to improve retrieval quality
+        # Use the query directly without manipulation
         query = query.strip()
-        if len(query) < 10 and not query.endswith('?'):
-            # Very short queries often need expansion
-            logger.info(f"Expanding short query: '{query}'")
-            query = f"Information about {query} in detail"
+        logger.info(f"Using direct query for retrieval: '{query}'")
         
-        # For queries that are clearly looking for "what is X" type of information
-        if re.match(r'^(what|who|how|when|where|why|explain|describe|define)\s+', query.lower()):
-            # Keep the query as is, it's already well-formed for semantic search
-            pass
-        elif not query.endswith('?') and len(query.split()) < 5:
-            # If it's not a question and it's short, make it more detailed
-            query = f"Find detailed information about {query}"
-            
-        logger.info(f"Processed query for retrieval: '{query}'")
-        
-        # Generate embedding
-        query_embedding = embedding_model.encode(query).tolist()
+        # Generate embedding with error handling
+        try:
+            query_embedding = embedding_model.encode(query).tolist()
+        except Exception as emb_error:
+            logger.error(f"Embedding generation failed: {emb_error}", exc_info=True)
+            return []  # Return empty results if embedding fails
         
         # Create filter
         qdrant_filter = models.Filter(must=[models.FieldCondition(key="pdf_id", match=models.MatchValue(value=pdf_id_filter))])
-        logger.info(f"Searching collection '{collection_name}' (limit={actual_limit}) with filter...")
+        logger.info(f"Searching collection '{collection_name}' (limit={limit}) with filter...")
         
-        # Search with the expanded limit
-        search_results = client.search(
-            collection_name=collection_name,
-            query_vector=query_embedding,
-            query_filter=qdrant_filter,
-            limit=actual_limit,
-            with_payload=True,
-            score_threshold=0.2  # Only return results with at least this similarity score
-        )
-        
-        logger.info(f"Retrieved {len(search_results)} results from Qdrant for pdf_id '{pdf_id_filter}'.")
-        
-        # Advanced post-processing to select the most diverse and relevant context
-        if len(search_results) > limit:
-            # Filter out results with poor quality text
-            valid_results = [
-                hit for hit in search_results 
-                if hit.payload and isinstance(hit.payload.get("text"), str) 
-                and len(hit.payload.get("text", "").strip()) > 50  # Minimum useful text length
-                and hit.score > 0.3  # Reasonable similarity threshold
-            ]
+        # Search with the original query
+        try:
+            search_results = client.search(
+                collection_name=collection_name,
+                query_vector=query_embedding,
+                query_filter=qdrant_filter,
+                limit=limit,
+                with_payload=True,
+                score_threshold=0.15
+            )
             
-            # If we still have more than the limit, select a diverse set
-            if len(valid_results) > limit:
-                # Sort by score first
-                sorted_results = sorted(valid_results, key=lambda x: x.score, reverse=True)
-                
-                # Always include the top half results by score
-                top_half = sorted_results[:limit//2]
-                
-                # For the remaining half, try to select results with different page numbers
-                # to increase diversity of information
-                remaining = sorted_results[limit//2:]
-                selected_pages = set(r.payload.get("page") for r in top_half if r.payload.get("page"))
-                diverse_selections = []
-                
-                for result in remaining:
-                    page = result.payload.get("page")
-                    if page and page not in selected_pages and len(diverse_selections) < (limit - len(top_half)):
-                        diverse_selections.append(result)
-                        selected_pages.add(page)
-                
-                # If we couldn't find enough diverse pages, just add the best remaining by score
-                if len(diverse_selections) < (limit - len(top_half)):
-                    needed = limit - len(top_half) - len(diverse_selections)
-                    for result in remaining:
-                        if result not in diverse_selections and needed > 0:
-                            diverse_selections.append(result)
-                            needed -= 1
-                        if needed == 0:
-                            break
-                
-                # Combine top results with diverse selections
-                final_results = top_half + diverse_selections
-                logger.info(f"Selected {len(final_results)} diverse results from {len(valid_results)} valid results")
-                return final_results
-            
-            return valid_results[:limit]  # Return top valid results up to limit
+            logger.info(f"Retrieved {len(search_results)} results from Qdrant for pdf_id '{pdf_id_filter}'.")
+        except Exception as search_error:
+            logger.error(f"Qdrant search failed: {search_error}", exc_info=True)
+            return []  # Return empty if search fails
         
-        # If we have fewer than limit results, just return valid ones
-        valid_results = [
-            hit for hit in search_results 
-            if hit.payload and isinstance(hit.payload.get("text"), str) 
-            and hit.payload.get("text").strip()
-        ]
-        
-        if len(valid_results) < len(search_results): 
-            logger.warning(f"Filtered out {len(search_results) - len(valid_results)} results lacking valid text payload.")
-        
-        return valid_results
+        return search_results[:limit]
         
     except Exception as e: 
         logger.error(f"Qdrant retrieval error: {e}", exc_info=True)
-        return []
+        return []  # Return empty list
 
 def format_context_for_llm(results):
     """Formats retrieved context for the LLM prompt and extracts sources."""
@@ -264,8 +200,9 @@ def format_context_for_llm(results):
             # Clean and format the text
             text = text.strip()
             if text:
-                # Add more structured context with clear section headers
-                context_str += f"[SOURCE {i+1}]\nDocument: {doc_name}\nPage: {page}\nRelevance Score: {score:.3f}\nContent:\n{text}\n\n"
+                # Simpler source formatting for LLM consumption - reduces visual prominence in final output
+                context_str += f"CONTENT FROM SOURCE {i+1} (Document: {doc_name}, Page: {page}, Score: {score:.3f}):\n{text}\n\n"
+                
                 sources.append({
                     "id": i + 1, 
                     "page": page, 
@@ -283,22 +220,6 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
     """Generates a response using the LLM with context, history, and citation attempts."""
     if not llm: raise RuntimeError("LLM is not initialized.")
     
-    if not system_instruction:
-        system_instruction = (
-            "You are a precise, accurate AI assistant answering questions based ONLY on the provided document sources. "
-            "Follow these guidelines strictly:\n"
-            "1. Use ONLY information from the provided [SOURCE X] sections.\n"
-            "2. DO NOT use prior knowledge or make assumptions not supported by the sources.\n"
-            "3. For each statement in your answer, cite the relevant source number in brackets like [1] or [2,3] at the end of sentences.\n"
-            "4. If the provided sources don't contain the necessary information, state clearly: 'The provided sources don't contain information about [specific aspect]'.\n"
-            "5. Be as specific, detailed, and comprehensive as possible while staying grounded in the sources.\n"
-            "6. Resolve conflicts between sources by noting the conflicting information and citing both.\n"
-            "7. When citing multiple sources, separate numbers with commas: [1,3,4] instead of [1][3][4].\n"
-            "8. If a statement combines information from multiple sources, cite all relevant sources.\n"
-            "9. Present the information as a cohesive, well-structured answer, rather than a list of facts.\n"
-            "Your goal is to be helpful, accurate, and honest about what information is and isn't available in the provided sources."
-        )
-    
     # Format chat history
     history_str = ""
     if chat_history:
@@ -311,218 +232,152 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
             token_count += turn_tokens
         if history_str: history_str = f"Previous Conversation History:\n---\n{history_str.strip()}\n---\n\n"
     
-    # Handle missing or excessive context
+    # Handle missing context
     if not context_str:
         logger.warning("No context provided to LLM.")
         prompt_for_llm = (
-            f"{history_str}Instruction: {system_instruction}\n\n"
+            f"{history_str}"
             f"User Question: {query}\n\n"
-            f"Context: [No relevant sources found]\n\n"
-            f"Assistant Answer: I don't have enough information in the provided sources to answer this question confidently."
+            f"I don't have enough specific information in the provided document to answer this question confidently. Please try rephrasing your question or asking about a different topic."
         )
     else:
         # Handle excessive context length
         if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
             logger.warning(f"Context length ({len(context_str)}) exceeds limit ({MAX_CONTEXT_CHAR_LIMIT}), truncating.")
-            # More intelligent truncation - keep complete source sections until we hit the limit
-            sections = context_str.split("[SOURCE ")
-            header = sections[0]
-            sources = ["[SOURCE " + s for s in sections[1:]]
-            
-            truncated_context = header
-            current_length = len(header)
-            
-            for section in sources:
-                if current_length + len(section) + 3 > MAX_CONTEXT_CHAR_LIMIT:
-                    # We can't fit this section, stop here
-                    break
-                truncated_context += section + "\n"
-                current_length += len(section) + 1
-            
-            context_str = truncated_context.strip()
-            logger.info(f"Intelligently truncated context to {len(context_str)} characters")
+            context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT]
+            logger.info(f"Truncated context to {len(context_str)} characters")
 
-        # Build the final prompt with comprehensive instructions
+        # Build the final prompt without system instructions
         prompt_for_llm = (
-            f"{history_str}Instruction: {system_instruction}\n\n"
-            f"Here are the relevant sources to answer the question:\n"
+            f"{history_str}"
+            f"Answer the following question based on the provided document extracts below. "
+            f"Write a comprehensive, well-structured response. Minimize citations and only use (Source X) for direct quotes or important facts. "
+            f"Structure your answer with logical flow and use headings or lists when appropriate.\n\n"
+            f"Relevant document extracts:\n"
             f"---\n{context_str}\n---\n\n"
             f"User Question: {query}\n\n"
-            f"Assistant Answer (Be specific and cite sources like [1] or [2,3]):"
+            f"Answer:"
         )
     
     logger.info(f"Sending request to LLM '{LLM_MODEL_NAME}' at {OLLAMA_API_BASE}...")
+    
     try:
+        # Generate the response
         response = llm.generate_response(prompt_for_llm)
+        
+        if not response:
+            logger.error("LLM returned empty response")
+            return "I wasn't able to generate a proper response. Please try again with a different question."
+        
         logger.info("Received response from LLM.")
         
-        # Clean up the response to remove any prefixes like "Assistant Answer:"
-        response = re.sub(r'^Assistant Answer:?\s*', '', response.split("Assistant Answer")[-1].strip())
+        # Clean up the response
+        response = re.sub(r'^Answer:?\s*', '', response.split("Answer:")[-1].strip())
+        response = re.sub(r'User:.*$', '', response, flags=re.DOTALL).strip()
+        response = re.sub(r'Human:.*$', '', response, flags=re.DOTALL).strip()
+        
+        # Improve the structure of the response
+        response = improve_response_structure(response, query)
+        
         return response.strip()
     except Exception as e: 
         logger.error(f"LLM generation failed: {e}", exc_info=True)
-        return "LLM generation error."
+        return "I encountered an error while processing your question. Please try again with a different query."
+
+def improve_response_structure(text, query):
+    """Improve the structure of the response without changing the content."""
+    try:
+        logger.info("Improving response structure...")
+        
+        # If response is already well-structured, don't modify it
+        if re.search(r'#+\s+\w+', text) and re.search(r'\n\n', text) and len(text.split('\n\n')) > 2:
+            logger.info("Response already has good structure, keeping as is")
+            return text
+            
+        # Split into paragraphs
+        paragraphs = re.split(r'\n{2,}', text)
+        
+        # Extract potential title from the query
+        query_words = query.lower().split()
+        key_question_words = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'describe', 'list']
+        
+        title = None
+        if any(word in query_words for word in key_question_words):
+            # Format query as title if it's a question
+            title = query.strip()
+            if not title.endswith('?'):
+                title = title + '?'
+            title = title[0].upper() + title[1:]
+        else:
+            # Otherwise, use the first few words of the response
+            first_para = paragraphs[0] if paragraphs else text
+            title_words = first_para.split()[:6]
+            title = ' '.join(title_words) + '...'
+        
+        # Build the structured response
+        structured_text = [f"# {title}\n"]
+        
+        # Add introduction
+        if paragraphs and len(paragraphs) >= 1:
+            intro = paragraphs[0]
+            structured_text.append(intro + "\n")
+        
+        # Process the rest of the paragraphs
+        remaining_paragraphs = paragraphs[1:] if len(paragraphs) > 1 else []
+        
+        # Add sections for longer responses
+        if len(remaining_paragraphs) >= 2:
+            # Look for patterns that might indicate list items
+            list_pattern = r'^(\d+\.|\-|\*)\s+'
+            
+            current_section = []
+            for i, para in enumerate(remaining_paragraphs):
+                # Check if this paragraph could be a section heading
+                is_short = len(para.split()) <= 8
+                ends_with_colon = para.strip().endswith(':')
+                has_list_marker = bool(re.match(list_pattern, para.strip()))
+                
+                if (is_short and ends_with_colon) and not has_list_marker and i < len(remaining_paragraphs) - 1:
+                    # This looks like a section heading
+                    if current_section:
+                        structured_text.append('\n'.join(current_section) + "\n")
+                        current_section = []
+                    # Format as a heading
+                    section_title = para.strip().rstrip(':')
+                    structured_text.append(f"\n## {section_title}\n")
+                elif has_list_marker:
+                    # Preserve list formatting
+                    if current_section:
+                        structured_text.append('\n'.join(current_section) + "\n")
+                        current_section = []
+                    structured_text.append(para + "\n")
+                else:
+                    current_section.append(para)
+            
+            # Add any remaining section content
+            if current_section:
+                structured_text.append('\n'.join(current_section))
+        else:
+            # For shorter responses, just add the remaining paragraphs
+            structured_text.extend(remaining_paragraphs)
+        
+        # Join everything with appropriate spacing
+        result = '\n\n'.join([p for p in structured_text if p])
+        
+        # Ensure consistent spacing for list items
+        result = re.sub(r'(\n\s*\n)(\d+\.|\-|\*)\s+', r'\n\n\2 ', result)
+        
+        # Clean up any excessive newlines
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        logger.info("Response structure improved")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error improving response structure: {e}")
+        # If anything goes wrong, return the original text
+        return text
 # --- End Core RAG Functions ---
-
-
-# --- Command Processing ---
-def detect_command_type(query): # ... (same as previous) ...
-    query_lower = query.lower().strip()
-    if query_lower.startswith("extract keywords"): return "keywords"
-    if any(term in query_lower for term in ["explain", "topics"]): return "explain_topics"
-    if "list topics" in query_lower: return "topics"
-    if query_lower.startswith("summarize"): return "summary"
-    if query_lower.startswith("define "): match = re.match(r"define\s+(.+)", query, re.IGNORECASE); term = match.group(1).strip() if match else None; 
-    if term: return "definition", term
-    if "generate questions" in query_lower: return "questions"
-    return "regular_query"
-
-def process_command(client, collection_name, query, chat_history, pdf_id_filter, command_type, command_details=None):
-    logger.info(f"Processing command: {command_type} for PDF ID: {pdf_id_filter}")
-    retrieval_query = query
-    system_instruction = None
-    limit = 5
-    query_for_llm = query
-
-    # Define specialized prompts and behavior for each command type
-    if command_type == "summary":
-        # For summarization, we want to gather more comprehensive context
-        retrieval_query = "Document overview main points summary key topics"
-        limit = 15
-        system_instruction = (
-            "You are an expert summarizer. Create a comprehensive summary of the document based ONLY on the provided sources. "
-            "Focus on the main ideas, key points, and important details. "
-            "Structure your summary with clear sections covering the major topics in the document. "
-            "Include all significant information while omitting minor details. "
-            "Cite sources for key information as [SOURCE NUMBER]. "
-            "Do not include any information not present in the sources. "
-            "If the sources appear incomplete or only cover part of the document, note this limitation."
-        )
-        query_for_llm = "Please provide a comprehensive summary of this document."
-    
-    elif command_type == "definition":
-        term = command_details
-        limit = 7
-        retrieval_query = f"Define '{term}' meaning explanation concept"
-        system_instruction = (
-            f"You are a precise definitions expert. Provide a clear, accurate definition of '{term}' based ONLY on the provided sources. "
-            f"Include the following in your response if available in the sources:\n"
-            f"1. The formal definition of '{term}'\n"
-            f"2. Key characteristics or components\n"
-            f"3. Important context or related concepts\n"
-            f"4. Examples if mentioned\n"
-            f"Always cite your sources using [SOURCE NUMBER]. "
-            f"If the sources don't contain a definition of '{term}', clearly state that the term is not defined in the provided sources."
-        )
-        query_for_llm = f"Define the term '{term}' based on the sources."
-    
-    elif command_type == "questions":
-        limit = 10
-        retrieval_query = "Generate detailed questions main topics important concepts document"
-        system_instruction = (
-            "You are an expert at generating insightful questions. Based ONLY on the provided sources, generate a set of thought-provoking questions that: "
-            "1. Cover the main topics and concepts in the document\n"
-            "2. Range from factual to analytical and conceptual\n"
-            "3. Follow a logical progression from basic to advanced understanding\n"
-            "4. Would help someone test their comprehension of the material\n"
-            "For each question, cite the relevant source(s) as [SOURCE NUMBER]. "
-            "Generate 5-10 questions depending on the breadth of the material in the sources."
-        )
-        query_for_llm = "Generate insightful questions about the content of this document."
-    
-    elif command_type == "topics":
-        limit = 15
-        retrieval_query = "List main topics subjects key concepts sections document"
-        system_instruction = (
-            "You are an expert at identifying and organizing topics. Based ONLY on the provided sources, create a structured list of the main topics covered in the document. "
-            "For each topic:\n"
-            "1. Provide a clear, concise title\n"
-            "2. Include a brief (1-2 sentence) description\n"
-            "3. Cite the relevant source(s) as [SOURCE NUMBER]\n"
-            "Organize related topics together and present them in a logical sequence. "
-            "Include only topics that are explicitly mentioned in the sources."
-        )
-        query_for_llm = "List and briefly describe the main topics covered in this document."
-    
-    elif command_type == "explain_topics":
-        limit = 15
-        retrieval_query = "Explain topics concepts main ideas document detailed"
-        system_instruction = (
-            "You are an expert at explaining complex topics. Based ONLY on the provided sources, provide detailed explanations of the main topics in the document. "
-            "For each topic:\n"
-            "1. Clearly identify the topic with a descriptive heading\n"
-            "2. Provide a thorough explanation including key concepts, principles, and supporting details\n"
-            "3. Explain relationships to other topics where relevant\n"
-            "4. Cite all relevant sources using [SOURCE NUMBER]\n"
-            "Organize your response in a logical flow that helps the reader build understanding progressively. "
-            "Include only information explicitly stated in the sources."
-        )
-        query_for_llm = "Explain the main topics covered in this document in detail."
-    
-    elif command_type == "keywords":
-        limit = 10
-        retrieval_query = "Extract important keywords terms concepts document"
-        system_instruction = (
-            "You are an expert at identifying key terminology. Based ONLY on the provided sources, extract and explain the most important keywords or terms from the document. "
-            "For each keyword/term:\n"
-            "1. List the term in bold\n"
-            "2. Provide a concise definition or explanation based on how it's used in the document\n"
-            "3. Include context about why this term is significant\n"
-            "4. Cite the relevant source(s) as [SOURCE NUMBER]\n"
-            "Focus on specialized terminology, core concepts, and frequently referenced ideas. "
-            "Organize terms thematically or alphabetically for easy reference."
-        )
-        query_for_llm = "Extract and explain the important keywords and terms from this document."
-    
-    else:
-        return process_regular_query_command(client, collection_name, query, chat_history, pdf_id_filter)
-
-    # Retrieve enhanced context with specialized query and higher limit
-    retrieved_context = retrieve_context(client, collection_name, retrieval_query, pdf_id_filter, limit=limit)
-    context_str, sources = format_context_for_llm(retrieved_context)
-    
-    if not context_str:
-        answer = f"Could not retrieve context for command '{command_type}' from PDF '{pdf_id_filter}'."
-        return {"answer": answer, "sources": []}
-    
-    # Generate response with specialized system instruction
-    answer = generate_rag_response(query_for_llm, context_str, chat_history, system_instruction)
-    return {"answer": answer, "sources": sources}
-
-def process_regular_query_command(client, collection_name, query, chat_history, pdf_id_filter):
-    """Process a regular query with enhanced context retrieval and response generation."""
-    logger.info(f"Processing regular query for PDF ID {pdf_id_filter}: {query[:50]}...")
-    
-    # For regular queries, use a higher retrieval limit to get better coverage
-    retrieval_limit = CONTEXT_RETRIEVAL_LIMIT * 2
-    
-    # Create a more focused system instruction for regular queries
-    system_instruction = (
-        "You are a precise, helpful AI assistant answering questions based ONLY on the provided document sources. "
-        "Follow these guidelines strictly:\n"
-        "1. Answer ONLY from the information in the provided sources. Do NOT use prior knowledge.\n"
-        "2. Be thorough and detailed in your answer while staying directly relevant to the question.\n"
-        "3. Cite specific sources for each part of your answer using [SOURCE NUMBER] notation.\n"
-        "4. If the sources don't contain the information needed to answer fully, clearly state what's missing.\n"
-        "5. If the question is unclear, interpret it reasonably based on the sources and explain your interpretation.\n"
-        "6. Structure your answer logically with paragraphs for different aspects of the answer.\n"
-        "7. If the sources contain conflicting information, note the conflicts and cite both sources.\n"
-        "Your goal is to provide the most accurate, helpful answer possible using only the information available in the sources."
-    )
-    
-    # Retrieve enhanced context with higher limit
-    retrieved_context = retrieve_context(client, collection_name, query, pdf_id_filter, limit=retrieval_limit)
-    context_str, sources = format_context_for_llm(retrieved_context)
-    
-    if not context_str:
-        answer = f"I couldn't find relevant information to answer your question in the document (PDF ID: {pdf_id_filter}). Please try rephrasing your question or ask about a different topic covered in the document."
-        return {"answer": answer, "sources": []}
-    
-    # Generate response with enhanced instruction
-    answer = generate_rag_response(query, context_str, chat_history, system_instruction)
-    return {"answer": answer, "sources": sources}
-# --- End Command Processing ---
-
 
 # --- Main Execution ---
 def main():
@@ -556,20 +411,36 @@ def main():
     result = {}
     try:
         qdrant_client = get_qdrant_client() # Connect to Qdrant
-        command_info = detect_command_type(args.query)
-        command_name = command_info[0] if isinstance(command_info, tuple) else command_info
-        command_details = command_info[1] if isinstance(command_info, tuple) else None
-        logger.info(f"Processing query for PDF ID '{args.pdf_id}' as command: {command_name}")
+        logger.info(f"Processing query for PDF ID '{args.pdf_id}': {args.query}")
 
-        # Pass pdf_id to handlers
-        if command_name == "regular_query":
-             result = process_regular_query_command(qdrant_client, args.collection_name, args.query, chat_history, args.pdf_id)
-        else:
-             result = process_command(qdrant_client, args.collection_name, args.query, chat_history, args.pdf_id, command_name, command_details)
+        # Direct pipeline implementation
+        # 1. Retrieve context using the original query
+        retrieved_context = retrieve_context(qdrant_client, args.collection_name, args.query, args.pdf_id, limit=CONTEXT_RETRIEVAL_LIMIT)
+        context_str, sources = format_context_for_llm(retrieved_context)
+        
+        # 2. Generate response without system instructions
+        answer = generate_rag_response(args.query, context_str, chat_history)
+        result = {"answer": answer, "sources": sources}
 
-    except (ConnectionError, RuntimeError) as e: logger.error(f"Error: {e}", exc_info=True); result = {"answer": f"Error: {e}", "sources": []}; print(json.dumps(result)); sys.exit(1)
-    except Exception as e: logger.error(f"Unexpected error: {e}", exc_info=True); result = {"answer": f"Unexpected error: {e}", "sources": []}; print(json.dumps(result)); sys.exit(1)
+    except (ConnectionError, RuntimeError) as e: 
+        logger.error(f"Error: {e}", exc_info=True)
+        result = {"answer": f"Error: Unable to connect to necessary services. Please ensure Qdrant and Ollama are running properly.", "sources": []}
+    except Exception as e: 
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        # Provide a helpful user-facing error message that doesn't expose internal details
+        result = {
+            "answer": "I encountered an unexpected error while processing your question. Please try again or rephrase your question.", 
+            "sources": []
+        }
 
+    # Ensure result is valid JSON before printing
+    if not result or not isinstance(result, dict) or "answer" not in result:
+        result = {"answer": "The system produced an invalid response. Please try again with a different question.", "sources": []}
+    
+    # Make sure we always have sources field, even if empty
+    if "sources" not in result:
+        result["sources"] = []
+        
     print(json.dumps(result)) # Output JSON result
     sys.exit(0)
 
