@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: ghcr.io/theshikharpurwar/rag-app-frontend:dev-ops
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  backend:
+    image: ghcr.io/theshikharpurwar/rag-app-backend:dev-ops
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/rag_app
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - OLLAMA_HOST_URL=http://host.docker.internal:11434
+    volumes:
+      - backend_uploads:/app/backend/uploads
+    depends_on:
+      - mongo
+      - qdrant
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  qdrant:
+    image: qdrant/qdrant:v1.5.1
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  mongo_data:
+  qdrant_data:
+  backend_uploads: 
