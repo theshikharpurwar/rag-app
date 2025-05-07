@@ -65,7 +65,7 @@ TAG=latest
 FRONTEND_PORT=3000
 BACKEND_PORT=5000
 OLLAMA_HOST_URL=http://host.docker.internal:11434
-LLM_MODEL=tinyllama
+LLM_MODEL=gemma3:1b
 ```
 
 ### 3. Pull and run with Docker Compose
@@ -85,7 +85,7 @@ The application requires Ollama running on the host machine. To install:
 3. Pull the required model:
 
 ```bash
-ollama pull tinyllama
+ollama pull gemma3:1b
 ```
 
 If you want to use a different model, specify it in the `.env` file or edit the `docker-compose.prod.yml` file.

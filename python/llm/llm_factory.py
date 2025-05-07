@@ -19,7 +19,7 @@ def get_llm(model_name=None):
         object: An LLM instance
     """
     # Use provided model name, or get from env, or use default
-    model_name = model_name or os.environ.get('LLM_MODEL', 'tinyllama')
+    model_name = model_name or os.environ.get('LLM_MODEL', 'gemma3:1b')
     logger.info(f"Getting LLM instance for model: {model_name}")
 
     # Currently we only support Ollama models

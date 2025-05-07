@@ -32,16 +32,16 @@ if %ERRORLEVEL% NEQ 0 (
 echo Ollama is running.
 
 echo.
-echo Step 3: Checking for tinyllama model...
-curl -s http://localhost:11434/api/tags | findstr "tinyllama" >nul 2>&1
+echo Step 3: Checking for gemma3 model...
+curl -s http://localhost:11434/api/tags | findstr "gemma3" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo ERROR: The tinyllama model is not available in Ollama.
-    echo Please run "ollama pull tinyllama" before continuing.
+    echo ERROR: The gemma3 model is not available in Ollama.
+    echo Please run "ollama pull gemma3:1b" before continuing.
     pause
     exit /b 1
 )
-echo The tinyllama model is available.
+echo The gemma3 model is available.
 
 echo.
 echo Step 4: Checking for docker-compose.yml file...

@@ -1,5 +1,5 @@
-# FILE: python/local_llm.py
-# (Corrected version: Removed Flask code, added imports, targets host Ollama)
+# FILE: python/fixed_local_llm.py
+# Using Gemma 3 1B model
 
 import argparse
 import json
@@ -7,15 +7,14 @@ import logging
 import re
 import sys
 import requests
-import os  # <--- FIX: Added import os
-from qdrant_client import QdrantClient, models # Import models for Filter
+import os
+from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
-# Assuming OllamaLLM class is correctly defined in llm/ollama_llm.py
 from llm.ollama_llm import OllamaLLM
 import time
 
-# Configure logging (ensure level is appropriate for debugging if needed)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(process)d] [%(levelname)s] %(message)s')
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
@@ -27,7 +26,7 @@ OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434")
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
 
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
-LLM_MODEL_NAME = 'tinyllama'
+LLM_MODEL_NAME = 'gemma3:1b'
 DEFAULT_COLLECTION = 'documents'
 CONTEXT_RETRIEVAL_LIMIT = 5
 MAX_CONTEXT_CHAR_LIMIT = 4096 # Keep updated limit
@@ -78,7 +77,7 @@ To pull the model, run: ollama pull {LLM_MODEL_NAME}
 To run Ollama locally:
 1. Download from https://ollama.com/download
 2. Install and start the Ollama application
-3. Pull a model: ollama pull tinyllama
+3. Pull a model: ollama pull gemma3:1b
         """)
 
     if missing_services:
@@ -138,8 +137,11 @@ def get_qdrant_client():
 # --- Core RAG Functions ---
 def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT):
     """Retrieve context from Qdrant for a specific PDF ID based on query."""
-    if not embedding_model: raise RuntimeError("Embedding model is not loaded.")
-    if not pdf_id_filter: logger.error("pdf_id_filter required"); return []
+    if not embedding_model:
+        raise RuntimeError("Embedding model is not loaded.")
+    if not pdf_id_filter:
+        logger.error("pdf_id_filter required")
+        return []
     logger.info(f"retrieve_context called with pdf_id_filter: '{pdf_id_filter}'")
     
     try:
@@ -182,8 +184,10 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
 
 def format_context_for_llm(results):
     """Formats retrieved context for the LLM prompt and extracts sources."""
-    context_str = ""; sources = []
-    if not results: return context_str, sources
+    context_str = ""
+    sources = []
+    if not results:
+        return context_str, sources
     logger.info("Formatting context for LLM...")
     
     # Sort results by score to prioritize most relevant contexts
@@ -200,7 +204,7 @@ def format_context_for_llm(results):
             # Clean and format the text
             text = text.strip()
             if text:
-                # Simpler source formatting for LLM consumption - reduces visual prominence in final output
+                # Simpler source formatting for LLM consumption
                 context_str += f"CONTENT FROM SOURCE {i+1} (Document: {doc_name}, Page: {page}, Score: {score:.3f}):\n{text}\n\n"
                 
                 sources.append({
@@ -214,11 +218,13 @@ def format_context_for_llm(results):
     
     return context_str.strip(), sources
 
-def estimate_tokens(text): return len(text.split()) # Basic token estimate
+def estimate_tokens(text):
+    return len(text.split())  # Basic token estimate
 
 def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
     """Generates a response using the LLM with context, history, and citation attempts."""
-    if not llm: raise RuntimeError("LLM is not initialized.")
+    if not llm:
+        raise RuntimeError("LLM is not initialized.")
     
     # Format chat history
     history_str = ""
@@ -227,10 +233,12 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
         for turn in reversed(chat_history):
             turn_text = f"User: {turn.get('user', '')}\nAssistant: {turn.get('assistant', '')}\n"
             turn_tokens = estimate_tokens(turn_text)
-            if token_count + turn_tokens > MAX_HISTORY_TOKENS: break
+            if token_count + turn_tokens > MAX_HISTORY_TOKENS:
+                break
             history_str = turn_text + history_str
             token_count += turn_tokens
-        if history_str: history_str = f"Previous Conversation History:\n---\n{history_str.strip()}\n---\n\n"
+        if history_str:
+            history_str = f"Previous Conversation History:\n---\n{history_str.strip()}\n---\n\n"
     
     # Handle missing context
     if not context_str:
@@ -401,12 +409,16 @@ def main():
         sys.exit(1)
 
     if not embedding_model or not llm: # Check models loaded
-         logger.critical("Models did not load."); result = {"answer": "Error: AI models failed.", "sources": []}
-         print(json.dumps(result)); sys.exit(1)
+         logger.critical("Models did not load.")
+         result = {"answer": "Error: AI models failed.", "sources": []}
+         print(json.dumps(result))
+         sys.exit(1)
 
     try: # Parse history
-        chat_history = json.loads(args.history); #... validate ...
-    except Exception as e: logger.error(f"Invalid history: {e}"); chat_history = []
+        chat_history = json.loads(args.history) #... validate ...
+    except Exception as e:
+        logger.error(f"Invalid history: {e}")
+        chat_history = []
 
     result = {}
     try:
@@ -445,4 +457,4 @@ def main():
     sys.exit(0)
 
 if __name__ == "__main__":
-    main()
+    main() 

@@ -24,7 +24,7 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
       # For accessing Ollama on the host machine
       - OLLAMA_HOST_URL=http://host.docker.internal:11434
-      - LLM_MODEL=tinyllama
+      - LLM_MODEL=gemma3:1b
       - NODE_ENV=production
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333

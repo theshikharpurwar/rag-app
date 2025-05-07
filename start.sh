@@ -36,13 +36,13 @@ else
     echo -e "${GREEN}Ollama is running.${NC}"
 fi
 
-# Check if tinyllama model is available in Ollama
-if ! curl -s http://localhost:11434/api/tags | grep -q "tinyllama"; then
-    echo -e "${RED}The 'tinyllama' model is not available in Ollama.${NC}"
-    echo -e "${YELLOW}Please run 'ollama pull tinyllama' before continuing.${NC}"
+# Check if gemma3 model is available in Ollama
+if ! curl -s http://localhost:11434/api/tags | grep -q "gemma3"; then
+    echo -e "${RED}The 'gemma3' model is not available in Ollama.${NC}"
+    echo -e "${YELLOW}Please run 'ollama pull gemma3:1b' before continuing.${NC}"
     exit 1
 else
-    echo -e "${GREEN}The 'tinyllama' model is available in Ollama.${NC}"
+    echo -e "${GREEN}The 'gemma3' model is available in Ollama.${NC}"
 fi
 
 # Check if docker-compose.yml exists

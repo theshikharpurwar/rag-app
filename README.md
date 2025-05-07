@@ -12,7 +12,7 @@ A Retrieval Augmented Generation (RAG) application that lets you ask questions a
 1. **Ensure Prerequisites are Met:**
    - Install [Docker Desktop](https://www.docker.com/products/docker-desktop) and make sure it is **running**.
    - Install [Ollama](https://ollama.com/download) and make sure it is **running**.
-   - Download the required model: `ollama pull tinyllama`
+   - Download the required model: `ollama pull gemma3:1b`
 
 2. **Run the Start Script:**
    - Double-click on `start.bat`.
@@ -26,7 +26,7 @@ A Retrieval Augmented Generation (RAG) application that lets you ask questions a
    - Make sure the Docker service is **running**.
    - Install [Ollama](https://ollama.com/download).
    - Make sure Ollama is **running**.
-   - Download the required model: `ollama pull tinyllama`
+   - Download the required model: `ollama pull gemma3:1b`
 
 2. **Run the Start Script:**
    - Open your terminal.
@@ -59,7 +59,7 @@ For detailed deployment instructions, see the [DEPLOYMENT.md](DEPLOYMENT.md) gui
 If you prefer to set things up manually *after* installing prerequisites:
 
 1. **Install Prerequisites** (Docker, Ollama - see above)
-2. **Download AI Model**: `ollama pull tinyllama`
+2. **Download AI Model**: `ollama pull gemma3:1b`
 3. **Start Application**: From the project directory, run `docker-compose up --build -d`
 
 Wait for all services to start (this might take several minutes on the first run).
@@ -97,7 +97,7 @@ docker-compose down
 
 ### Ollama Issues
 - Verify Ollama is running
-- If you get errors about the model not being found, try running `ollama pull tinyllama` again
+- If you get errors about the model not being found, try running `ollama pull gemma3:1b` again
 
 ### Application Issues
 - If the application doesn't start correctly, try running `docker-compose down` followed by `docker-compose up --build -d`
