@@ -52,7 +52,7 @@ For production deployment using pre-built containers from GitHub Container Regis
 
 For detailed deployment instructions, see the [DEPLOYMENT.md](DEPLOYMENT.md) guide.
 
-> **Note:** The CI/CD workflow is configured to build and publish images when pushing to the `dev-ops` branch.
+> **Note:** The CI/CD workflow is configured to build and publish images when pushing to the `working` branch, which is the current production branch.
 
 ## Detailed Setup (Manual Method)
 
@@ -135,4 +135,32 @@ To make changes to the application:
 
 1. Stop the Docker containers: `docker-compose down`
 2. Make your changes
-3. Rebuild the containers: `docker-compose up --build -d` 
+3. Rebuild the containers: `docker-compose up --build -d`
+
+## Deploying with Docker
+
+There are several ways to run this application:
+
+### Option 1: Using Pre-built Images (Recommended)
+
+The easiest way to run the application is to use our pre-built Docker images from GitHub Container Registry:
+
+1. Download the deployment file:
+   ```bash
+   curl -O https://raw.githubusercontent.com/OWNER/REPO/main/docker-compose.ghcr.yml
+   ```
+
+2. Run the application:
+   ```bash
+   docker compose -f docker-compose.ghcr.yml up -d
+   ```
+
+3. Access the application:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:5000
+
+This requires Ollama to be running locally with the `gemma3:1b` model.
+
+### Option 2: Building from Source
+
+// ... existing code ... 

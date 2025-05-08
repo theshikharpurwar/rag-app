@@ -2,10 +2,10 @@ name: Combined CI/CD Workflow
 
 on:
   push:
-    branches: [ "dev-ops" ]
+    branches: [ "main", "master", "working" ]
     tags: [ 'v*.*.*' ]
   pull_request:
-    branches: [ "dev-ops" ]
+    branches: [ "main", "master", "working" ]
 
 env:
   REGISTRY: ghcr.io
@@ -15,7 +15,7 @@ env:
 
 jobs:
   # --------------------------------------
-  # Job from original dev-workflow.yml
+  # Test job to verify application functionality
   # --------------------------------------
   test:
     runs-on: ubuntu-latest
@@ -57,8 +57,7 @@ jobs:
           npm test || true
 
   # --------------------------------------
-  # Combined build and test job for both frontend and backend
-  # Depends on the 'test' job
+  # Docker build and test job
   # --------------------------------------
   docker-build-test:
     runs-on: ubuntu-latest
@@ -69,26 +68,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
-
-      - name: Set up Docker apt repository and Install Compose
-        run: |
-          # Add Docker's official GPG key:
-          sudo apt-get update
-          sudo apt-get install -y ca-certificates curl
-          sudo install -m 0755 -d /etc/apt/keyrings
-          sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-          sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-          # Add the repository to Apt sources:
-          echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-            $(. /etc/os-release && echo \"$VERSION_CODENAME\") stable" | \
-            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-          sudo apt-get update
-
-          # Install Docker Compose plugin
-          sudo apt-get install -y docker-compose-plugin
-          docker compose version
 
       - name: Build frontend image (test)
         uses: docker/build-push-action@v4
@@ -110,24 +89,26 @@ jobs:
 
       - name: Test Docker Compose
         run: |
-          # Ensure test compose file exists or skip this step
+          # Ensure test compose file exists
           if [ -f docker-compose.test.yml ]; then
-            docker compose -f docker-compose.test.yml up -d --quiet-pull
-            sleep 10
+            docker compose -f docker-compose.test.yml up -d
+            sleep 15
             docker compose -f docker-compose.test.yml ps
             docker compose -f docker-compose.test.yml down
           else
-            echo "docker-compose.test.yml not found, skipping compose test."
+            echo "docker-compose.test.yml not found, using main compose file."
+            docker compose up -d
+            sleep 15
+            docker compose ps
+            docker compose down
           fi
 
   # --------------------------------------
-  # Job from original docker-publish.yml
-  # Now depends on the combined 'docker-build-test' job
-  # Only runs on push events (not pull requests)
+  # Publish job - builds and pushes images to GHCR
   # --------------------------------------
   publish:
     runs-on: ubuntu-latest
-    needs: docker-build-test # Updated dependency
+    needs: docker-build-test
     if: github.event_name == 'push'
     permissions:
       contents: read
@@ -156,6 +137,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
             type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Extract Docker metadata for frontend
         id: meta-frontend
@@ -167,8 +149,9 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch
             type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
 
-      # Build and push frontend image first
+      # Build and push frontend image
       - name: Build and push frontend image
         uses: docker/build-push-action@v4
         with:
@@ -178,7 +161,7 @@ jobs:
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
 
-      # Then build and push backend image
+      # Build and push backend image
       - name: Build and push backend image
         uses: docker/build-push-action@v4
         with:
@@ -186,4 +169,150 @@ jobs:
           file: ./backend/Dockerfile
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
-          labels: ${{ steps.meta-backend.outputs.labels }} 
+          labels: ${{ steps.meta-backend.outputs.labels }}
+
+      # Generate deployment artifacts
+      - name: Generate deployment files
+        run: |
+          # Save the current branch/tag name for the docker-compose file
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+          else
+            VERSION=${GITHUB_REF#refs/heads/}
+          fi
+          
+          # Create docker-compose file for users to easily run the application
+          cat > docker-compose.ghcr.yml << EOL
+          version: '3.8'
+          
+          services:
+            frontend:
+              image: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${VERSION}
+              ports:
+                - "3000:80"
+              depends_on:
+                - backend
+              restart: unless-stopped
+          
+            backend:
+              image: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${VERSION}
+              ports:
+                - "5000:5000"
+              volumes:
+                - uploads_data:/app/uploads
+              environment:
+                - MONGODB_URI=mongodb://mongo:27017/rag_db
+                - OLLAMA_HOST_URL=http://host.docker.internal:11434
+                - LLM_MODEL=gemma3:1b
+                - NODE_ENV=production
+                - QDRANT_HOST=qdrant
+                - QDRANT_PORT=6333
+              depends_on:
+                - mongo
+                - qdrant
+              restart: unless-stopped
+              extra_hosts:
+                - "host.docker.internal:host-gateway"
+          
+            mongo:
+              image: mongo:latest
+              ports:
+                - "27018:27017"
+              volumes:
+                - mongo_data:/data/db
+              restart: unless-stopped
+          
+            qdrant:
+              image: qdrant/qdrant:latest
+              ports:
+                - "6333:6333"
+                - "6334:6334"
+              volumes:
+                - qdrant_data:/qdrant/storage
+              restart: unless-stopped
+          
+          volumes:
+            qdrant_data:
+            mongo_data:
+            uploads_data:
+          EOL
+          
+          # Create simple README for deploying with docker-compose
+          cat > DEPLOYMENT.md << EOL
+          # Deploying the RAG Application
+          
+          This document provides instructions for deploying the RAG application using Docker Compose.
+          
+          ## Prerequisites
+          
+          - Docker and Docker Compose installed on your system
+          - Ollama running locally (for LLM support)
+          
+          ## Quick Start
+          
+          1. Download the deployment files:
+             \`\`\`
+             curl -O https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.ghcr.yml
+             \`\`\`
+          
+          2. Run the application:
+             \`\`\`
+             docker compose -f docker-compose.ghcr.yml up -d
+             \`\`\`
+          
+          3. Access the application:
+             - Frontend: http://localhost:3000
+             - Backend API: http://localhost:5000
+          
+          ## Configuration
+          
+          You can modify the \`docker-compose.ghcr.yml\` file to:
+          - Change port mappings
+          - Update environment variables
+          - Configure volume paths
+          
+          ## Requirements
+          
+          - Make sure Ollama is running locally at http://localhost:11434
+          - The application requires the \`gemma3:1b\` model. Install it with:
+            \`\`\`
+            ollama pull gemma3:1b
+            \`\`\`
+          
+          ## Troubleshooting
+          
+          - Check logs: \`docker compose -f docker-compose.ghcr.yml logs\`
+          - Restart services: \`docker compose -f docker-compose.ghcr.yml restart\`
+          EOL
+
+      # Upload deployment files as artifacts
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: deployment-files
+          path: |
+            docker-compose.ghcr.yml
+            DEPLOYMENT.md
+          
+      # Create a release with the deployment files if it's a tag
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            docker-compose.ghcr.yml
+            DEPLOYMENT.md
+          body: |
+            ## RAG Application Release ${{ github.ref_name }}
+            
+            This release includes both frontend and backend components packaged as Docker containers.
+            
+            ### How to use
+            
+            1. Download the `docker-compose.ghcr.yml` file from this release
+            2. Run `docker compose -f docker-compose.ghcr.yml up -d`
+            3. Access the application at http://localhost:3000
+            
+            See DEPLOYMENT.md for more details.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
