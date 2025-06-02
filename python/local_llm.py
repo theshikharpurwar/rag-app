@@ -239,15 +239,10 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
             token_count += turn_tokens
         if history_str:
             history_str = f"Previous Conversation History:\n---\n{history_str.strip()}\n---\n\n"
-    
-    # Handle missing context
+      # Handle missing context
     if not context_str:
         logger.warning("No context provided to LLM.")
-        prompt_for_llm = (
-            f"{history_str}"
-            f"User Question: {query}\n\n"
-            f"I don't have enough specific information in the provided document to answer this question confidently. Please try rephrasing your question or asking about a different topic."
-        )
+        return "I don't have enough specific information in the provided document to answer this question confidently. Please try rephrasing your question or asking about a different topic."
     else:
         # Handle excessive context length
         if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
