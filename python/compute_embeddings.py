@@ -12,7 +12,7 @@ import io
 import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from embeddings.nomic_embed import NomicEmbedder # 1. Import NomicEmbedder
+from embeddings.ollama_embed import OllamaEmbedder # Use Ollama embedder instead of heavy ML libraries
 import re    # <--- FIX: Import 're' module
 import uuid  # <--- FIX: Import 'uuid' module for generating valid IDs
 
@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-EMBEDDING_MODEL_NAME = 'nomic-embed-text-v1.5' # 2. Update Model Name
-VECTOR_SIZE = 768                             # 3. Update Vector Size
+EMBEDDING_MODEL_NAME = 'nomic-embed-text:v1.5' # Ollama embedding model
+VECTOR_SIZE = 768                             # Update Vector Size
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 DEFAULT_COLLECTION = 'documents'
@@ -144,8 +144,8 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
 
     try:
         logger.info(f"Processing PDF: {pdf_path} (ID: {pdf_id}) for collection: {collection_name}")
-        # 4. Instantiate NomicEmbedder
-        embedder = NomicEmbedder()
+        # Use Ollama embedder (no heavy ML dependencies)
+        embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME)
         client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=30)
 
         # --- CORRECTED Qdrant Collection Check (Includes vector size fix) ---

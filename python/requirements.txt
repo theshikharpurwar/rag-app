@@ -1,13 +1,15 @@
+# Lightweight requirements - using Ollama for all ML tasks
+# No heavy ML libraries (torch, transformers, sentence-transformers, einops)
+
+# PDF processing
 pdf2image
-# Use CPU-only versions of these packages
-transformers
-# torch is installed separately in Dockerfile with CPU-only option
-# torch
+PyMuPDF
+Pillow
+
+# Vector database client
 qdrant-client
-sentence-transformers
+
+# Basic utilities
 numpy
 python-dotenv
-PyMuPDF
 requests
-Pillow
-einops

@@ -9,7 +9,7 @@ import sys
 import requests
 import os
 from qdrant_client import QdrantClient, models
-from embeddings.nomic_embed import NomicEmbedder # 1. Import NomicEmbedder
+from embeddings.ollama_embed import OllamaEmbedder # Use Ollama embedder instead of heavy ML libraries
 from llm.ollama_llm import OllamaLLM
 import time
 
@@ -25,7 +25,7 @@ QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434")
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
 
-EMBEDDING_MODEL_NAME = 'nomic-embed-text-v1.5' # 2. Update Model Name
+EMBEDDING_MODEL_NAME = 'nomic-embed-text:v1.5' # Ollama embedding model
 LLM_MODEL_NAME = 'qwen3:0.6b'
 DEFAULT_COLLECTION = 'documents'
 CONTEXT_RETRIEVAL_LIMIT = 5
@@ -93,8 +93,8 @@ embedder = None # Changed variable name for clarity
 llm = None
 try:
     logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
-    # 3. Initialize NomicEmbedder
-    embedder = NomicEmbedder()
+    # Use Ollama embedder (no heavy ML dependencies)
+    embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME)
     logger.info("Embedding model loaded.")
 except Exception as e:
     logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
