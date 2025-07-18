@@ -5,4 +5,4 @@ export const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/a
 
 // LLM model configuration
 export const LLM_MODEL_NAME = 'gemma3:1b';
-export const EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'; 
+export const EMBEDDING_MODEL_NAME = 'nomic-embed-text-v1.5'; 

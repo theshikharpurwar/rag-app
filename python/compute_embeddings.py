@@ -12,7 +12,7 @@ import io
 import numpy as np
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from sentence_transformers import SentenceTransformer
+from embeddings.nomic_embed import NomicEmbedder # 1. Import NomicEmbedder
 import re    # <--- FIX: Import 're' module
 import uuid  # <--- FIX: Import 'uuid' module for generating valid IDs
 
@@ -21,8 +21,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
-VECTOR_SIZE = 384
+EMBEDDING_MODEL_NAME = 'nomic-embed-text-v1.5' # 2. Update Model Name
+VECTOR_SIZE = 768                             # 3. Update Vector Size
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 DEFAULT_COLLECTION = 'documents'
@@ -34,63 +34,64 @@ TEXT_CHUNK_OVERLAP = 100  # Character overlap between chunks
 SKIP_IMAGES = os.environ.get("SKIP_IMAGES", "false").lower() == "true"  # Option to skip images
 # --- End Configuration ---
 
-class SimpleEmbedder:
-    """Simple embedder that uses Sentence Transformers"""
-    def __init__(self, model_name=EMBEDDING_MODEL_NAME):
-        logger.info(f"Initializing embedder with model: {model_name}")
-        try:
-            self.model = SentenceTransformer(model_name)
-            self.model_name = model_name
-            test_embedding = self.model.encode("test")
-            actual_size = len(test_embedding)
-            if actual_size != VECTOR_SIZE:
-                 logger.warning(f"Model {model_name} output dimension ({actual_size}) does not match configured VECTOR_SIZE ({VECTOR_SIZE}).")
-            logger.info(f"Embedding model {model_name} loaded successfully (Dim: {actual_size}).")
-            
-            # Enable batching for better performance
-            self.model.max_seq_length = 256  # Limit sequence length for faster processing
-        except Exception as e:
-            logger.error(f"Failed to load embedding model {model_name}: {e}")
-            raise ImportError(f"Could not load embedding model {model_name}") from e
-
-    def get_embedding(self, content, content_type="text"):
-        try:
-            if content_type.lower() == "text":
-                if not content or not content.strip():
-                    logger.warning("Empty text content provided, returning zero vector")
-                    return [0.0] * VECTOR_SIZE
-                embedding = self.model.encode(content)
-                return embedding.tolist()
-            elif content_type.lower() == "image":
-                if content is None:
-                    logger.warning("None image content provided, returning zero vector")
-                    return [0.0] * VECTOR_SIZE
-                try:
-                    # Attempt direct encode (will likely fail for text models but keeps original logic flow)
-                    embedding = self.model.encode(content)
-                    return embedding.tolist()
-                except Exception as img_embed_err:
-                    logger.warning(f"Failed to directly embed image with {self.model_name}: {img_embed_err}. Using placeholder text.")
-                    placeholder_text = "image content"
-                    embedding = self.model.encode(placeholder_text)
-                    return embedding.tolist()
-            else:
-                logger.error(f"Unsupported content type: {content_type}")
-                return [0.0] * VECTOR_SIZE
-        except Exception as e:
-            logger.error(f"Error generating embedding: {str(e)}")
-            return [0.0] * VECTOR_SIZE
-            
-    def get_embeddings_batch(self, texts):
-        """Process multiple texts in a batch for better performance"""
-        if not texts:
-            return []
-        try:
-            embeddings = self.model.encode(texts, show_progress_bar=False)
-            return [emb.tolist() for emb in embeddings]
-        except Exception as e:
-            logger.error(f"Error generating batch embeddings: {str(e)}")
-            return [[0.0] * VECTOR_SIZE for _ in texts]
+# Remove or comment out the SimpleEmbedder class
+# class SimpleEmbedder:
+#     """Simple embedder that uses Sentence Transformers"""
+#     def __init__(self, model_name=EMBEDDING_MODEL_NAME):
+#         logger.info(f"Initializing embedder with model: {model_name}")
+#         try:
+#             self.model = SentenceTransformer(model_name)
+#             self.model_name = model_name
+#             test_embedding = self.model.encode("test")
+#             actual_size = len(test_embedding)
+#             if actual_size != VECTOR_SIZE:
+#                  logger.warning(f"Model {model_name} output dimension ({actual_size}) does not match configured VECTOR_SIZE ({VECTOR_SIZE}).")
+#             logger.info(f"Embedding model {model_name} loaded successfully (Dim: {actual_size}).")
+#             
+#             # Enable batching for better performance
+#             self.model.max_seq_length = 256  # Limit sequence length for faster processing
+#         except Exception as e:
+#             logger.error(f"Failed to load embedding model {model_name}: {e}")
+#             raise ImportError(f"Could not load embedding model {model_name}") from e
+# 
+#     def get_embedding(self, content, content_type="text"):
+#         try:
+#             if content_type.lower() == "text":
+#                 if not content or not content.strip():
+#                     logger.warning("Empty text content provided, returning zero vector")
+#                     return [0.0] * VECTOR_SIZE
+#                 embedding = self.model.encode(content)
+#                 return embedding.tolist()
+#             elif content_type.lower() == "image":
+#                 if content is None:
+#                     logger.warning("None image content provided, returning zero vector")
+#                     return [0.0] * VECTOR_SIZE
+#                 try:
+#                     # Attempt direct encode (will likely fail for text models but keeps original logic flow)
+#                     embedding = self.model.encode(content)
+#                     return embedding.tolist()
+#                 except Exception as img_embed_err:
+#                     logger.warning(f"Failed to directly embed image with {self.model_name}: {img_embed_err}. Using placeholder text.")
+#                     placeholder_text = "image content"
+#                     embedding = self.model.encode(placeholder_text)
+#                     return embedding.tolist()
+#             else:
+#                 logger.error(f"Unsupported content type: {content_type}")
+#                 return [0.0] * VECTOR_SIZE
+#         except Exception as e:
+#             logger.error(f"Error generating embedding: {str(e)}")
+#             return [0.0] * VECTOR_SIZE
+#             
+#     def get_embeddings_batch(self, texts):
+#         """Process multiple texts in a batch for better performance"""
+#         if not texts:
+#             return []
+#         try:
+#             embeddings = self.model.encode(texts, show_progress_bar=False)
+#             return [emb.tolist() for emb in embeddings]
+#         except Exception as e:
+#             logger.error(f"Error generating batch embeddings: {str(e)}")
+#             return [[0.0] * VECTOR_SIZE for _ in texts]
 
 def chunk_text(text, chunk_size=TEXT_CHUNK_SIZE, overlap=TEXT_CHUNK_OVERLAP):
     """
@@ -142,8 +143,9 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
         return {"success": False, "error": "PDF ID not provided to embedding script."}
 
     try:
-        logger.info(f"Processing PDF: {pdf_path} (ID: {pdf_id}) into collection: {collection_name}")
-        embedder = SimpleEmbedder()
+        logger.info(f"Processing PDF: {pdf_path} (ID: {pdf_id}) for collection: {collection_name}")
+        # 4. Instantiate NomicEmbedder
+        embedder = NomicEmbedder()
         client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=30)
 
         # --- CORRECTED Qdrant Collection Check (Includes vector size fix) ---
@@ -293,13 +295,17 @@ def process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_
     """Process a batch of text chunks for better performance"""
     if not text_chunks:
         return
-    
-    # Get embeddings in a batch for better performance
-    embeddings = embedder.get_embeddings_batch(text_chunks)
-    
+
+    # 5. Use the correct task_type for embedding documents
+    embeddings = embedder.encode_text(text_chunks, task_type="search_document")
+
+    if not embeddings:
+        logger.error("Failed to generate embeddings for the batch.")
+        return
+
     # Create points from embeddings
     for i, (text, metadata, embedding) in enumerate(zip(text_chunks, chunk_metadata, embeddings)):
-        if embedding != [0.0] * VECTOR_SIZE:
+        if embedding and len(embedding) == VECTOR_SIZE:
             # Create a more descriptive payload that helps with retrieval
             payload = {
                 "pdf_id": pdf_id,

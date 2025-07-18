@@ -9,7 +9,7 @@ import sys
 import requests
 import os
 from qdrant_client import QdrantClient, models
-from sentence_transformers import SentenceTransformer
+from embeddings.nomic_embed import NomicEmbedder # 1. Import NomicEmbedder
 from llm.ollama_llm import OllamaLLM
 import time
 
@@ -25,7 +25,7 @@ QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434")
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
 
-EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
+EMBEDDING_MODEL_NAME = 'nomic-embed-text-v1.5' # 2. Update Model Name
 LLM_MODEL_NAME = 'gemma3:1b'
 DEFAULT_COLLECTION = 'documents'
 CONTEXT_RETRIEVAL_LIMIT = 5
@@ -89,11 +89,12 @@ To run Ollama locally:
     return True
 
 # --- Client/Model Initialization ---
-embedding_model = None
+embedder = None # Changed variable name for clarity
 llm = None
 try:
     logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    # 3. Initialize NomicEmbedder
+    embedder = NomicEmbedder()
     logger.info("Embedding model loaded.")
 except Exception as e:
     logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
@@ -137,7 +138,7 @@ def get_qdrant_client():
 # --- Core RAG Functions ---
 def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT):
     """Retrieve context from Qdrant for a specific PDF ID based on query."""
-    if not embedding_model:
+    if not embedder:
         raise RuntimeError("Embedding model is not loaded.")
     if not pdf_id_filter:
         logger.error("pdf_id_filter required")
@@ -148,10 +149,10 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
         # Use the query directly without manipulation
         query = query.strip()
         logger.info(f"Using direct query for retrieval: '{query}'")
-        
-        # Generate embedding with error handling
+
+        # 4. Generate embedding with the correct task_type
         try:
-            query_embedding = embedding_model.encode(query).tolist()
+            query_embedding = embedder.encode_text([query], task_type="search_query")[0]
         except Exception as emb_error:
             logger.error(f"Embedding generation failed: {emb_error}", exc_info=True)
             return []  # Return empty results if embedding fails
@@ -403,7 +404,7 @@ def main():
         print(json.dumps(result))
         sys.exit(1)
 
-    if not embedding_model or not llm: # Check models loaded
+    if not embedder or not llm: # Check models loaded
          logger.critical("Models did not load.")
          result = {"answer": "Error: AI models failed.", "sources": []}
          print(json.dumps(result))

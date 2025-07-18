@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
 DEFAULT_COLLECTION = "documents"
-DEFAULT_VECTOR_SIZE = 384 # Match all-MiniLM-L6-v2
+DEFAULT_VECTOR_SIZE = 768 # Match nomic-embed-text-v1.5
 # --- End Configuration ---
 
 
