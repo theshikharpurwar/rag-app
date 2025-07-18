@@ -1,0 +1,98 @@
+# D:\rag-app\python\config\models.py
+"""
+Centralized model configuration for the RAG application.
+Change model names here and they will be applied throughout the entire application.
+"""
+
+import os
+
+# =============================================================================
+# 🔧 MAIN CONFIGURATION - CHANGE MODELS HERE ONLY!
+# =============================================================================
+
+# LLM Model Configuration
+LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'qwen2.5vl:3b')
+
+# Embedding Model Configuration  
+EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'nomic-embed-text:v1.5')
+
+# =============================================================================
+# 📊 MODEL SPECIFICATIONS (Auto-derived from model names)
+# =============================================================================
+
+# Vector dimensions based on embedding model
+EMBEDDING_VECTOR_SIZES = {
+    'nomic-embed-text:v1.5': 768,
+    'nomic-embed-text:latest': 768,
+    'nomic-embed-text': 768,
+    'all-MiniLM-L6-v2': 384,
+    'sentence-transformers/all-MiniLM-L6-v2': 384,
+}
+
+# Auto-detect vector size based on embedding model
+DEFAULT_VECTOR_SIZE = EMBEDDING_VECTOR_SIZES.get(EMBEDDING_MODEL_NAME, 768)
+
+# =============================================================================
+# 🌐 SERVICE CONFIGURATION
+# =============================================================================
+
+# Qdrant Configuration
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
+QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
+DEFAULT_COLLECTION = 'documents'
+
+# Ollama Configuration
+OLLAMA_HOST_URL = os.environ.get("OLLAMA_HOST_URL", "http://localhost:11434")
+OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
+
+# =============================================================================
+# 🎯 RAG PARAMETERS
+# =============================================================================
+
+# Context and retrieval settings
+CONTEXT_RETRIEVAL_LIMIT = 5
+MAX_CONTEXT_CHAR_LIMIT = 4096
+MAX_HISTORY_TOKENS = 500
+
+# PDF Processing settings
+TEXT_CHUNK_SIZE = 800
+TEXT_CHUNK_OVERLAP = 100
+IMAGE_SAVE_DIR_RELATIVE = "images"
+RENDERING_DPI = 150
+
+# =============================================================================
+# 📝 LOGGING
+# =============================================================================
+
+def print_current_config():
+    """Print the current model configuration for debugging."""
+    print("=" * 60)
+    print("🔧 CURRENT RAG APPLICATION CONFIGURATION")
+    print("=" * 60)
+    print(f"LLM Model:        {LLM_MODEL_NAME}")
+    print(f"Embedding Model:  {EMBEDDING_MODEL_NAME}")
+    print(f"Vector Size:      {DEFAULT_VECTOR_SIZE}")
+    print(f"Ollama Host:      {OLLAMA_HOST_URL}")
+    print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}")
+    print(f"Collection:       {DEFAULT_COLLECTION}")
+    print("=" * 60)
+
+# =============================================================================
+# 🚀 QUICK MODEL SWITCHING PRESETS (Uncomment to use)
+# =============================================================================
+
+# Preset 1: Gemma 3 + Nomic v1.5 (Current)
+# LLM_MODEL_NAME = 'gemma3:1b'
+# EMBEDDING_MODEL_NAME = 'nomic-embed-text:v1.5'
+
+# Preset 2: Qwen + Nomic v1.5 (Lightweight)
+# LLM_MODEL_NAME = 'qwen3:0.6b'  
+# EMBEDDING_MODEL_NAME = 'nomic-embed-text:v1.5'
+
+# Preset 3: Phi3 + Nomic Latest
+# LLM_MODEL_NAME = 'phi3:mini'
+# EMBEDDING_MODEL_NAME = 'nomic-embed-text:latest'
+
+# Preset 4: Local Sentence Transformers (if using local models)
+# LLM_MODEL_NAME = 'gemma3:1b'
+# EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'

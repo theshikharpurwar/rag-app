@@ -33,11 +33,13 @@ echo Ollama is running.
 
 echo.
 echo Step 3: Checking for qwen3 model...
+REM Model name defined in python/config/models.py - keep in sync
 curl -s http://localhost:11434/api/tags | findstr "qwen3" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo ERROR: The qwen3 model is not available in Ollama.
     echo Please run "ollama pull qwen3:0.6b" before continuing.
+    echo Model names are defined in python/config/models.py
     pause
     exit /b 1
 )

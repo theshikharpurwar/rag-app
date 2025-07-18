@@ -4,6 +4,9 @@ import logging
 import os
 from .ollama_llm import OllamaLLM
 
+# Import centralized configuration
+from config import LLM_MODEL_NAME
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -18,8 +21,8 @@ def get_llm(model_name=None):
     Returns:
         object: An LLM instance
     """
-    # Use provided model name, or get from env, or use default
-    model_name = model_name or os.environ.get('LLM_MODEL', 'qwen3:0.6b')
+    # Use provided model name, or get from env, or use centralized default
+    model_name = model_name or os.environ.get('LLM_MODEL', LLM_MODEL_NAME)
     logger.info(f"Getting LLM instance for model: {model_name}")
 
     # Currently we only support Ollama models

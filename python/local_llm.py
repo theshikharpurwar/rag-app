@@ -1,5 +1,5 @@
 # FILE: python/fixed_local_llm.py
-# Using Gemma 3 1B model
+# Using centralized model configuration
 
 import argparse
 import json
@@ -13,24 +13,43 @@ from embeddings.ollama_embed import OllamaEmbedder # Use Ollama embedder instead
 from llm.ollama_llm import OllamaLLM
 import time
 
+# Import centralized configuration
+from config import (
+    LLM_MODEL_NAME,
+    EMBEDDING_MODEL_NAME,
+    DEFAULT_VECTOR_SIZE,
+    QDRANT_HOST,
+    QDRANT_PORT,
+    OLLAMA_HOST_URL,
+    OLLAMA_API_BASE,
+    DEFAULT_COLLECTION,
+    CONTEXT_RETRIEVAL_LIMIT,
+    MAX_CONTEXT_CHAR_LIMIT,
+    MAX_HISTORY_TOKENS
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Configuration ---
-# Using environment variables for all connections
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
-# Ollama runs on the HOST machine
-OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434")
-OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
+# Print current configuration for debugging to stderr instead of stdout
+import sys
+def print_config_to_stderr():
+    """Print the current model configuration for debugging to stderr."""
+    print("=" * 60, file=sys.stderr)
+    print("🔧 CURRENT RAG APPLICATION CONFIGURATION", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    print(f"LLM Model:        {LLM_MODEL_NAME}", file=sys.stderr)
+    print(f"Embedding Model:  {EMBEDDING_MODEL_NAME}", file=sys.stderr)
+    print(f"Vector Size:      {DEFAULT_VECTOR_SIZE}", file=sys.stderr)
+    print(f"Ollama Host:      {OLLAMA_HOST_URL}", file=sys.stderr)
+    print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}", file=sys.stderr)
+    print(f"Collection:       {DEFAULT_COLLECTION}", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
 
-EMBEDDING_MODEL_NAME = 'nomic-embed-text:v1.5' # Ollama embedding model
-LLM_MODEL_NAME = 'qwen3:0.6b'
-DEFAULT_COLLECTION = 'documents'
-CONTEXT_RETRIEVAL_LIMIT = 5
-MAX_CONTEXT_CHAR_LIMIT = 4096 # Keep updated limit
-MAX_HISTORY_TOKENS = 500
+print_config_to_stderr()
+
+# --- Configuration (now imported from central config) ---
 # --- End Configuration ---
 
 def check_dependencies():
@@ -73,11 +92,12 @@ To pull the model, run: ollama pull {LLM_MODEL_NAME}
     except Exception as e:
         logger.error(f"✗ Ollama connection failed: {e}")
         missing_services.append("Ollama")
-        guidance.append("""
+        guidance.append(f"""
 To run Ollama locally:
 1. Download from https://ollama.com/download
 2. Install and start the Ollama application
-3. Pull a model: ollama pull qwen3:0.6b
+3. Pull models: ollama pull {LLM_MODEL_NAME} && ollama pull {EMBEDDING_MODEL_NAME}
+   (Model names are defined in config/models.py)
         """)
 
     if missing_services:

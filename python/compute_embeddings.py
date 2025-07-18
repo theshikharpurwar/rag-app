@@ -1,5 +1,5 @@
 # FILE: python/compute_embeddings.py
-# (Includes ALL fixes: Qdrant check, 're' import, UUID Point IDs, stores pdf_id)
+# Using centralized model configuration
 
 import os
 import sys
@@ -16,21 +16,45 @@ from embeddings.ollama_embed import OllamaEmbedder # Use Ollama embedder instead
 import re    # <--- FIX: Import 're' module
 import uuid  # <--- FIX: Import 'uuid' module for generating valid IDs
 
+# Import centralized configuration
+from config import (
+    LLM_MODEL_NAME,
+    EMBEDDING_MODEL_NAME,
+    DEFAULT_VECTOR_SIZE,
+    QDRANT_HOST,
+    QDRANT_PORT,
+    DEFAULT_COLLECTION,
+    OLLAMA_HOST_URL,
+    TEXT_CHUNK_SIZE,
+    TEXT_CHUNK_OVERLAP,
+    IMAGE_SAVE_DIR_RELATIVE,
+    RENDERING_DPI
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Configuration ---
-EMBEDDING_MODEL_NAME = 'nomic-embed-text:v1.5' # Ollama embedding model
-VECTOR_SIZE = 768                             # Update Vector Size
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
-DEFAULT_COLLECTION = 'documents'
-IMAGE_SAVE_DIR_RELATIVE = "images"
-RENDERING_DPI = 150
+# Print current configuration for debugging to stderr instead of stdout
+import sys
+def print_config_to_stderr():
+    """Print the current model configuration for debugging to stderr."""
+    print("=" * 60, file=sys.stderr)
+    print("🔧 CURRENT RAG APPLICATION CONFIGURATION", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    print(f"LLM Model:        {LLM_MODEL_NAME}", file=sys.stderr)
+    print(f"Embedding Model:  {EMBEDDING_MODEL_NAME}", file=sys.stderr)
+    print(f"Vector Size:      {DEFAULT_VECTOR_SIZE}", file=sys.stderr)
+    print(f"Ollama Host:      {OLLAMA_HOST_URL}", file=sys.stderr)
+    print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}", file=sys.stderr)
+    print(f"Collection:       {DEFAULT_COLLECTION}", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+
+print_config_to_stderr()
+
+# --- Configuration (now imported from central config) ---
+VECTOR_SIZE = DEFAULT_VECTOR_SIZE
 BATCH_SIZE = 10  # Process in batches for performance
-TEXT_CHUNK_SIZE = 500  # Characters per chunk
-TEXT_CHUNK_OVERLAP = 100  # Character overlap between chunks
 SKIP_IMAGES = os.environ.get("SKIP_IMAGES", "false").lower() == "true"  # Option to skip images
 # --- End Configuration ---
 

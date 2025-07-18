@@ -7,16 +7,23 @@ from qdrant_client.http import models
 import sys
 import os
 
+# Import centralized configuration
+from config import (
+    DEFAULT_VECTOR_SIZE,
+    QDRANT_HOST,
+    QDRANT_PORT,
+    DEFAULT_COLLECTION,
+    print_current_config
+)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Configuration ---
-QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.environ.get("QDRANT_PORT", 6333))
-DEFAULT_COLLECTION = "documents"
-DEFAULT_VECTOR_SIZE = 768 # Match nomic-embed-text-v1.5
-# --- End Configuration ---
+# Print current configuration for debugging
+print_current_config()
+
+# --- Configuration (now imported from central config) ---
 
 
 def reset_collection(collection_name=DEFAULT_COLLECTION, vector_size=DEFAULT_VECTOR_SIZE):
