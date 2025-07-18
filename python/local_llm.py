@@ -26,7 +26,7 @@ OLLAMA_HOST_URL = os.getenv("OLLAMA_HOST_URL", "http://localhost:11434")
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
 
 EMBEDDING_MODEL_NAME = 'nomic-embed-text-v1.5' # 2. Update Model Name
-LLM_MODEL_NAME = 'gemma3:1b'
+LLM_MODEL_NAME = 'qwen3:0.6b'
 DEFAULT_COLLECTION = 'documents'
 CONTEXT_RETRIEVAL_LIMIT = 5
 MAX_CONTEXT_CHAR_LIMIT = 4096 # Keep updated limit
@@ -77,7 +77,7 @@ To pull the model, run: ollama pull {LLM_MODEL_NAME}
 To run Ollama locally:
 1. Download from https://ollama.com/download
 2. Install and start the Ollama application
-3. Pull a model: ollama pull gemma3:1b
+3. Pull a model: ollama pull qwen3:0.6b
         """)
 
     if missing_services:

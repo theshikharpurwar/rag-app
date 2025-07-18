@@ -19,7 +19,7 @@ services:
     environment:
       - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017/rag_db}
       - OLLAMA_HOST_URL=${OLLAMA_HOST_URL:-http://host.docker.internal:11434}
-      - LLM_MODEL=${LLM_MODEL:-gemma3:1b}
+      - LLM_MODEL=${LLM_MODEL:-qwen3:0.6b}
       - NODE_ENV=production
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
