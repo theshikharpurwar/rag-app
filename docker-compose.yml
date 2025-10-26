@@ -25,7 +25,7 @@ services:
       # For accessing Ollama on the host machine
       - OLLAMA_HOST_URL=http://host.docker.internal:11434
       # Models defined in python/config/models.py - keep in sync
-      - LLM_MODEL=gemma3:1b
+      - LLM_MODEL=qwen2:1.5b
       - EMBEDDING_MODEL=nomic-embed-text:v1.5
       - NODE_ENV=production
       - QDRANT_HOST=qdrant

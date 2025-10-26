@@ -7,15 +7,7 @@ import './App.css';
 function App() {
   return (
     <div className="App">
-      <header className="App-header">
-        <h1>Local RAG Application</h1>
-      </header>
-      <main>
-        <RAGInterface />
-      </main>
-      <footer>
-        <p>Powered by Ollama & Sentence Transformers</p>
-      </footer>
+      <RAGInterface />
     </div>
   );
 }

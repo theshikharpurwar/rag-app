@@ -9,17 +9,59 @@ const { spawn } = require('child_process'); // Re-added spawn
 const PDFModel = require('../models/pdf');
 const logger = console;
 
-// Multer setup (same as before)
+// Multer setup with file validation
 const uploadsDir = path.resolve(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) { fs.mkdirSync(uploadsDir, { recursive: true }); logger.info(`Created uploads directory: ${uploadsDir}`); }
-const storage = multer.diskStorage({ destination: (req, file, cb) => { cb(null, uploadsDir); }, filename: (req, file, cb) => { const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'); cb(null, `${Date.now()}-${safe}`); } });
-const upload = multer({ storage });
+if (!fs.existsSync(uploadsDir)) { 
+  fs.mkdirSync(uploadsDir, { recursive: true }); 
+  logger.info(`Created uploads directory: ${uploadsDir}`); 
+}
+
+const storage = multer.diskStorage({ 
+  destination: (req, file, cb) => { cb(null, uploadsDir); }, 
+  filename: (req, file, cb) => { 
+    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_'); 
+    cb(null, `${Date.now()}-${safe}`); 
+  } 
+});
+
+// File filter for PDF validation
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only PDF files are allowed'), false);
+  }
+};
+
+const upload = multer({ 
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 50 * 1024 * 1024  // 50MB limit
+  }
+});
 
 // --- MODIFIED /upload route: Uses spawn, waits for completion ---
-router.post('/upload', upload.single('file'), async (req, res) => {
-  logger.info('Received file upload request.');
-  if (!req.file) { logger.warn('No file uploaded.'); return res.status(400).json({ success: false, message: 'No file uploaded' }); }
-  logger.info(`File received: ${req.file.originalname}, stored as ${req.file.filename}`);
+router.post('/upload', (req, res) => {
+  upload.single('file')(req, res, async (err) => {
+    // Handle multer errors
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ success: false, message: 'File too large. Maximum size is 50MB.' });
+      }
+      logger.error('Multer error:', err);
+      return res.status(400).json({ success: false, message: `Upload error: ${err.message}` });
+    } else if (err) {
+      logger.error('Upload error:', err);
+      return res.status(400).json({ success: false, message: err.message || 'File upload failed' });
+    }
+
+    logger.info('Received file upload request.');
+    if (!req.file) { 
+      logger.warn('No file uploaded.'); 
+      return res.status(400).json({ success: false, message: 'No file uploaded' }); 
+    }
+    logger.info(`File received: ${req.file.originalname}, stored as ${req.file.filename}`);
 
   let savedPdf;
   try {
@@ -87,6 +129,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     if (savedPdf) { try { await PDFModel.findByIdAndUpdate(savedPdf._id, { processed: false }); } catch (dbErr) { logger.error("DB Update failed on error:", dbErr); }}
     res.status(500).json({ success: false, message: err.message || 'Upload/Processing Error' });
   }
+  });  // Close the upload.single wrapper
 });
 // --- END MODIFIED /upload route ---
 
@@ -101,7 +144,28 @@ router.post('/query', async (req, res) => {
   logger.info('Received query request.');
   try {
     const { pdfId, query, history } = req.body;
-    if (!pdfId || !query) { return res.status(400).json({ success: false, message: 'PDF ID and query are required' }); }
+    
+    // Validation
+    if (!pdfId || !query) { 
+      return res.status(400).json({ 
+        success: false, 
+        message: 'PDF ID and query are required' 
+      }); 
+    }
+    
+    if (typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Query must be a non-empty string' 
+      }); 
+    }
+    
+    if (query.length > 1000) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Query too long. Maximum 1000 characters.' 
+      }); 
+    }
 
     // Optional: Check if PDF is processed before spawning python
     const pdf = await PDFModel.findById(pdfId, { processed: 1 });

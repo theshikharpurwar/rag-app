@@ -1,14 +1,90 @@
-/* FILE: frontend/src/components/ResetButton.css */
-/* (Ghibli Theme) */
+﻿/* ResetButton - Dark Theme */
 
-.reset-button-container { position: relative; }
-.reset-button { /* Uses .btn .btn-danger from App.css */ }
-.confirm-dialog { position: absolute; top: calc(100% + 8px); right: 0; width: 320px; margin-top: 0.5rem; z-index: 100; background-color: #fff; border-radius: var(--ghibli-border-radius); border: 1px solid var(--ghibli-accent-yellow); padding: 1.25rem; box-shadow: var(--ghibli-shadow); }
-.confirm-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; color: var(--ghibli-accent-yellow); }
-.confirm-header h4 { margin: 0; color: var(--ghibli-accent-yellow); font-family: 'Nunito', sans-serif; font-size: 1.1rem; }
-.confirm-header svg { fill: var(--ghibli-accent-yellow); width: 20px; height: 20px; flex-shrink: 0; }
-.confirm-dialog p { margin-bottom: 1.25rem; color: var(--ghibli-text-main); font-size: 0.9rem; }
-.confirm-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
-.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s linear infinite; margin-right: 0.5em; vertical-align: middle; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.confirm-dialog .error-message { margin-top: 1rem; color: var(--ghibli-accent-red); font-size: 0.85rem; text-align: left; }
+.reset-button-container {
+  position: relative;
+}
+
+.reset-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.reset-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.reset-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.reset-confirm {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  min-width: 280px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.confirm-text {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.confirm-actions button {
+  flex: 1;
+  padding: 0.625rem;
+  border-radius: var(--border-radius);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.confirm-yes {
+  background: var(--gradient-secondary);
+  border: none;
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.confirm-yes:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.confirm-no {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.confirm-no:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-primary);
+}

@@ -120,6 +120,7 @@ SKIP_IMAGES = os.environ.get("SKIP_IMAGES", "false").lower() == "true"  # Option
 def chunk_text(text, chunk_size=TEXT_CHUNK_SIZE, overlap=TEXT_CHUNK_OVERLAP):
     """
     Split text into smaller chunks with overlap for better semantic search.
+    Improved to respect semantic boundaries (paragraphs, sentences) for better retrieval.
     """
     if not text or len(text) <= chunk_size:
         return [text] if text else []
@@ -128,36 +129,105 @@ def chunk_text(text, chunk_size=TEXT_CHUNK_SIZE, overlap=TEXT_CHUNK_OVERLAP):
     start = 0
     text_len = len(text)
     
-    while start < text_len:
-        # Find the end of the chunk
-        end = start + chunk_size
+    # First, try to split by paragraphs for better semantic coherence
+    paragraphs = re.split(r'\n\s*\n', text)
+    
+    current_chunk = ""
+    current_size = 0
+    
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+            
+        para_len = len(para)
         
-        # If we're not at the end of the text, try to break at a sentence or paragraph
-        if end < text_len:
-            # Look for paragraph breaks first (double newline)
-            paragraph_break = text.find('\n\n', end - 50, end + 50)
-            if paragraph_break != -1 and paragraph_break - start >= 100:
-                end = paragraph_break
+        # If adding this paragraph doesn't exceed chunk_size, add it
+        if current_size + para_len + 2 <= chunk_size:  # +2 for \n\n
+            if current_chunk:
+                current_chunk += "\n\n" + para
+                current_size += para_len + 2
             else:
-                # Try to find sentence breaks (period followed by space)
-                sentence_break = text.rfind('. ', end - 50, end + 50)
-                if sentence_break != -1 and sentence_break - start >= 100:
-                    end = sentence_break + 1  # Include the period
+                current_chunk = para
+                current_size = para_len
+        else:
+            # Current paragraph would make chunk too large
+            if current_chunk:
+                # Save current chunk
+                chunks.append(current_chunk)
+                
+                # Start new chunk with overlap
+                if current_size > overlap:
+                    # Extract last 'overlap' characters for continuity
+                    overlap_text = current_chunk[-overlap:]
+                    # Try to start from a sentence boundary
+                    sentence_start = overlap_text.find('. ')
+                    if sentence_start != -1:
+                        overlap_text = overlap_text[sentence_start + 2:]
+                    current_chunk = overlap_text.strip() + "\n\n" + para
+                    current_size = len(current_chunk)
                 else:
-                    # If no good break, try space
-                    space = text.rfind(' ', end - 20, end + 20)
-                    if space != -1:
-                        end = space
-        
-        # Extract the chunk
-        chunk = text[start:end].strip()
-        if chunk:  # Only add non-empty chunks
-            chunks.append(chunk)
-        
-        # Move the start position for the next chunk, with overlap
-        start = end - overlap if end < text_len else text_len
-        
-    return chunks
+                    current_chunk = para
+                    current_size = para_len
+            else:
+                # This paragraph is too large on its own, split it by sentences
+                if para_len > chunk_size:
+                    sentences = re.split(r'(?<=[.!?])\s+', para)
+                    sent_chunk = ""
+                    sent_size = 0
+                    
+                    for sent in sentences:
+                        if sent_size + len(sent) + 1 <= chunk_size:
+                            sent_chunk += (" " if sent_chunk else "") + sent
+                            sent_size += len(sent) + 1
+                        else:
+                            if sent_chunk:
+                                chunks.append(sent_chunk.strip())
+                            
+                            # Handle very long sentences
+                            if len(sent) > chunk_size:
+                                # Split at word boundaries
+                                words = sent.split()
+                                word_chunk = ""
+                                for word in words:
+                                    if len(word_chunk) + len(word) + 1 <= chunk_size:
+                                        word_chunk += (" " if word_chunk else "") + word
+                                    else:
+                                        if word_chunk:
+                                            chunks.append(word_chunk)
+                                        word_chunk = word
+                                if word_chunk:
+                                    sent_chunk = word_chunk
+                                    sent_size = len(word_chunk)
+                            else:
+                                sent_chunk = sent
+                                sent_size = len(sent)
+                    
+                    if sent_chunk:
+                        current_chunk = sent_chunk
+                        current_size = sent_size
+                else:
+                    current_chunk = para
+                    current_size = para_len
+    
+    # Add the last chunk
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    # Post-process: ensure no chunk is too small (merge tiny chunks)
+    final_chunks = []
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+            
+        # If this chunk is very small and we have a previous chunk, try to merge
+        if len(chunk) < 100 and final_chunks and len(final_chunks[-1]) + len(chunk) + 2 <= chunk_size:
+            final_chunks[-1] += "\n\n" + chunk
+        else:
+            final_chunks.append(chunk)
+    
+    return final_chunks if final_chunks else [text.strip()] if text.strip() else []
 
 # Using process_pdf function name, includes pdf_id argument
 def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):

@@ -28,6 +28,9 @@ from config import (
     MAX_HISTORY_TOKENS
 )
 
+# Import reranker
+from reranker import SimpleReranker
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -111,6 +114,8 @@ To run Ollama locally:
 # --- Client/Model Initialization ---
 embedder = None # Changed variable name for clarity
 llm = None
+reranker = None  # Add reranker
+
 try:
     logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
     # Use Ollama embedder (no heavy ML dependencies)
@@ -119,6 +124,14 @@ try:
 except Exception as e:
     logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
     sys.exit("Embedding model failed to load")
+
+try:
+    logger.info("Initializing reranker model...")
+    reranker = SimpleReranker()
+    logger.info("Reranker model loaded successfully.")
+except Exception as e:
+    logger.warning(f"Failed to load reranker: {e}. Continuing without reranking.")
+    reranker = None  # Graceful degradation
 
 try:
     logger.info(f"Initializing LLM: {LLM_MODEL_NAME} targeting {OLLAMA_API_BASE}")
@@ -157,7 +170,10 @@ def get_qdrant_client():
 
 # --- Core RAG Functions ---
 def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT):
-    """Retrieve context from Qdrant for a specific PDF ID based on query."""
+    """
+    Retrieve context from Qdrant for a specific PDF ID based on query.
+    Fetches more results if reranker is available for better filtering.
+    """
     if not embedder:
         raise RuntimeError("Embedding model is not loaded.")
     if not pdf_id_filter:
@@ -179,7 +195,10 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
         
         # Create filter
         qdrant_filter = models.Filter(must=[models.FieldCondition(key="pdf_id", match=models.MatchValue(value=pdf_id_filter))])
-        logger.info(f"Searching collection '{collection_name}' (limit={limit}) with filter...")
+        
+        # Fetch more results if reranker is available (multiply by 4 for better reranking)
+        retrieval_limit = limit * 4 if reranker else limit
+        logger.info(f"Searching collection '{collection_name}' (limit={retrieval_limit}) with filter...")
         
         # Search with the original query
         try:
@@ -187,12 +206,19 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
                 collection_name=collection_name,
                 query_vector=query_embedding,
                 query_filter=qdrant_filter,
-                limit=limit,
+                limit=retrieval_limit,
                 with_payload=True,
-                score_threshold=0.15
+                score_threshold=0.1  # Lower threshold for reranking
             )
             
             logger.info(f"Retrieved {len(search_results)} results from Qdrant for pdf_id '{pdf_id_filter}'.")
+            
+            # Apply reranking if available
+            if reranker and len(search_results) > limit:
+                logger.info(f"Reranking {len(search_results)} results to top {limit}...")
+                search_results = reranker.rerank(query, search_results, top_k=limit)
+                logger.info(f"After reranking: {len(search_results)} results")
+            
         except Exception as search_error:
             logger.error(f"Qdrant search failed: {search_error}", exc_info=True)
             return []  # Return empty if search fails
@@ -243,7 +269,7 @@ def estimate_tokens(text):
     return len(text.split())  # Basic token estimate
 
 def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
-    """Generates a response using the LLM with context, history, and citation attempts."""
+    """Generates a response using the LLM with context, history, and improved prompting."""
     if not llm:
         raise RuntimeError("LLM is not initialized.")
     
@@ -259,35 +285,38 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
             history_str = turn_text + history_str
             token_count += turn_tokens
         if history_str:
-            history_str = f"Previous Conversation History:\n---\n{history_str.strip()}\n---\n\n"
-      # Handle missing context
+            history_str = f"Previous Conversation:\n{history_str.strip()}\n\n"
+      
+    # Handle missing context
     if not context_str:
         logger.warning("No context provided to LLM.")
-        return "I don't have enough specific information in the provided document to answer this question confidently. Please try rephrasing your question or asking about a different topic."
-    else:
-        # Handle excessive context length
-        if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
-            logger.warning(f"Context length ({len(context_str)}) exceeds limit ({MAX_CONTEXT_CHAR_LIMIT}), truncating.")
-            context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT]
-            logger.info(f"Truncated context to {len(context_str)} characters")
+        return "I couldn't find relevant information in the document to answer this question. Could you try rephrasing or asking about something else from the document?"
+    
+    # Handle excessive context length
+    if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
+        logger.warning(f"Context length ({len(context_str)}) exceeds limit ({MAX_CONTEXT_CHAR_LIMIT}), truncating.")
+        context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT]
+        logger.info(f"Truncated context to {len(context_str)} characters")
 
-        # Build the final prompt without system instructions
-        prompt_for_llm = (
-            f"{history_str}"
-            f"Answer the following question based on the provided document extracts below. "
-            f"Write a comprehensive, well-structured response. Minimize citations and only use (Source X) for direct quotes or important facts. "
-            f"Structure your answer with logical flow and use headings or lists when appropriate.\n\n"
-            f"Relevant document extracts:\n"
-            f"---\n{context_str}\n---\n\n"
-            f"User Question: {query}\n\n"
-            f"Answer:"
-        )
+    # Simple, natural prompt - let the LLM think
+    prompt_for_llm = f"""{history_str}Answer the following question based on these document extracts.
+
+Document extracts:
+{context_str}
+
+Question: {query}
+
+Answer:"""
     
     logger.info(f"Sending request to LLM '{LLM_MODEL_NAME}' at {OLLAMA_API_BASE}...")
     
     try:
-        # Generate the response
-        response = llm.generate_response(prompt_for_llm)
+        # Generate the response with optimized parameters
+        response = llm.generate_response(
+            prompt_for_llm,
+            max_tokens=2000,     # More space for detailed answers
+            temperature=0.7      # Higher temp for more natural, thoughtful responses
+        )
         
         if not response:
             logger.error("LLM returned empty response")
@@ -296,17 +325,19 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
         logger.info("Received response from LLM.")
         
         # Clean up the response
-        response = re.sub(r'^Answer:?\s*', '', response.split("Answer:")[-1].strip())
+        response = re.sub(r'^(ANSWER:?|Answer:?)\s*', '', response, flags=re.IGNORECASE)
         response = re.sub(r'User:.*$', '', response, flags=re.DOTALL).strip()
         response = re.sub(r'Human:.*$', '', response, flags=re.DOTALL).strip()
         
-        # Improve the structure of the response
-        response = improve_response_structure(response, query)
+        # Remove any "I don't have" disclaimers that might be redundant
+        # Only if the answer actually contains useful information
+        if len(response.strip()) > 100 and not response.lower().startswith("i don't"):
+            response = re.sub(r'^I don\'t have.*?however[,:\s]+', '', response, flags=re.IGNORECASE | re.DOTALL)
         
         return response.strip()
     except Exception as e: 
         logger.error(f"LLM generation failed: {e}", exc_info=True)
-        return "I encountered an error while processing your question. Please try again with a different query."
+        return "I encountered an error while processing your question. Please try again."
 
 def improve_response_structure(text, query):
     """Improve the structure of the response without changing the content."""

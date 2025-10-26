@@ -1,5 +1,5 @@
-# Lightweight requirements - using Ollama for all ML tasks
-# No heavy ML libraries (torch, transformers, sentence-transformers, einops)
+# Lightweight requirements - using Ollama for embeddings
+# sentence-transformers added ONLY for lightweight reranking
 
 # PDF processing
 pdf2image
@@ -8,6 +8,9 @@ Pillow
 
 # Vector database client
 qdrant-client
+
+# Reranking (lightweight cross-encoder)
+sentence-transformers>=2.2.2
 
 # Basic utilities
 numpy
