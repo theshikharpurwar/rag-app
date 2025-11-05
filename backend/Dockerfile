@@ -25,9 +25,14 @@ RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app/python"
 
+# Force CPU-only PyTorch installation to save ~4GB disk space
+ENV TORCH_CUDA_ARCH_LIST=""
+ENV FORCE_CUDA=0
+
 # Copy Python requirements first
 COPY python/requirements.txt ./python_requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir -r ./python_requirements.txt
 
 # Copy Python scripts to maintain proper structure
