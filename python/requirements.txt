@@ -10,6 +10,7 @@ Pillow
 qdrant-client
 
 # Reranking (lightweight cross-encoder)
+# Note: PyTorch CPU-only version is installed separately in Dockerfile to avoid CUDA libraries (~4GB)
 sentence-transformers>=2.2.2
 
 # Basic utilities
