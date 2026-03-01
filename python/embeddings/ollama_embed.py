@@ -39,7 +39,12 @@ class OllamaEmbedder:
             response = requests.get(f"{base_url}/api/tags", timeout=10)
             if response.status_code == 200:
                 available_models = [model['name'] for model in response.json().get('models', [])]
-                if self.model_name not in available_models:
+                # Check exact match or with :latest suffix (Ollama stores "model:latest" but config may say "model")
+                model_found = (
+                    self.model_name in available_models or
+                    f"{self.model_name}:latest" in available_models
+                )
+                if not model_found:
                     logger.warning(f"Model {self.model_name} not found in available models: {available_models}")
                     logger.info(f"You may need to run: ollama pull {self.model_name}")
                 else:
