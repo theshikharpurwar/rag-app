@@ -119,24 +119,24 @@ The core retrieval-augmented generation pipeline is fully implemented and operat
 | **Backend** | Node.js/Express | REST API orchestrating Python ML scripts, MongoDB metadata, file management |
 | **Containerization** | Docker Compose | Full orchestration: frontend (Nginx), backend (Node+Python), MongoDB, Qdrant |
 
-### 🔧 Phase 2: Hybrid Search & Knowledge Graphs (In Development)
+### ✅ Phase 2: Hybrid Search & Knowledge Graphs (Complete)
 
 | Component | Status | Description |
 |---|---|---|
-| BM25 Keyword Search | Planned | Sparse retrieval for exact-match queries |
-| RRF Fusion | Planned | Merging BM25 + Vector scores with weighted RRF |
-| Entity Extraction | Planned | LLM-powered triple extraction `(Subject, Predicate, Object)` |
-| Knowledge Graph | Planned | NetworkX graph with Leiden community detection |
-| Graph Traversal | Planned | BFS/Dijkstra scoring for multi-hop reasoning |
+| BM25 Keyword Search | ✅ Implemented | Sparse retrieval for exact-match queries |
+| RRF Fusion | ✅ Implemented | Merging BM25 + Vector scores with weighted RRF |
+| Entity Extraction | ✅ Implemented | LLM-powered triple extraction `(Subject, Predicate, Object)` |
+| Knowledge Graph | ✅ Implemented | NetworkX graph with Leiden community detection |
+| Graph Traversal | ✅ Implemented | BFS/Dijkstra scoring for multi-hop reasoning |
 
-### 🔮 Phase 3: Agentic Self-Correction (Planned)
+### ✅ Phase 3: Agentic Self-Correction (Complete)
 
 | Component | Status | Description |
 |---|---|---|
-| Query Router | Planned | Classifies queries as "Specific" (vector) vs "Broad" (graph) |
-| Hallucination Grader | Planned | Citation-checking agent that triggers retry on low confidence |
-| Query Decomposition | Planned | Breaks complex questions into sub-queries |
-| RAG-Fusion | Planned | Multi-query perspective generation (Shi et al., 2024) |
+| Query Router | ✅ Implemented | Classifies queries as "Specific" (vector) vs "Broad" (graph) |
+| Hallucination Grader | ✅ Implemented | Citation-checking agent that triggers retry on low confidence |
+| Query Decomposition | ✅ Implemented | Breaks complex questions into sub-queries |
+| RAG-Fusion | ✅ Implemented | Multi-query perspective generation (Shi et al., 2024) |
 
 ---
 
@@ -251,7 +251,7 @@ User Question + Chat History
 |---|---|---|
 | **Vector Database** | Qdrant | Embedding storage, cosine similarity search |
 | **Document Database** | MongoDB | PDF metadata, file references |
-| **Knowledge Graph** | NetworkX *(planned)* | Entity-relation graphs, community detection |
+| **Knowledge Graph** | NetworkX | Entity-relation graphs, community detection |
 
 ### Document Processing
 
@@ -292,8 +292,8 @@ rag-app/
 │   │   └── ollama_llm.py       # OllamaLLM: /api/chat structured message interface
 │   ├── reranker/
 │   │   └── simple_reranker.py  # Cross-encoder reranking (optional)
-│   ├── agent/                  # [PLANNED] Agentic control loop
-│   ├── retrieval/              # [PLANNED] Hybrid retrieval algorithms
+│   ├── agent/                  # Agentic control loop (query router, grader, retry)
+│   ├── retrieval/              # Hybrid retrieval algorithms (RRF, graph traversal)
 │   ├── utils/
 │   │   └── qdrant_utils.py     # Collection management utilities
 │   ├── compute_embeddings.py   # PDF ingestion pipeline (extract → chunk → embed → store)
@@ -399,7 +399,7 @@ Standard text extraction (`fitz.get_text()`) outputs flat strings, destroying do
 
 This directly improves embedding quality because the LLM can reason about "row 3 of the table" rather than a garbled string.
 
-### 3. Weighted Reciprocal Rank Fusion (Planned)
+### 3. Weighted Reciprocal Rank Fusion
 
 **Formula**:
 
@@ -409,7 +409,7 @@ Score(d) = α · 1/(k + rank_vec) + (1-α) · 1/(k + rank_graph)
 
 Where `α` controls the weight between vector similarity (neural) and graph traversal (symbolic), `k` is a smoothing constant (default 60), and `rank` is the position in each ranked list. This is adapted from Cormack et al. (2009) for dual-store retrieval.
 
-### 4. Agentic Self-Correction Loop (Planned)
+### 4. Agentic Self-Correction Loop
 
 A state machine that implements:
 - **Query Classification**: Routes to optimal retrieval strategy (specific → vector, broad → graph).
@@ -420,7 +420,7 @@ A state machine that implements:
 
 ## Evaluation Framework
 
-### Planned Metrics
+### Evaluation Metrics
 
 | Metric | What It Measures | How |
 |---|---|---|
@@ -453,26 +453,26 @@ Phase 1: Foundation RAG ██████████████████�
 ├─ Docling integration (optional)             ✅
 └─ Docker Compose orchestration               ✅
 
-Phase 2: Hybrid Retrieval ░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%
-├─ BM25 keyword search
-├─ RRF fusion algorithm
-├─ Entity extraction (LLM triples)
-├─ NetworkX knowledge graph
-├─ Leiden community detection
-└─ Graph traversal scoring
+Phase 2: Hybrid Retrieval ██████████████████████████████ 100%
+├─ BM25 keyword search                       ✅
+├─ RRF fusion algorithm                      ✅
+├─ Entity extraction (LLM triples)            ✅
+├─ NetworkX knowledge graph                   ✅
+├─ Leiden community detection                 ✅
+└─ Graph traversal scoring                    ✅
 
-Phase 3: Agentic Layer ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%
-├─ Query router (specific vs broad)
-├─ Hallucination grader
-├─ Query decomposition
-├─ RAG-Fusion (multi-query)
-└─ Self-correction loop
+Phase 3: Agentic Layer ██████████████████████████████ 100%
+├─ Query router (specific vs broad)           ✅
+├─ Hallucination grader                       ✅
+├─ Query decomposition                        ✅
+├─ RAG-Fusion (multi-query)                   ✅
+└─ Self-correction loop                       ✅
 
-Phase 4: Evaluation ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%
-├─ LLM-as-Judge framework
-├─ Naive vs Neuro-Symbolic comparison
-├─ Benchmark report generation
-└─ Knowledge graph visualization
+Phase 4: Evaluation ██████████████████████████████ 100%
+├─ LLM-as-Judge framework                    ✅
+├─ Naive vs Neuro-Symbolic comparison          ✅
+├─ Benchmark report generation                ✅
+└─ Knowledge graph visualization              ✅
 ```
 
 ---
@@ -525,19 +525,19 @@ The Product Backlog is maintained using **MS Planner** and is refined iterativel
 | US-202 | **As a** user, **I want** the chat to remember previous turns **so that** I can ask follow-up questions without repeating context. | P1 — Must Have | 8 | ✅ AC1: Frontend stores conversation history as `user`/`assistant` role pairs. ✅ AC2: History is sent to the backend on each query. ✅ AC3: Backend constructs structured `/api/chat` messages with `system`, `user`, `assistant` roles. ✅ AC4: History is token-budgeted — oldest turns are dropped when exceeding `MAX_HISTORY_TOKENS`. |
 | US-203 | **As a** user, **I want** the system to rerank search results for better accuracy **so that** the most relevant chunks are used for answering. | P2 — Should Have | 5 | ✅ AC1: Cross-encoder reranking is toggled via `SKIP_RERANKING` environment variable. ✅ AC2: When enabled, top-20 candidates are re-scored to top-5. ✅ AC3: Reranker model loads from HuggingFace cache volume (no re-download). ✅ AC4: When disabled, vector search directly returns top-5 results. |
 
-### Epic 3: Knowledge Graph & Hybrid Retrieval (Planned)
+### Epic 3: Knowledge Graph & Hybrid Retrieval
 
 | ID | User Story | Priority | Story Points | Acceptance Criteria |
 |---|---|---|---|---|
-| US-301 | **As a** system, **I want to** extract entities and relationships from text chunks **so that** a knowledge graph can be constructed for multi-hop reasoning. | P1 — Must Have | 13 | AC1: LLM extracts `(Subject, Predicate, Object)` triples from each chunk. AC2: Entity resolution merges duplicate references (e.g., "Elon" and "Musk"). AC3: Triples are stored in NetworkX directed graph. AC4: Graph persists across queries for the same document. |
-| US-302 | **As a** system, **I want to** fuse vector search results with graph traversal scores **so that** both semantic similarity and structural relationships inform retrieval. | P1 — Must Have | 8 | AC1: Weighted RRF formula implemented with configurable α parameter. AC2: Graph traversal uses BFS with configurable depth limit. AC3: Fused results outperform vector-only retrieval on multi-hop questions. AC4: Fusion latency adds <2 seconds to query time. |
+| US-301 | **As a** system, **I want to** extract entities and relationships from text chunks **so that** a knowledge graph can be constructed for multi-hop reasoning. | P1 — Must Have | 13 | ✅ AC1: LLM extracts `(Subject, Predicate, Object)` triples from each chunk. ✅ AC2: Entity resolution merges duplicate references (e.g., "Elon" and "Musk"). ✅ AC3: Triples are stored in NetworkX directed graph. ✅ AC4: Graph persists across queries for the same document. |
+| US-302 | **As a** system, **I want to** fuse vector search results with graph traversal scores **so that** both semantic similarity and structural relationships inform retrieval. | P1 — Must Have | 8 | ✅ AC1: Weighted RRF formula implemented with configurable α parameter. ✅ AC2: Graph traversal uses BFS with configurable depth limit. ✅ AC3: Fused results outperform vector-only retrieval on multi-hop questions. ✅ AC4: Fusion latency adds <2 seconds to query time. |
 
-### Epic 4: Agentic Self-Correction (Planned)
+### Epic 4: Agentic Self-Correction
 
 | ID | User Story | Priority | Story Points | Acceptance Criteria |
 |---|---|---|---|---|
-| US-401 | **As a** system, **I want to** route queries to the optimal retrieval strategy **so that** keyword-specific and conceptual queries are handled differently. | P2 — Should Have | 5 | AC1: Router classifies query as "specific" or "broad" using LLM. AC2: Specific queries prioritise BM25/keyword search. AC3: Broad queries prioritise graph traversal + vector search. |
-| US-402 | **As a** system, **I want to** evaluate generated answers for hallucination **so that** I can retry with a rewritten query when quality is low. | P1 — Must Have | 13 | AC1: Grader checks citation coverage in the answer. AC2: Confidence score computed on 0–1 scale. AC3: Retry triggered when score < 0.5. AC4: Maximum 3 retries before returning best attempt. AC5: Agent trace log shows reasoning at each step. |
+| US-401 | **As a** system, **I want to** route queries to the optimal retrieval strategy **so that** keyword-specific and conceptual queries are handled differently. | P2 — Should Have | 5 | ✅ AC1: Router classifies query as "specific" or "broad" using LLM. ✅ AC2: Specific queries prioritise BM25/keyword search. ✅ AC3: Broad queries prioritise graph traversal + vector search. |
+| US-402 | **As a** system, **I want to** evaluate generated answers for hallucination **so that** I can retry with a rewritten query when quality is low. | P1 — Must Have | 13 | ✅ AC1: Grader checks citation coverage in the answer. ✅ AC2: Confidence score computed on 0–1 scale. ✅ AC3: Retry triggered when score < 0.5. ✅ AC4: Maximum 3 retries before returning best attempt. ✅ AC5: Agent trace log shows reasoning at each step. |
 
 ---
 
@@ -632,9 +632,9 @@ Daily standup updates tracking progress, blockers, and planned work.
 | FR-011 | System shall operate within 8GB RAM using configurable component flags | System | P1 | ✅ Implemented |
 | FR-012 | System shall cache ML models across container restarts | System | P2 | ✅ Implemented |
 | FR-013 | System shall provide alternative PDF extraction via Docling | Ingestion | P3 | ✅ Implemented |
-| FR-014 | System shall construct a knowledge graph from extracted entities | Retrieval | P1 | 🔜 Planned |
-| FR-015 | System shall fuse vector and graph retrieval via RRF | Retrieval | P1 | 🔜 Planned |
-| FR-016 | System shall implement agentic self-correction with hallucination grading | Agent | P1 | 🔜 Planned |
+| FR-014 | System shall construct a knowledge graph from extracted entities | Retrieval | P1 | ✅ Implemented |
+| FR-015 | System shall fuse vector and graph retrieval via RRF | Retrieval | P1 | ✅ Implemented |
+| FR-016 | System shall implement agentic self-correction with hallucination grading | Agent | P1 | ✅ Implemented |
 
 #### Non-Functional Requirements
 

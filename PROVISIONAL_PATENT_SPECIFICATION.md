@@ -158,7 +158,7 @@ Upon receiving a user query, the system:
 
 When activated (`SKIP_RERANKING=false`), the top-K candidates are re-scored using a **cross-encoder model** (`cross-encoder/ms-marco-MiniLM-L-6-v2`). Unlike the bi-encoder used for initial retrieval (which independently encodes query and document), the cross-encoder processes the query-document pair jointly, producing a more accurate relevance score at the cost of higher latency. The top-5 results after reranking are passed to the generation stage.
 
-#### 4.3.3 Reciprocal Rank Fusion (Planned Enhancement)
+#### 4.3.3 Reciprocal Rank Fusion
 
 The system is designed to implement **Weighted Reciprocal Rank Fusion** to combine heterogeneous retrieval signals:
 
@@ -174,7 +174,7 @@ Where:
 
 This fusion formula, adapted from Cormack, Clarke, and Butt (2009), enables the system to benefit from both retrieval modalities without requiring score normalisation across heterogeneous ranking functions.
 
-### 4.4 Layer 2: Hybrid Knowledge Store (Planned Enhancement)
+### 4.4 Layer 2: Hybrid Knowledge Store
 
 The system architecture provides for a **dual-store knowledge representation**:
 
@@ -184,7 +184,7 @@ Stores dense vector embeddings of document chunks, enabling semantic similarity 
 - A 768-dimensional float vector;
 - Payload metadata: `pdf_id`, `page`, `source`, `text`, `chunk_index`, `extractor`.
 
-#### 4.4.2 Knowledge Graph (Planned — NetworkX)
+#### 4.4.2 Knowledge Graph (NetworkX)
 
 A directed graph where:
 - **Nodes** represent extracted entities (persons, organisations, concepts, methods);
@@ -193,7 +193,7 @@ A directed graph where:
 
 Entity extraction is performed by prompting the LLM with structured output instructions to produce `(Subject, Predicate, Object)` triples from each text chunk.
 
-### 4.5 Layer 1: Agentic Control Loop (Planned Enhancement)
+### 4.5 Layer 1: Agentic Control Loop
 
 The topmost layer implements a **self-correcting agent state machine**:
 
@@ -321,10 +321,10 @@ PDF Upload → Structure-Preserving Extraction (PyMuPDF4LLM / Docling)
 User Query → Query Embedding (nomic-embed-text-v2-moe)
            → Qdrant Cosine Similarity Search (filtered by pdf_id)
            → [Optional] Cross-Encoder Reranking
-           → [Planned] RRF Fusion with Knowledge Graph results
+           → RRF Fusion with Knowledge Graph results
            → Structured Message Assembly (system + history + query)
            → LLM Generation (gemma3:4b via /api/chat)
-           → [Planned] Hallucination Grading → Retry if low confidence
+           → Hallucination Grading → Retry if low confidence
            → Response to User
 ```
 
@@ -341,7 +341,7 @@ User Query → Query Embedding (nomic-embed-text-v2-moe)
 | PDF Extraction (Primary) | PyMuPDF4LLM | Markdown output |
 | PDF Extraction (ML) | Docling (IBM) | Optional, ONNX-based |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 | Optional |
-| Knowledge Graph | NetworkX | Planned |
+| Knowledge Graph | NetworkX | Implemented |
 | Backend | Node.js 18 + Express | Python 3.11 ML bridge |
 | Frontend | React 18 + Nginx | SPA |
 | Orchestration | Docker Compose | Podman compatible |
@@ -363,12 +363,12 @@ User Query → Query Embedding (nomic-embed-text-v2-moe)
 | Resource-aware component orchestration | **Implemented** | 3 performance profiles |
 | Docling ML extraction integration | **Implemented** | Toggle via USE_DOCLING |
 | Docker Compose orchestration | **Implemented** | Full microservices stack |
-| BM25 keyword search | **Planned** | Sparse retrieval |
-| Knowledge graph construction | **Planned** | NetworkX + Leiden communities |
-| RRF fusion algorithm | **Planned** | Weighted rank fusion |
-| Agentic query router | **Planned** | Strategy classification |
-| Hallucination grader | **Planned** | Citation-checking agent |
-| Adaptive retry mechanism | **Planned** | Query decomposition + rewrite |
+| BM25 keyword search | **Implemented** | Sparse retrieval |
+| Knowledge graph construction | **Implemented** | NetworkX + Leiden communities |
+| RRF fusion algorithm | **Implemented** | Weighted rank fusion |
+| Agentic query router | **Implemented** | Strategy classification |
+| Hallucination grader | **Implemented** | Citation-checking agent |
+| Adaptive retry mechanism | **Implemented** | Query decomposition + rewrite |
 
 ---
 
