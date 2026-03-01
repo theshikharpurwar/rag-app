@@ -20,16 +20,27 @@ services:
     volumes:
       # Mount uploads volume for persistent storage
       - uploads_data:/app/uploads
+      # Cache HuggingFace models so reranker is only downloaded once
+      - hf_cache:/root/.cache/huggingface
     environment:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
       # For accessing Ollama on the host machine
-      - OLLAMA_HOST_URL=http://host.docker.internal:11434
+      - OLLAMA_HOST_URL=http://host.containers.internal:11434
       # Models defined in python/config/models.py - keep in sync
-      - LLM_MODEL=qwen2:1.5b
-      - EMBEDDING_MODEL=nomic-embed-text:v1.5
+      - LLM_MODEL=gemma3:4b
+      - EMBEDDING_MODEL=nomic-embed-text-v2-moe
       - NODE_ENV=production
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      # Cache HuggingFace models in the mounted volume
+      - HF_HOME=/root/.cache/huggingface
+      # Set to 'true' to use Docling for PDF extraction (better quality, slower upload)
+      # Disabled by default — loads heavy ML models (~300MB) competing with Ollama on 8GB RAM
+      - USE_DOCLING=false
+      # Set to 'false' to enable reranking (adds 4-5s cold-load per query on 8GB RAM)
+      - SKIP_RERANKING=true
+      # Skip image embedding — OllamaEmbedder only handles text, not images
+      - SKIP_IMAGES=true
     depends_on:
       - mongo
       - qdrant
@@ -37,6 +48,7 @@ services:
     # This helps to ensure host.docker.internal works on all platforms
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "host.containers.internal:host-gateway"
 
   mongo:
     image: mongo:latest
@@ -59,6 +71,7 @@ volumes:
   qdrant_data:
   mongo_data:
   uploads_data:
+  hf_cache:
 
-# networks: # Define if needed
-#   default:
+    # networks: # Define if needed
+    #   default:
