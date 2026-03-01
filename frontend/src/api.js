@@ -35,7 +35,7 @@ export const fetchPDFs = async () => {
 };
 
 // Query the RAG model
-export const queryRAG = async (pdfId, query, modelPath = null) => {
+export const queryRAG = async (pdfId, query, history = []) => {
   try {
     console.log(`Sending query to backend: ${query} for PDF: ${pdfId}`);
     
@@ -47,7 +47,7 @@ export const queryRAG = async (pdfId, query, modelPath = null) => {
       body: JSON.stringify({
         pdfId,
         query,
-        modelPath
+        history
       }),
     });
 

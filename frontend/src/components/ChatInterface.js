@@ -45,8 +45,16 @@ const ChatInterface = ({ pdf }) => {
     setShowCommands(false);
 
     try {
-      // *** REMOVED model argument ***
-      const response = await queryRAG(pdf._id, currentInput);
+      // Build history from past messages (pair user+assistant turns)
+      const history = [];
+      for (let i = 0; i < messages.length - 1; i++) {
+        if (messages[i].role === 'user' && messages[i + 1]?.role === 'assistant') {
+          history.push({ user: messages[i].content, assistant: messages[i + 1].content });
+          i++; // skip the assistant message we just paired
+        }
+      }
+
+      const response = await queryRAG(pdf._id, currentInput, history);
       const assistantMessage = {
         role: 'assistant',
         content: response.answer || "I couldn't generate an answer for that query.",
@@ -93,9 +101,9 @@ const ChatInterface = ({ pdf }) => {
           <h3>Chat with {pdfName}</h3>
         </div>
         <div className="chat-actions">
-            <button className="icon-button" onClick={clearChat} title="Clear chat">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" /></svg>
-            </button>
+          <button className="icon-button" onClick={clearChat} title="Clear chat">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" /></svg>
+          </button>
         </div>
       </div>
 
@@ -150,56 +158,56 @@ const ChatInterface = ({ pdf }) => {
           </div>
         ))}
         {isTyping && (
-            <div className="message assistant typing">
-                <div className="message-avatar">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" /></svg>
-                </div>
-                <div className="message-content"><div className="typing-indicator"><span></span><span></span><span></span></div></div>
+          <div className="message assistant typing">
+            <div className="message-avatar">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" /></svg>
             </div>
+            <div className="message-content"><div className="typing-indicator"><span></span><span></span><span></span></div></div>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
       <form className="chat-input" onSubmit={handleSubmit}>
-         <div className="input-container">
-            <input
-                id="chat-input-field" // Added ID for potential focus targeting
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask a question about the document..."
-                onFocus={() => setShowCommands(true)}
-                onBlur={() => setTimeout(() => setShowCommands(false), 150)} // Hide dropdown on blur
-                required
-                disabled={!pdf || isTyping} // Disable input during typing
-            />
-             <button
-                type="button"
-                className="command-button"
-                onClick={() => setShowCommands(!showCommands)}
-                title="Show sample commands"
-                disabled={!pdf}
-             >
-                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7,10L12,15L17,10H7Z" /></svg>
-             </button>
-         </div>
-         {showCommands && pdf && (
-             <div className="commands-dropdown">
-             {sampleCommands.map((cmd, index) => (
-                 <div
-                    key={index}
-                    className="command-item"
-                    onMouseDown={() => handleCommandClick(cmd.text)} // Use onMouseDown
-                 >
-                     <div className="command-text">{cmd.text}</div>
-                     <div className="command-description">{cmd.description}</div>
-                 </div>
-             ))}
-             </div>
-         )}
-         <button type="submit" className="send-button" disabled={!input.trim() || isTyping || !pdf}>
-             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M2,21L23,12L2,3V10L17,12L2,14V21Z" /></svg>
-         </button>
+        <div className="input-container">
+          <input
+            id="chat-input-field" // Added ID for potential focus targeting
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask a question about the document..."
+            onFocus={() => setShowCommands(true)}
+            onBlur={() => setTimeout(() => setShowCommands(false), 150)} // Hide dropdown on blur
+            required
+            disabled={!pdf || isTyping} // Disable input during typing
+          />
+          <button
+            type="button"
+            className="command-button"
+            onClick={() => setShowCommands(!showCommands)}
+            title="Show sample commands"
+            disabled={!pdf}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7,10L12,15L17,10H7Z" /></svg>
+          </button>
+        </div>
+        {showCommands && pdf && (
+          <div className="commands-dropdown">
+            {sampleCommands.map((cmd, index) => (
+              <div
+                key={index}
+                className="command-item"
+                onMouseDown={() => handleCommandClick(cmd.text)} // Use onMouseDown
+              >
+                <div className="command-text">{cmd.text}</div>
+                <div className="command-description">{cmd.description}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <button type="submit" className="send-button" disabled={!input.trim() || isTyping || !pdf}>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M2,21L23,12L2,3V10L17,12L2,14V21Z" /></svg>
+        </button>
       </form>
     </div>
   );
