@@ -125,10 +125,16 @@ except Exception as e:
     logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
     sys.exit("Embedding model failed to load")
 
+SKIP_RERANKING = os.environ.get("SKIP_RERANKING", "false").lower() == "true"
+
 try:
-    logger.info("Initializing reranker model...")
-    reranker = SimpleReranker()
-    logger.info("Reranker model loaded successfully.")
+    if SKIP_RERANKING:
+        logger.info("Reranker disabled via SKIP_RERANKING=true.")
+        reranker = None
+    else:
+        logger.info("Initializing reranker model...")
+        reranker = SimpleReranker()
+        logger.info("Reranker model loaded successfully.")
 except Exception as e:
     logger.warning(f"Failed to load reranker: {e}. Continuing without reranking.")
     reranker = None  # Graceful degradation
@@ -202,14 +208,15 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
         
         # Search with the original query
         try:
-            search_results = client.search(
+            search_response = client.query_points(
                 collection_name=collection_name,
-                query_vector=query_embedding,
+                query=query_embedding,
                 query_filter=qdrant_filter,
                 limit=retrieval_limit,
                 with_payload=True,
                 score_threshold=0.1  # Lower threshold for reranking
             )
+            search_results = search_response.points
             
             logger.info(f"Retrieved {len(search_results)} results from Qdrant for pdf_id '{pdf_id_filter}'.")
             
@@ -269,75 +276,78 @@ def estimate_tokens(text):
     return len(text.split())  # Basic token estimate
 
 def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
-    """Generates a response using the LLM with context, history, and improved prompting."""
+    """Generates a response using the LLM /api/chat with structured message roles."""
     if not llm:
         raise RuntimeError("LLM is not initialized.")
-    
-    # Format chat history
-    history_str = ""
-    if chat_history:
-        token_count = 0
-        for turn in reversed(chat_history):
-            turn_text = f"User: {turn.get('user', '')}\nAssistant: {turn.get('assistant', '')}\n"
-            turn_tokens = estimate_tokens(turn_text)
-            if token_count + turn_tokens > MAX_HISTORY_TOKENS:
-                break
-            history_str = turn_text + history_str
-            token_count += turn_tokens
-        if history_str:
-            history_str = f"Previous Conversation:\n{history_str.strip()}\n\n"
-      
+
     # Handle missing context
     if not context_str:
         logger.warning("No context provided to LLM.")
         return "I couldn't find relevant information in the document to answer this question. Could you try rephrasing or asking about something else from the document?"
-    
-    # Handle excessive context length
+
+    # Truncate if too long
     if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
-        logger.warning(f"Context length ({len(context_str)}) exceeds limit ({MAX_CONTEXT_CHAR_LIMIT}), truncating.")
+        logger.warning(f"Context length ({len(context_str)}) exceeds limit, truncating.")
         context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT]
-        logger.info(f"Truncated context to {len(context_str)} characters")
 
-    # Simple, natural prompt - let the LLM think
-    prompt_for_llm = f"""{history_str}Answer the following question based on these document extracts.
+    # Build structured messages list for /api/chat
+    messages = []
 
-Document extracts:
-{context_str}
-
-Question: {query}
-
-Answer:"""
-    
-    logger.info(f"Sending request to LLM '{LLM_MODEL_NAME}' at {OLLAMA_API_BASE}...")
-    
-    try:
-        # Generate the response with optimized parameters
-        response = llm.generate_response(
-            prompt_for_llm,
-            max_tokens=2000,     # More space for detailed answers
-            temperature=0.7      # Higher temp for more natural, thoughtful responses
+    # System message: role + document context
+    messages.append({
+        "role": "system",
+        "content": (
+            "You are a helpful assistant that answers questions about documents. "
+            "Answer only from the provided document extracts. Be concise and accurate.\n\n"
+            f"Document extracts:\n{context_str}"
         )
-        
+    })
+
+    # Inject chat history as real user/assistant turns (most recent MAX_HISTORY_TOKENS worth)
+    if chat_history:
+        token_count = 0
+        valid_turns = []
+        for turn in reversed(chat_history):
+            user_text = turn.get("user", "")
+            assistant_text = turn.get("assistant", "")
+            turn_tokens = estimate_tokens(user_text + assistant_text)
+            if token_count + turn_tokens > MAX_HISTORY_TOKENS:
+                break
+            valid_turns.insert(0, turn)
+            token_count += turn_tokens
+
+        for turn in valid_turns:
+            messages.append({"role": "user",      "content": turn.get("user", "")})
+            messages.append({"role": "assistant",  "content": turn.get("assistant", "")})
+
+    # Current user question
+    messages.append({"role": "user", "content": query})
+
+    logger.info(f"Sending {len(messages)} messages to LLM (system + {len(chat_history or [])} history turns + query)")
+
+    try:
+        response = llm.generate_response(
+            prompt=query,           # fallback only
+            messages=messages,      # structured chat
+            max_tokens=2000,
+            temperature=0.7
+        )
+
         if not response:
             logger.error("LLM returned empty response")
             return "I wasn't able to generate a proper response. Please try again with a different question."
-        
+
         logger.info("Received response from LLM.")
-        
-        # Clean up the response
+        # Clean up artefacts
         response = re.sub(r'^(ANSWER:?|Answer:?)\s*', '', response, flags=re.IGNORECASE)
         response = re.sub(r'User:.*$', '', response, flags=re.DOTALL).strip()
         response = re.sub(r'Human:.*$', '', response, flags=re.DOTALL).strip()
-        
-        # Remove any "I don't have" disclaimers that might be redundant
-        # Only if the answer actually contains useful information
-        if len(response.strip()) > 100 and not response.lower().startswith("i don't"):
-            response = re.sub(r'^I don\'t have.*?however[,:\s]+', '', response, flags=re.IGNORECASE | re.DOTALL)
-        
         return response.strip()
-    except Exception as e: 
+
+    except Exception as e:
         logger.error(f"LLM generation failed: {e}", exc_info=True)
         return "I encountered an error while processing your question. Please try again."
+
 
 def improve_response_structure(text, query):
     """Improve the structure of the response without changing the content."""
