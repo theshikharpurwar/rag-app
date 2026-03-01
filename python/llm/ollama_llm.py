@@ -51,47 +51,53 @@ class OllamaLLM:
             logger.error(f"Error checking Ollama API: {str(e)}")
             logger.warning(f"Make sure Ollama is running at {self.api_base}")
 
-    def generate_response(self, prompt, context=None, max_tokens=1000, temperature=0.7):
+    def generate_response(self, prompt, context=None, max_tokens=1000, temperature=0.7, messages=None):
         """
-        Generate a response for the provided prompt
+        Generate a response using the Ollama /api/chat endpoint with structured messages.
+        Uses role-based message format that chat-tuned models (like qwen2.5vl) understand best.
 
         Args:
-            prompt (str): The prompt to generate a response for
-            context (list, optional): Additional context for the prompt
+            prompt (str): Used as the final user message if messages is None
+            context (list, optional): Unused, kept for API compatibility
             max_tokens (int, optional): Maximum number of tokens to generate
             temperature (float, optional): Sampling temperature
+            messages (list, optional): Full conversation as [{"role": ..., "content": ...}]
 
         Returns:
             str: The generated response
         """
-        if not prompt:
+        if not prompt and not messages:
             logger.warning("Empty prompt provided")
             return "Please provide a question or prompt."
 
-        logger.info(f"Generating response for prompt: {prompt[:50]}...")
+        # Use provided messages or build a simple single-turn conversation
+        chat_messages = messages if messages else [{"role": "user", "content": prompt}]
+
+        logger.info(f"Sending {len(chat_messages)} message(s) to /api/chat...")
 
         try:
-            # Prepare the request payload
             payload = {
                 "model": self.model_name,
-                "prompt": prompt,
+                "messages": chat_messages,
+                "stream": True,
                 "options": {
                     "num_predict": max_tokens,
                     "temperature": temperature
                 }
             }
 
-            # Make the request to the Ollama API
-            logger.info(f"Sending request to: {self.api_base}/generate")
-            response = requests.post(f"{self.api_base}/generate", json=payload, timeout=60)
+            logger.info(f"Sending request to: {self.api_base}/chat")
+            response = requests.post(f"{self.api_base}/chat", json=payload, timeout=120, stream=True)
 
             if response.status_code == 200:
-                # Extract the response text
-                response_text = response.text
-
-                # Parse the response
-                responses = [json.loads(line) for line in response_text.strip().split('\n')]
-                full_response = ''.join(r.get('response', '') for r in responses)
+                full_response = ""
+                for line in response.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        content = chunk.get("message", {}).get("content", "")
+                        full_response += content
+                        if chunk.get("done", False):
+                            break
 
                 logger.info(f"Successfully generated response: {full_response[:50]}...")
                 return full_response
@@ -104,12 +110,12 @@ class OllamaLLM:
             error_msg = f"Request to Ollama API timed out at {self.api_base}"
             logger.error(error_msg)
             return f"Sorry, the Ollama API request timed out. Please ensure Ollama is running at {self.api_base.split('/api')[0]}."
-        
+
         except requests.exceptions.ConnectionError:
             error_msg = f"Could not connect to Ollama API at {self.api_base}"
             logger.error(error_msg)
             return f"Sorry, I could not connect to the Ollama API. Please ensure Ollama is running at {self.api_base.split('/api')[0]}."
-            
+
         except Exception as e:
             error_msg = f"Error generating response: {str(e)}"
             logger.error(error_msg)
