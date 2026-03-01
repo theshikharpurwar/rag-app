@@ -11,10 +11,10 @@ import os
 # =============================================================================
 
 # LLM Model Configuration
-LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'qwen2.5vl:3b')
+LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'gemma3:4b')
 
 # Embedding Model Configuration  
-EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'nomic-embed-text:v1.5')
+EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'nomic-embed-text-v2-moe')
 
 # =============================================================================
 # 📊 MODEL SPECIFICATIONS (Auto-derived from model names)
@@ -25,6 +25,7 @@ EMBEDDING_VECTOR_SIZES = {
     'nomic-embed-text:v1.5': 768,
     'nomic-embed-text:latest': 768,
     'nomic-embed-text': 768,
+    'nomic-embed-text-v2-moe': 768,   # MoE v2 — multilingual, same dim as v1.5
     'all-MiniLM-L6-v2': 384,
     'sentence-transformers/all-MiniLM-L6-v2': 384,
 }
