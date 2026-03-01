@@ -18,7 +18,8 @@ from .models import (
     TEXT_CHUNK_SIZE,
     TEXT_CHUNK_OVERLAP,
     IMAGE_SAVE_DIR_RELATIVE,
-    RENDERING_DPI
+    RENDERING_DPI,
+    print_current_config
 )
 
 __all__ = [
@@ -36,5 +37,6 @@ __all__ = [
     'TEXT_CHUNK_SIZE',
     'TEXT_CHUNK_OVERLAP',
     'IMAGE_SAVE_DIR_RELATIVE',
-    'RENDERING_DPI'
+    'RENDERING_DPI',
+    'print_current_config'
 ]
