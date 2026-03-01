@@ -4,6 +4,7 @@
 # PDF processing
 pdf2image
 PyMuPDF
+pymupdf4llm
 Pillow
 
 # Vector database client
@@ -11,6 +12,9 @@ qdrant-client
 
 # Reranking (lightweight cross-encoder)
 sentence-transformers>=2.2.2
+
+# Document parsing (Docling for RAG-optimized extraction, PyMuPDF as default/fallback)
+docling
 
 # Basic utilities
 numpy
