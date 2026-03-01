@@ -56,6 +56,7 @@ print_config_to_stderr()
 VECTOR_SIZE = DEFAULT_VECTOR_SIZE
 BATCH_SIZE = 10  # Process in batches for performance
 SKIP_IMAGES = os.environ.get("SKIP_IMAGES", "false").lower() == "true"  # Option to skip images
+USE_DOCLING = os.environ.get("USE_DOCLING", "false").lower() == "true"  # Use Docling for better RAG extraction
 # --- End Configuration ---
 
 # Remove or comment out the SimpleEmbedder class
@@ -229,6 +230,62 @@ def chunk_text(text, chunk_size=TEXT_CHUNK_SIZE, overlap=TEXT_CHUNK_OVERLAP):
     
     return final_chunks if final_chunks else [text.strip()] if text.strip() else []
 
+
+def extract_with_docling(pdf_path):
+    """
+    Extract text from PDF using Docling (IBM) for RAG-optimized extraction.
+    Returns list of (page_num, text, chunk_index) tuples.
+    Uses Docling's HybridChunker which is purpose-built for RAG pipelines.
+    OCR is disabled (do_ocr=False) — Tesseract is not in the container.
+    For scanned PDFs, consider using DeepSeek-OCR separately.
+    Falls back to empty list on any error so PyMuPDF fallback can take over.
+    """
+    try:
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.base_models import InputFormat
+        from docling.chunking import HybridChunker
+
+        # Disable OCR — Tesseract not available in container.
+        # Works perfectly for text-based PDFs (research papers, reports, etc.)
+        pipeline_options = PdfPipelineOptions(do_ocr=False)
+        converter = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+        )
+
+        logger.info("[Docling] Converting PDF (OCR disabled)...")
+        result = converter.convert(pdf_path)
+
+        logger.info("[Docling] Chunking document with HybridChunker...")
+        chunker = HybridChunker()
+        chunks = list(chunker.chunk(result.document))
+        logger.info(f"[Docling] Produced {len(chunks)} chunks")
+
+        extracted = []
+        for i, chunk in enumerate(chunks):
+            text = chunk.text.strip()
+            if not text:
+                continue
+            # Extract page number from provenance metadata if available
+            page_num = 1  # default
+            try:
+                items = chunk.meta.doc_items if hasattr(chunk.meta, 'doc_items') else []
+                if items and hasattr(items[0], 'prov') and items[0].prov:
+                    page_num = items[0].prov[0].page_no
+            except Exception:
+                pass
+            extracted.append((page_num, text, i))
+
+        return extracted
+
+    except ImportError:
+        logger.warning("[Docling] Not installed. Falling back to PyMuPDF.")
+        return []
+    except Exception as e:
+        logger.error(f"[Docling] Extraction failed: {e}. Falling back to PyMuPDF.")
+        return []
+
+
 # Using process_pdf function name, includes pdf_id argument
 def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
     """Process PDF, extract text & images, compute embeddings, store in Qdrant with pdf_id."""
@@ -309,81 +366,129 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
         os.makedirs(image_output_dir, exist_ok=True)
         logger.info(f"Image output directory: {image_output_dir}")
 
-        # Lists for batch processing
-        text_chunks = []  
-        chunk_metadata = []
+        # ── Docling path ──────────────────────────────────────────────────────
+        if USE_DOCLING:
+            logger.info("[Docling] USE_DOCLING=true — using Docling for text extraction")
+            docling_chunks = extract_with_docling(pdf_path)
 
-        # Process each page
-        for page_num, page in enumerate(document):
-            # Extract page text
-            page_text = page.get_text("text").strip()
-            if page_text:
-                # Split text into smaller chunks for better retrieval
-                chunks = chunk_text(page_text)
-                
-                # For small pages, just use the whole text
-                if not chunks and page_text:
-                    chunks = [page_text]
-                
-                # Add chunks to batch processing lists
-                for i, chunk in enumerate(chunks):
-                    if chunk.strip():
-                        text_chunks.append(chunk)
-                        chunk_metadata.append({
-                            "page_num": page_num,
-                            "page": page_num + 1,
-                            "source": pdf_base_name,
-                            "chunk_index": i,
-                            "total_chunks": len(chunks)
-                        })
-                
-                # Process in batches
-                if len(text_chunks) >= BATCH_SIZE:
-                    process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_upsert)
-                    embeddings_count += len(text_chunks)
-                    text_chunks = []
-                    chunk_metadata = []
+            if docling_chunks:
+                text_chunks = [text for (_, text, _) in docling_chunks]
+                chunk_metadata = [
+                    {
+                        "page_num": page_num - 1,
+                        "page": page_num,
+                        "source": pdf_base_name,
+                        "chunk_index": chunk_idx,
+                        "total_chunks": len(docling_chunks),
+                        "extractor": "docling"
+                    }
+                    for (page_num, _, chunk_idx) in docling_chunks
+                ]
+                # Embed all Docling chunks
+                for i in range(0, len(text_chunks), BATCH_SIZE):
+                    batch_texts = text_chunks[i:i + BATCH_SIZE]
+                    batch_meta = chunk_metadata[i:i + BATCH_SIZE]
+                    process_text_batch(batch_texts, batch_meta, embedder, pdf_id, points_to_upsert)
+                    embeddings_count += len(batch_texts)
 
-            # Process Images (skip if configured)
+                num_pages = max(m["page"] for m in chunk_metadata) if chunk_metadata else 0
+                logger.info(f"[Docling] Embedded {embeddings_count} chunks across {num_pages} pages")
+            else:
+                logger.warning("[Docling] No chunks returned — falling back to PyMuPDF")
+                USE_DOCLING_ACTIVE = False  # signal fallback
+            docling_succeeded = bool(docling_chunks)
+        else:
+            docling_succeeded = False
+
+        # ── PyMuPDF4LLM path (default or fallback) ───────────────────────────
+        if not USE_DOCLING or not docling_succeeded:
+            logger.info("[PyMuPDF4LLM] Extracting text as Markdown (preserves tables, headers)...")
+
+            # pymupdf4llm prints recommendations to stdout which corrupts JSON output.
+            # Redirect stdout → stderr during its execution.
+            import contextlib
+            _real_stdout = sys.stdout
+            sys.stdout = sys.stderr
+            try:
+                import pymupdf4llm
+                # page_chunks=True → one dict per page: {"text": "...", "metadata": {"page": 0, ...}}
+                md_pages = pymupdf4llm.to_markdown(pdf_path, page_chunks=True)
+            finally:
+                sys.stdout = _real_stdout
+
+            num_pages = len(md_pages)
+            logger.info(f"[PyMuPDF4LLM] Got {num_pages} page(s) as Markdown")
+
+            text_chunks = []
+            chunk_metadata = []
+
+            for page_data in md_pages:
+                page_num = page_data["metadata"].get("page", 0)   # 0-indexed
+                page_text = page_data["text"].strip()
+
+                if page_text:
+                    chunks = chunk_text(page_text)
+                    if not chunks and page_text:
+                        chunks = [page_text]
+                    for i, chunk in enumerate(chunks):
+                        if chunk.strip():
+                            text_chunks.append(chunk)
+                            chunk_metadata.append({
+                                "page_num": page_num,
+                                "page": page_num + 1,
+                                "source": pdf_base_name,
+                                "chunk_index": i,
+                                "total_chunks": len(chunks),
+                                "extractor": "pymupdf4llm"
+                            })
+                    if len(text_chunks) >= BATCH_SIZE:
+                        process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_upsert)
+                        embeddings_count += len(text_chunks)
+                        text_chunks = []
+                        chunk_metadata = []
+
+            # Image processing still needs fitz (pymupdf4llm doesn't extract raw images)
             if not SKIP_IMAGES:
-                process_page_images(page, page_num, document, embedder, pdf_id, pdf_base_name, 
-                                  image_output_dir, points_to_upsert)
-                                  
-        # Process any remaining text chunks
-        if text_chunks:
-            process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_upsert)
-            embeddings_count += len(text_chunks)
+                document = fitz.open(pdf_path)
+                for page_num, page in enumerate(document):
+                    process_page_images(page, page_num, document, embedder, pdf_id, pdf_base_name,
+                                      image_output_dir, points_to_upsert)
+                try: document.close()
+                except Exception as close_err: logger.error(f"Error closing PDF: {close_err}")
 
-        try: document.close()
-        except Exception as close_err: logger.error(f"Error closing PDF: {close_err}")
+            if text_chunks:
+                process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_upsert)
+                embeddings_count += len(text_chunks)
 
-        # Batch upsert with improved chunking
+        # ── Upsert to Qdrant ──────────────────────────────────────────────────
         if points_to_upsert:
             logger.info(f"Upserting {len(points_to_upsert)} points for PDF {pdf_id}...")
             try:
-                batch_size = 50  # Optimal batch size for Qdrant
+                batch_size = 50
                 for i in range(0, len(points_to_upsert), batch_size):
                     batch = points_to_upsert[i:i+batch_size]
                     client.upsert(collection_name=collection_name, points=batch, wait=True)
                     logger.info(f"Upserted batch {i//batch_size + 1}/{(len(points_to_upsert)-1)//batch_size + 1} with {len(batch)} points")
                 logger.info(f"Upsert successful for {len(points_to_upsert)} points (PDF ID: {pdf_id}).")
             except Exception as e:
-                 logger.error(f"Qdrant upsert failed for PDF {pdf_id}: {e}", exc_info=True)
-                 error_detail = str(e)
-                 if hasattr(e, 'http_body'): error_detail = getattr(e, 'http_body', str(e)) # Get specific Qdrant error if available
-                 return {"success": False, "error": f"Qdrant upsert failed: {error_detail}"}
-        else: logger.warning("No text or image content found/embedded.")
+                logger.error(f"Qdrant upsert failed for PDF {pdf_id}: {e}", exc_info=True)
+                error_detail = str(e)
+                if hasattr(e, 'http_body'): error_detail = getattr(e, 'http_body', str(e))
+                return {"success": False, "error": f"Qdrant upsert failed: {error_detail}"}
+        else:
+            logger.warning("No text or image content found/embedded.")
 
-        result = {"success": True, "filename": pdf_base_name, "page_count": num_pages, "embeddings_count": embeddings_count, "collection": collection_name}
+        result = {"success": True, "filename": pdf_base_name, "page_count": num_pages if 'num_pages' in locals() else 0, "embeddings_count": embeddings_count, "collection": collection_name}
         logger.info(f"Successfully processed PDF: {pdf_base_name} (ID: {pdf_id})")
         return result
 
     except Exception as e:
         logger.error(f"Critical Error processing PDF {pdf_path} (ID: {pdf_id}): {e}", exc_info=True)
         if 'document' in locals() and document and not document.is_closed:
-             try: document.close()
-             except: pass
+            try: document.close()
+            except: pass
         return {"success": False, "error": f"General error: {str(e)}"}
+
 
 def process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_upsert):
     """Process a batch of text chunks for better performance"""
