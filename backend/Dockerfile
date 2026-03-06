@@ -43,8 +43,8 @@ RUN npm install --production
 # Copy the rest of the backend code
 COPY backend/ .
 
-# Create uploads directory structure
-RUN mkdir -p ./uploads/images
+# Create uploads directory structure (including Phase 2 indices)
+RUN mkdir -p ./uploads/images ./uploads/indices
 
 # Expose the port the Node server listens on
 EXPOSE 5000
