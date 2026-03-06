@@ -14,7 +14,13 @@ qdrant-client
 sentence-transformers>=2.2.2
 
 # Document parsing (Docling for RAG-optimized extraction, PyMuPDF as default/fallback)
-docling
+docling>=2.14.0,<3.0.0
+
+# Phase 2: Hybrid Retrieval & Knowledge Graphs
+networkx>=3.1
+leidenalg>=0.10.0
+python-igraph>=0.11.0
+rank_bm25>=0.2.2
 
 # Basic utilities
 numpy
