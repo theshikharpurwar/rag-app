@@ -25,7 +25,15 @@ from config import (
     DEFAULT_COLLECTION,
     CONTEXT_RETRIEVAL_LIMIT,
     MAX_CONTEXT_CHAR_LIMIT,
-    MAX_HISTORY_TOKENS
+    MAX_HISTORY_TOKENS,
+    # Phase 2: Hybrid Retrieval
+    ENABLE_KNOWLEDGE_GRAPH,
+    RRF_K,
+    VECTOR_WEIGHT,
+    BM25_WEIGHT,
+    GRAPH_WEIGHT,
+    GRAPH_TRAVERSAL_DEPTH,
+    INDICES_DIR,
 )
 
 # Import reranker
@@ -482,12 +490,98 @@ def main():
         qdrant_client = get_qdrant_client() # Connect to Qdrant
         logger.info(f"Processing query for PDF ID '{args.pdf_id}': {args.query}")
 
-        # Direct pipeline implementation
-        # 1. Retrieve context using the original query
+        # 1. Vector retrieval (Path A — always runs)
         retrieved_context = retrieve_context(qdrant_client, args.collection_name, args.query, args.pdf_id, limit=CONTEXT_RETRIEVAL_LIMIT)
-        context_str, sources = format_context_for_llm(retrieved_context)
-        
-        # 2. Generate response without system instructions
+
+        # 2. Load BM25 index and Knowledge Graph for hybrid retrieval (Phase 2)
+        bm25_index = None
+        knowledge_graph = None
+        graph_retriever = None
+
+        bm25_path = os.path.join(INDICES_DIR, f"{args.pdf_id}_bm25.pkl")
+        kg_path = os.path.join(INDICES_DIR, f"{args.pdf_id}_graph.json")
+
+        # Try to load BM25 index
+        try:
+            from retrieval.bm25_search import BM25Index
+            bm25_index = BM25Index()
+            if not bm25_index.load(bm25_path):
+                bm25_index = None
+                logger.info(f"[Hybrid] No BM25 index for PDF {args.pdf_id}, skipping BM25 path")
+        except Exception as e:
+            logger.warning(f"[Hybrid] BM25 load failed: {e}")
+            bm25_index = None
+
+        # Try to load Knowledge Graph and set up graph retriever
+        if ENABLE_KNOWLEDGE_GRAPH:
+            try:
+                from retrieval.knowledge_graph import KnowledgeGraph
+                from retrieval.graph_retrieval import GraphRetriever
+                knowledge_graph = KnowledgeGraph()
+                if knowledge_graph.load(kg_path):
+                    graph_retriever = GraphRetriever(
+                        knowledge_graph, llm=llm,
+                        traversal_depth=GRAPH_TRAVERSAL_DEPTH
+                    )
+                    logger.info(f"[Hybrid] KG loaded: {knowledge_graph.num_nodes} nodes, "
+                                 f"{knowledge_graph.num_edges} edges")
+                else:
+                    knowledge_graph = None
+                    logger.info(f"[Hybrid] No KG for PDF {args.pdf_id}, skipping graph path")
+            except Exception as e:
+                logger.warning(f"[Hybrid] KG load failed: {e}")
+                knowledge_graph = None
+                graph_retriever = None
+
+        # 3. Hybrid retrieval: fuse vector + BM25 + graph via RRF
+        has_hybrid = bm25_index is not None or graph_retriever is not None
+        if has_hybrid:
+            try:
+                from retrieval.rrf_fusion import hybrid_retrieve
+                fused_results = hybrid_retrieve(
+                    query=args.query,
+                    pdf_id=args.pdf_id,
+                    vector_results=retrieved_context,
+                    bm25_index=bm25_index,
+                    knowledge_graph=knowledge_graph,
+                    graph_retriever=graph_retriever,
+                    vector_weight=VECTOR_WEIGHT,
+                    bm25_weight=BM25_WEIGHT,
+                    graph_weight=GRAPH_WEIGHT,
+                    rrf_k=RRF_K,
+                    top_k=CONTEXT_RETRIEVAL_LIMIT,
+                )
+
+                # Format fused results for LLM
+                context_str = ""
+                sources = []
+                for i, r in enumerate(fused_results):
+                    text = r.get("text", "")
+                    page = r.get("page", "N/A")
+                    source = r.get("source", "Unknown")
+                    score = r.get("score", 0.0)
+                    methods = r.get("retrieval_methods", ["unknown"])
+                    if text.strip():
+                        context_str += (f"CONTENT FROM SOURCE {i+1} "
+                                       f"(Document: {source}, Page: {page}, "
+                                       f"Score: {score:.4f}, Methods: {', '.join(methods)}):\n"
+                                       f"{text}\n\n")
+                        sources.append({"id": i + 1, "page": page, "document": source,
+                                        "score": score, "methods": methods})
+
+                context_str = context_str.strip()
+                logger.info(f"[Hybrid] Fused context: {len(sources)} chunks from "
+                            f"{len(fused_results)} fused results")
+            except Exception as e:
+                logger.error(f"[Hybrid] Fusion failed, falling back to vector-only: {e}",
+                             exc_info=True)
+                has_hybrid = False
+
+        # Fallback: vector-only context (original Phase 1 path)
+        if not has_hybrid:
+            context_str, sources = format_context_for_llm(retrieved_context)
+
+        # 4. Generate response
         answer = generate_rag_response(args.query, context_str, chat_history)
         result = {"answer": answer, "sources": sources}
 
@@ -496,7 +590,6 @@ def main():
         result = {"answer": f"Error: Unable to connect to necessary services. Please ensure Qdrant and Ollama are running properly.", "sources": []}
     except Exception as e: 
         logger.error(f"Unexpected error: {e}", exc_info=True)
-        # Provide a helpful user-facing error message that doesn't expose internal details
         result = {
             "answer": "I encountered an unexpected error while processing your question. Please try again or rephrase your question.", 
             "sources": []
