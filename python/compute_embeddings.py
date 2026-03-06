@@ -25,10 +25,14 @@ from config import (
     QDRANT_PORT,
     DEFAULT_COLLECTION,
     OLLAMA_HOST_URL,
+    OLLAMA_API_BASE,
     TEXT_CHUNK_SIZE,
     TEXT_CHUNK_OVERLAP,
     IMAGE_SAVE_DIR_RELATIVE,
-    RENDERING_DPI
+    RENDERING_DPI,
+    # Phase 2
+    ENABLE_KNOWLEDGE_GRAPH,
+    INDICES_DIR,
 )
 
 # Configure logging
@@ -478,7 +482,66 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
         else:
             logger.warning("No text or image content found/embedded.")
 
-        result = {"success": True, "filename": pdf_base_name, "page_count": num_pages if 'num_pages' in locals() else 0, "embeddings_count": embeddings_count, "collection": collection_name}
+        # ── Phase 2: Build BM25 Index & Knowledge Graph ───────────────────────
+        all_text_chunks = [p.payload for p in points_to_upsert if hasattr(p, 'payload') and p.payload.get('type') == 'text']
+
+        bm25_path = None
+        kg_path = None
+
+        if all_text_chunks:
+            os.makedirs(INDICES_DIR, exist_ok=True)
+
+            # ── BM25 Index (always built — lightweight) ───────────────────────
+            try:
+                from retrieval.bm25_search import BM25Index
+                bm25 = BM25Index()
+                bm25_chunks = [{"text": c.get("text", ""), "pdf_id": c.get("pdf_id", pdf_id),
+                                "page": c.get("page", 0), "source": c.get("source", ""),
+                                "chunk_index": c.get("chunk_index", 0)} for c in all_text_chunks]
+                bm25.build_index(bm25_chunks)
+                bm25_path = os.path.join(INDICES_DIR, f"{pdf_id}_bm25.pkl")
+                bm25.save(bm25_path)
+                logger.info(f"[BM25] Index saved for PDF {pdf_id}: {bm25_path}")
+            except Exception as e:
+                logger.error(f"[BM25] Failed to build index for PDF {pdf_id}: {e}", exc_info=True)
+
+            # ── Knowledge Graph (gated by ENABLE_KNOWLEDGE_GRAPH) ─────────────
+            if ENABLE_KNOWLEDGE_GRAPH:
+                try:
+                    from llm.ollama_llm import OllamaLLM
+                    from retrieval.entity_extractor import EntityExtractor
+                    from retrieval.knowledge_graph import KnowledgeGraph
+
+                    logger.info(f"[KG] Starting entity extraction for PDF {pdf_id} ({len(all_text_chunks)} chunks)...")
+                    kg_llm = OllamaLLM(model_name=LLM_MODEL_NAME, api_base=OLLAMA_API_BASE)
+                    extractor = EntityExtractor(kg_llm)
+                    triples, sources = extractor.extract_from_chunks(bm25_chunks)
+
+                    if triples:
+                        kg = KnowledgeGraph()
+                        kg.build_from_triples(triples, sources)
+                        kg.detect_communities()
+                        kg_path = os.path.join(INDICES_DIR, f"{pdf_id}_graph.json")
+                        kg.save(kg_path)
+                        summary = kg.get_summary()
+                        logger.info(f"[KG] Graph saved for PDF {pdf_id}: {summary['nodes']} nodes, "
+                                     f"{summary['edges']} edges, {summary['communities']} communities")
+                    else:
+                        logger.warning(f"[KG] No triples extracted for PDF {pdf_id}")
+                except Exception as e:
+                    logger.error(f"[KG] Failed to build knowledge graph for PDF {pdf_id}: {e}", exc_info=True)
+            else:
+                logger.info("[KG] Knowledge graph disabled (ENABLE_KNOWLEDGE_GRAPH=false)")
+
+        result = {
+            "success": True,
+            "filename": pdf_base_name,
+            "page_count": num_pages if 'num_pages' in locals() else 0,
+            "embeddings_count": embeddings_count,
+            "collection": collection_name,
+            "bm25_index": bm25_path,
+            "knowledge_graph": kg_path,
+        }
         logger.info(f"Successfully processed PDF: {pdf_base_name} (ID: {pdf_id})")
         return result
 
