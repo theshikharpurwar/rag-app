@@ -62,6 +62,25 @@ IMAGE_SAVE_DIR_RELATIVE = "images"
 RENDERING_DPI = 150
 
 # =============================================================================
+# 🔗 PHASE 2: HYBRID RETRIEVAL & KNOWLEDGE GRAPHS
+# =============================================================================
+
+# Master toggle — set to 'false' to disable KG extraction during ingestion
+ENABLE_KNOWLEDGE_GRAPH = os.environ.get('ENABLE_KNOWLEDGE_GRAPH', 'true').lower() == 'true'
+
+# Reciprocal Rank Fusion parameters
+RRF_K = int(os.environ.get('RRF_K', '60'))             # Smoothing constant
+VECTOR_WEIGHT = float(os.environ.get('VECTOR_WEIGHT', '0.4'))   # α — vector similarity weight
+BM25_WEIGHT = float(os.environ.get('BM25_WEIGHT', '0.3'))       # β — BM25 keyword weight
+GRAPH_WEIGHT = float(os.environ.get('GRAPH_WEIGHT', '0.3'))     # γ — graph traversal weight
+
+# Graph traversal
+GRAPH_TRAVERSAL_DEPTH = int(os.environ.get('GRAPH_TRAVERSAL_DEPTH', '2'))
+
+# Directory for persisted BM25 indexes and knowledge graph files
+INDICES_DIR = os.environ.get('INDICES_DIR', '/app/uploads/indices')
+
+# =============================================================================
 # 📝 LOGGING
 # =============================================================================
 
