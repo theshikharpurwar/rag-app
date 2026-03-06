@@ -41,6 +41,14 @@ services:
       - SKIP_RERANKING=true
       # Skip image embedding — OllamaEmbedder only handles text, not images
       - SKIP_IMAGES=true
+      # Phase 2: Hybrid Retrieval & Knowledge Graphs
+      - ENABLE_KNOWLEDGE_GRAPH=true
+      - VECTOR_WEIGHT=0.4
+      - BM25_WEIGHT=0.3
+      - GRAPH_WEIGHT=0.3
+      - RRF_K=60
+      - GRAPH_TRAVERSAL_DEPTH=2
+      - INDICES_DIR=/app/uploads/indices
     depends_on:
       - mongo
       - qdrant
