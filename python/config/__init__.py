@@ -19,7 +19,15 @@ from .models import (
     TEXT_CHUNK_OVERLAP,
     IMAGE_SAVE_DIR_RELATIVE,
     RENDERING_DPI,
-    print_current_config
+    print_current_config,
+    # Phase 2: Hybrid Retrieval
+    ENABLE_KNOWLEDGE_GRAPH,
+    RRF_K,
+    VECTOR_WEIGHT,
+    BM25_WEIGHT,
+    GRAPH_WEIGHT,
+    GRAPH_TRAVERSAL_DEPTH,
+    INDICES_DIR,
 )
 
 __all__ = [
@@ -38,5 +46,13 @@ __all__ = [
     'TEXT_CHUNK_OVERLAP',
     'IMAGE_SAVE_DIR_RELATIVE',
     'RENDERING_DPI',
-    'print_current_config'
+    'print_current_config',
+    # Phase 2
+    'ENABLE_KNOWLEDGE_GRAPH',
+    'RRF_K',
+    'VECTOR_WEIGHT',
+    'BM25_WEIGHT',
+    'GRAPH_WEIGHT',
+    'GRAPH_TRAVERSAL_DEPTH',
+    'INDICES_DIR',
 ]
