@@ -46,11 +46,34 @@ class GraphRetriever:
     def extract_query_entities(self, query: str) -> list[str]:
         """
         Extract key entities from a query.
-        Uses LLM if available, falls back to keyword matching against graph nodes.
+        Uses keyword matching against graph nodes first (instant),
+        falls back to LLM only when no keyword matches are found.
         """
         entities = []
 
-        # Method 1: LLM-based extraction (if LLM available)
+        # Method 1: Keyword matching — instant, often sufficient
+        query_words = set(w.strip('.,;:!?\'"()[]{}') for w in query.lower().split())
+        query_words.discard('')  # remove any empty strings from stripping
+        # Remove common stop words
+        stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'how',
+                      'why', 'when', 'where', 'who', 'which', 'this', 'that',
+                      'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of',
+                      'with', 'by', 'from', 'does', 'do', 'did', 'can', 'could',
+                      'should', 'would', 'will', 'about', 'it', 'its', 'they',
+                      'tell', 'me', 'his', 'her', 'my', 'your', 'our', 'their'}
+        query_words -= stop_words
+
+        for node in self.kg.graph.nodes():
+            node_words = set(node.lower().split())
+            # If any query word matches a word in the node name
+            if query_words & node_words:
+                entities.append(node)
+
+        if entities:
+            logger.info(f"[GraphRetriever] Keyword match: {len(entities)} entities: {entities[:5]}")
+            return entities
+
+        # Method 2: LLM-based extraction (fallback — only when keyword fails)
         if self.llm:
             try:
                 prompt = ENTITY_EXTRACTION_PROMPT.format(query=query)
@@ -76,27 +99,15 @@ class GraphRetriever:
                                 entities = [str(e).lower().strip() for e in parsed if e]
                             except json.JSONDecodeError:
                                 pass
+
+                if entities:
+                    logger.info(f"[GraphRetriever] LLM fallback: {len(entities)} entities: {entities[:5]}")
             except Exception as e:
                 logger.warning(f"[GraphRetriever] LLM entity extraction failed: {e}")
 
-        # Method 2: Keyword matching fallback — match query words against graph nodes
         if not entities:
-            query_words = set(query.lower().split())
-            # Remove common stop words
-            stop_words = {'the', 'a', 'an', 'is', 'are', 'was', 'were', 'what', 'how',
-                          'why', 'when', 'where', 'who', 'which', 'this', 'that',
-                          'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of',
-                          'with', 'by', 'from', 'does', 'do', 'did', 'can', 'could',
-                          'should', 'would', 'will', 'about', 'it', 'its', 'they'}
-            query_words -= stop_words
+            logger.info(f"[GraphRetriever] No entities extracted for query: {query[:50]}")
 
-            for node in self.kg.graph.nodes():
-                node_words = set(node.lower().split())
-                # If any query word matches a word in the node name
-                if query_words & node_words:
-                    entities.append(node)
-
-        logger.info(f"[GraphRetriever] Extracted {len(entities)} query entities: {entities[:5]}")
         return entities
 
     def score_chunks_by_graph(self, query: str, top_k: int = 10) -> list[dict]:
