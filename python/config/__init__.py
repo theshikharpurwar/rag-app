@@ -28,6 +28,11 @@ from .models import (
     GRAPH_WEIGHT,
     GRAPH_TRAVERSAL_DEPTH,
     INDICES_DIR,
+    # Phase 3: Agentic self-correction
+    ENABLE_AGENT,
+    AGENT_MAX_RETRIES,
+    AGENT_CONFIDENCE_THRESHOLD,
+    AGENT_ROUTER_WEIGHT_BOOST,
 )
 
 __all__ = [
@@ -55,4 +60,9 @@ __all__ = [
     'GRAPH_WEIGHT',
     'GRAPH_TRAVERSAL_DEPTH',
     'INDICES_DIR',
+    # Phase 3
+    'ENABLE_AGENT',
+    'AGENT_MAX_RETRIES',
+    'AGENT_CONFIDENCE_THRESHOLD',
+    'AGENT_ROUTER_WEIGHT_BOOST',
 ]

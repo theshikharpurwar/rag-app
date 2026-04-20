@@ -1,3 +1,4 @@
+
 # Neuro-Symbolic Agentic RAG System
 
 > **A Tri-Layer Cognitive Architecture for Intelligent Document Understanding**  
@@ -130,14 +131,19 @@ The core retrieval-augmented generation pipeline is fully implemented and operat
 | Graph Traversal | ✅ Implemented | BFS scoring from query entities, distance-weighted chunk ranking |
 | Hybrid Pipeline | ✅ Implemented | Graceful degradation: falls back to vector-only for legacy PDFs |
 
-### 🔲 Phase 3: Agentic Self-Correction (Planned — Next)
+### 🟡 Phase 3: Agentic Self-Correction (In Progress — ~60%)
+
+Medium-scope first iteration shipped behind `ENABLE_AGENT=true` (default `false`, so Phase 2 behaviour is preserved). Decomposer and RAG-Fusion deferred to **Phase 3.5**.
 
 | Component | Status | Description |
 |---|---|---|
-| Query Router | 🔲 Planned | Classifies queries as "Specific" (vector) vs "Broad" (graph) |
-| Hallucination Grader | 🔲 Planned | Citation-checking agent that triggers retry on low confidence |
-| Query Decomposition | 🔲 Planned | Breaks complex questions into sub-queries |
-| RAG-Fusion | 🔲 Planned | Multi-query perspective generation (Shi et al., 2024) |
+| Query Router | ✅ Implemented | `QueryRouter` classifies queries as "Specific" (→ bias BM25) vs "Broad" (→ bias graph), softly renormalising RRF weights |
+| Hallucination Grader | ✅ Implemented | `AnswerGrader` returns 0.0–1.0 faithfulness+relevance score; parse failures safely default to pass |
+| Self-Correction Loop | ✅ Implemented | `AgenticRAG.run()` orchestrates route → retrieve → generate → grade → rewrite → retry (capped by `AGENT_MAX_RETRIES`) |
+| Query Decomposition | 🔲 Phase 3.5 | Breaks complex questions into sub-queries |
+| RAG-Fusion | 🔲 Phase 3.5 | Multi-query perspective generation + merged retrieval (Shi et al., 2024) |
+
+Implementation: [python/agent/](python/agent/). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py) (19 tests, all passing). Wired into [python/local_llm.py](python/local_llm.py) `main()` behind `ENABLE_AGENT`.
 
 ---
 
@@ -387,6 +393,10 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | `RRF_K` | `60` | RRF smoothing constant |
 | `GRAPH_TRAVERSAL_DEPTH` | `2` | BFS depth limit for knowledge graph traversal |
 | `INDICES_DIR` | `/app/uploads/indices` | Directory for BM25/KG persistence files |
+| `ENABLE_AGENT` | `false` | Phase 3 master toggle: run the agentic self-correction loop instead of a single generate call |
+| `AGENT_MAX_RETRIES` | `2` | Max extra retrieve+generate+grade cycles after the first attempt |
+| `AGENT_CONFIDENCE_THRESHOLD` | `0.5` | Grader score (0.0–1.0) below which a retry is triggered |
+| `AGENT_ROUTER_WEIGHT_BOOST` | `0.15` | How much the router softly shifts RRF weight between BM25 (specific) and graph (broad) |
 
 ### Performance Profiles
 
@@ -486,12 +496,12 @@ Phase 2: Hybrid Retrieval ██████████████████
 ├─ Graph traversal scoring (BFS)             ✅
 └─ Hybrid pipeline with graceful degradation  ✅
 
-Phase 3: Agentic Layer ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
-├─ Query router (specific vs broad)           🔲
-├─ Hallucination grader                       🔲
-├─ Query decomposition                        🔲
-├─ RAG-Fusion (multi-query)                   🔲
-└─ Self-correction loop                       🔲
+Phase 3: Agentic Layer ██████████████████░░░░░░░░░░░░  60%
+├─ Query router (specific vs broad)           ✅
+├─ Hallucination grader                       ✅
+├─ Self-correction loop (retry + rewrite)     ✅
+├─ Query decomposition                        🔲 (Phase 3.5)
+└─ RAG-Fusion (multi-query)                   🔲 (Phase 3.5)
 
 Phase 4: Evaluation ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
 ├─ LLM-as-Judge framework                    🔲
@@ -659,7 +669,7 @@ Daily standup updates tracking progress, blockers, and planned work.
 | FR-013 | System shall provide alternative PDF extraction via Docling | Ingestion | P3 | ✅ Implemented |
 | FR-014 | System shall construct a knowledge graph from extracted entities | Retrieval | P1 | ✅ Implemented |
 | FR-015 | System shall fuse vector and graph retrieval via RRF | Retrieval | P1 | ✅ Implemented |
-| FR-016 | System shall implement agentic self-correction with hallucination grading | Agent | P1 | 🔲 Planned (Phase 3) |
+| FR-016 | System shall implement agentic self-correction with hallucination grading | Agent | P1 | 🟡 In Progress (Phase 3: router + grader + retry loop shipped; decomposer/RAG-Fusion deferred to 3.5) |
 
 #### Non-Functional Requirements
 
@@ -868,7 +878,8 @@ Query:  Question → [Vector Search + BM25 + Graph Traversal] → RRF Fusion →
 |---|---|---|---|---|
 | 1 | Implement BM25 keyword search + RRF fusion | P1 | Backend | ✅ Done (Phase 2) |
 | 2 | Build knowledge graph extractor using LLM triples | P1 | Python ML | ✅ Done (Phase 2) |
-| 3 | Create agentic query router and hallucination grader | P1 | Python ML | 🔲 Next (Phase 3) |
+| 3 | Create agentic query router and hallucination grader | P1 | Python ML | ✅ Done (Phase 3 medium scope: router + grader + retry loop behind `ENABLE_AGENT`) |
+| 3b | Add query decomposition + RAG-Fusion multi-query | P2 | Python ML | 🔲 Next (Phase 3.5) |
 | 4 | Add automated test suite (pytest + Jest) | P2 | QA | 🔲 Planned |
 | 5 | Implement LLM-as-Judge evaluation framework | P2 | Python ML | 🔲 Planned (Phase 4) |
 | 6 | Add startup RAM profiling for auto-configuration | P3 | DevOps | 🔲 Planned |

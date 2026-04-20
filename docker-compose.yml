@@ -49,6 +49,12 @@ services:
       - RRF_K=60
       - GRAPH_TRAVERSAL_DEPTH=2
       - INDICES_DIR=/app/uploads/indices
+      # Phase 3: Agentic self-correction (opt-in; adds up to ~9 LLM calls per query)
+      # Override from shell: `ENABLE_AGENT=true docker compose up -d backend`
+      - ENABLE_AGENT=${ENABLE_AGENT:-false}
+      - AGENT_MAX_RETRIES=${AGENT_MAX_RETRIES:-2}
+      - AGENT_CONFIDENCE_THRESHOLD=${AGENT_CONFIDENCE_THRESHOLD:-0.5}
+      - AGENT_ROUTER_WEIGHT_BOOST=${AGENT_ROUTER_WEIGHT_BOOST:-0.15}
     depends_on:
       - mongo
       - qdrant

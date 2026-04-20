@@ -81,6 +81,23 @@ GRAPH_TRAVERSAL_DEPTH = int(os.environ.get('GRAPH_TRAVERSAL_DEPTH', '2'))
 INDICES_DIR = os.environ.get('INDICES_DIR', '/app/uploads/indices')
 
 # =============================================================================
+# 🤖 PHASE 3: AGENTIC SELF-CORRECTION
+# =============================================================================
+
+# Master toggle — when false, Phase 2 pipeline runs unchanged
+ENABLE_AGENT = os.environ.get('ENABLE_AGENT', 'false').lower() == 'true'
+
+# Retry loop: how many extra retrieve+generate+grade cycles after the first attempt
+AGENT_MAX_RETRIES = int(os.environ.get('AGENT_MAX_RETRIES', '2'))
+
+# Grader: answers with confidence below this threshold trigger a retry
+AGENT_CONFIDENCE_THRESHOLD = float(os.environ.get('AGENT_CONFIDENCE_THRESHOLD', '0.5'))
+
+# Router: soft nudge on RRF weights based on query classification.
+# Kept small so a misclassification cannot collapse any single retrieval path.
+AGENT_ROUTER_WEIGHT_BOOST = float(os.environ.get('AGENT_ROUTER_WEIGHT_BOOST', '0.15'))
+
+# =============================================================================
 # 📝 LOGGING
 # =============================================================================
 
@@ -95,6 +112,7 @@ def print_current_config():
     print(f"Ollama Host:      {OLLAMA_HOST_URL}")
     print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}")
     print(f"Collection:       {DEFAULT_COLLECTION}")
+    print(f"Agent Enabled:    {ENABLE_AGENT}")
     print("=" * 60)
 
 # =============================================================================

@@ -34,6 +34,11 @@ from config import (
     GRAPH_WEIGHT,
     GRAPH_TRAVERSAL_DEPTH,
     INDICES_DIR,
+    # Phase 3: Agentic self-correction
+    ENABLE_AGENT,
+    AGENT_MAX_RETRIES,
+    AGENT_CONFIDENCE_THRESHOLD,
+    AGENT_ROUTER_WEIGHT_BOOST,
 )
 
 # Import reranker
@@ -490,10 +495,7 @@ def main():
         qdrant_client = get_qdrant_client() # Connect to Qdrant
         logger.info(f"Processing query for PDF ID '{args.pdf_id}': {args.query}")
 
-        # 1. Vector retrieval (Path A — always runs)
-        retrieved_context = retrieve_context(qdrant_client, args.collection_name, args.query, args.pdf_id, limit=CONTEXT_RETRIEVAL_LIMIT)
-
-        # 2. Load BM25 index and Knowledge Graph for hybrid retrieval (Phase 2)
+        # Load BM25 index and Knowledge Graph once up-front; reused across agent retries.
         bm25_index = None
         knowledge_graph = None
         graph_retriever = None
@@ -501,7 +503,6 @@ def main():
         bm25_path = os.path.join(INDICES_DIR, f"{args.pdf_id}_bm25.pkl")
         kg_path = os.path.join(INDICES_DIR, f"{args.pdf_id}_graph.json")
 
-        # Try to load BM25 index
         try:
             from retrieval.bm25_search import BM25Index
             bm25_index = BM25Index()
@@ -512,7 +513,6 @@ def main():
             logger.warning(f"[Hybrid] BM25 load failed: {e}")
             bm25_index = None
 
-        # Try to load Knowledge Graph and set up graph retriever
         if ENABLE_KNOWLEDGE_GRAPH:
             try:
                 from retrieval.knowledge_graph import KnowledgeGraph
@@ -533,57 +533,85 @@ def main():
                 knowledge_graph = None
                 graph_retriever = None
 
-        # 3. Hybrid retrieval: fuse vector + BM25 + graph via RRF
-        has_hybrid = bm25_index is not None or graph_retriever is not None
-        if has_hybrid:
-            try:
-                from retrieval.rrf_fusion import hybrid_retrieve
-                fused_results = hybrid_retrieve(
-                    query=args.query,
-                    pdf_id=args.pdf_id,
-                    vector_results=retrieved_context,
-                    bm25_index=bm25_index,
-                    knowledge_graph=knowledge_graph,
-                    graph_retriever=graph_retriever,
-                    vector_weight=VECTOR_WEIGHT,
-                    bm25_weight=BM25_WEIGHT,
-                    graph_weight=GRAPH_WEIGHT,
-                    rrf_k=RRF_K,
-                    top_k=CONTEXT_RETRIEVAL_LIMIT,
-                )
+        def _retrieve_and_format(query_text, weights):
+            """
+            Runs: vector retrieval -> (optional) hybrid RRF fusion -> context string.
 
-                # Format fused results for LLM
-                context_str = ""
-                sources = []
-                for i, r in enumerate(fused_results):
-                    text = r.get("text", "")
-                    page = r.get("page", "N/A")
-                    source = r.get("source", "Unknown")
-                    score = r.get("score", 0.0)
-                    methods = r.get("retrieval_methods", ["unknown"])
-                    if text.strip():
-                        context_str += (f"CONTENT FROM SOURCE {i+1} "
-                                       f"(Document: {source}, Page: {page}, "
-                                       f"Score: {score:.4f}, Methods: {', '.join(methods)}):\n"
-                                       f"{text}\n\n")
-                        sources.append({"id": i + 1, "page": page, "document": source,
-                                        "score": score, "methods": methods})
+            Parameterised by `weights = (vector_w, bm25_w, graph_w)` so the agent
+            can pass router-adjusted weights while non-agent path uses config defaults.
+            Returns (context_str, sources).
+            """
+            v_w, b_w, g_w = weights
+            retrieved = retrieve_context(
+                qdrant_client, args.collection_name, query_text,
+                args.pdf_id, limit=CONTEXT_RETRIEVAL_LIMIT,
+            )
 
-                context_str = context_str.strip()
-                logger.info(f"[Hybrid] Fused context: {len(sources)} chunks from "
-                            f"{len(fused_results)} fused results")
-            except Exception as e:
-                logger.error(f"[Hybrid] Fusion failed, falling back to vector-only: {e}",
-                             exc_info=True)
-                has_hybrid = False
+            has_hybrid_local = bm25_index is not None or graph_retriever is not None
+            if has_hybrid_local:
+                try:
+                    from retrieval.rrf_fusion import hybrid_retrieve
+                    fused = hybrid_retrieve(
+                        query=query_text,
+                        pdf_id=args.pdf_id,
+                        vector_results=retrieved,
+                        bm25_index=bm25_index,
+                        knowledge_graph=knowledge_graph,
+                        graph_retriever=graph_retriever,
+                        vector_weight=v_w,
+                        bm25_weight=b_w,
+                        graph_weight=g_w,
+                        rrf_k=RRF_K,
+                        top_k=CONTEXT_RETRIEVAL_LIMIT,
+                    )
 
-        # Fallback: vector-only context (original Phase 1 path)
-        if not has_hybrid:
-            context_str, sources = format_context_for_llm(retrieved_context)
+                    ctx = ""
+                    srcs = []
+                    for i, r in enumerate(fused):
+                        text = r.get("text", "")
+                        page = r.get("page", "N/A")
+                        source = r.get("source", "Unknown")
+                        score = r.get("score", 0.0)
+                        methods = r.get("retrieval_methods", ["unknown"])
+                        if text.strip():
+                            ctx += (f"CONTENT FROM SOURCE {i+1} "
+                                    f"(Document: {source}, Page: {page}, "
+                                    f"Score: {score:.4f}, Methods: {', '.join(methods)}):\n"
+                                    f"{text}\n\n")
+                            srcs.append({"id": i + 1, "page": page, "document": source,
+                                         "score": score, "methods": methods})
 
-        # 4. Generate response
-        answer = generate_rag_response(args.query, context_str, chat_history)
-        result = {"answer": answer, "sources": sources}
+                    logger.info(f"[Hybrid] Fused context: {len(srcs)} chunks from "
+                                f"{len(fused)} fused results")
+                    return ctx.strip(), srcs
+                except Exception as e:
+                    logger.error(f"[Hybrid] Fusion failed, falling back to vector-only: {e}",
+                                 exc_info=True)
+
+            # Fallback: vector-only (Phase 1 path)
+            return format_context_for_llm(retrieved)
+
+        base_weights = (VECTOR_WEIGHT, BM25_WEIGHT, GRAPH_WEIGHT)
+
+        if ENABLE_AGENT:
+            from agent import QueryRouter, AnswerGrader, AgenticRAG
+            logger.info("[Agent] ENABLE_AGENT=true — running agentic control loop")
+            agent = AgenticRAG(
+                llm=llm,
+                router=QueryRouter(llm, weight_boost=AGENT_ROUTER_WEIGHT_BOOST),
+                grader=AnswerGrader(llm, threshold=AGENT_CONFIDENCE_THRESHOLD),
+                retrieve_fn=_retrieve_and_format,
+                generate_fn=lambda q, ctx, hist: generate_rag_response(q, ctx, hist),
+                max_retries=AGENT_MAX_RETRIES,
+                base_weights=base_weights,
+            )
+            ar = agent.run(args.query, chat_history)
+            logger.info(f"[Agent] trace: {ar.trace}")
+            result = {"answer": ar.answer, "sources": ar.sources}
+        else:
+            context_str, sources = _retrieve_and_format(args.query, base_weights)
+            answer = generate_rag_response(args.query, context_str, chat_history)
+            result = {"answer": answer, "sources": sources}
 
     except (ConnectionError, RuntimeError) as e: 
         logger.error(f"Error: {e}", exc_info=True)
