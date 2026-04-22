@@ -406,28 +406,58 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
 
         # ── PyMuPDF4LLM path (default or fallback) ───────────────────────────
         if not USE_DOCLING or not docling_succeeded:
-            logger.info("[PyMuPDF4LLM] Extracting text as Markdown (preserves tables, headers)...")
-
-            # pymupdf4llm prints recommendations to stdout which corrupts JSON output.
-            # Redirect stdout → stderr during its execution.
-            import contextlib
-            _real_stdout = sys.stdout
-            sys.stdout = sys.stderr
+            md_pages = None
+            extractor_label = "pymupdf4llm"
             try:
-                import pymupdf4llm
-                # page_chunks=True → one dict per page: {"text": "...", "metadata": {"page": 0, ...}}
-                md_pages = pymupdf4llm.to_markdown(pdf_path, page_chunks=True)
-            finally:
-                sys.stdout = _real_stdout
+                logger.info("[PyMuPDF4LLM] Extracting text as Markdown (preserves tables, headers)...")
+                # pymupdf4llm prints recommendations to stdout which corrupts JSON output.
+                # Redirect stdout → stderr during its execution.
+                _real_stdout = sys.stdout
+                sys.stdout = sys.stderr
+                try:
+                    import pymupdf4llm
+                    # page_chunks=True → one dict per page: {"text": "...", "metadata": {"page": 0, ...}}
+                    md_pages = pymupdf4llm.to_markdown(pdf_path, page_chunks=True)
+                finally:
+                    sys.stdout = _real_stdout
+            except ImportError as imp_err:
+                # Graceful fallback: use plain PyMuPDF (fitz) text extraction so the
+                # pipeline (and evaluation harness) still works without pymupdf4llm.
+                logger.warning(
+                    f"[PyMuPDF4LLM] Not available ({imp_err}); falling back to fitz plain-text extraction."
+                )
+                extractor_label = "pymupdf_fitz"
+                md_pages = []
+                _fallback_doc = fitz.open(pdf_path)
+                try:
+                    for _pn, _page in enumerate(_fallback_doc):
+                        md_pages.append({
+                            "text": _page.get_text() or "",
+                            "metadata": {"page": _pn},
+                        })
+                finally:
+                    try:
+                        _fallback_doc.close()
+                    except Exception:
+                        pass
 
             num_pages = len(md_pages)
-            logger.info(f"[PyMuPDF4LLM] Got {num_pages} page(s) as Markdown")
+            logger.info(f"[{extractor_label}] Got {num_pages} page(s)")
 
             text_chunks = []
             chunk_metadata = []
 
-            for page_data in md_pages:
-                page_num = page_data["metadata"].get("page", 0)   # 0-indexed
+            for _idx, page_data in enumerate(md_pages):
+                meta = page_data.get("metadata", {}) or {}
+                # Newer pymupdf4llm exposes 1-indexed `page_number`; older versions
+                # used 0-indexed `page`. Fall back to the enumeration index so the
+                # page number is never silently 0/1 for every chunk.
+                if meta.get("page_number") is not None:
+                    page_num = int(meta["page_number"]) - 1  # normalise to 0-indexed
+                elif meta.get("page") is not None:
+                    page_num = int(meta["page"])
+                else:
+                    page_num = _idx
                 page_text = page_data["text"].strip()
 
                 if page_text:
@@ -443,7 +473,7 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
                                 "source": pdf_base_name,
                                 "chunk_index": i,
                                 "total_chunks": len(chunks),
-                                "extractor": "pymupdf4llm"
+                                "extractor": extractor_label
                             })
                     if len(text_chunks) >= BATCH_SIZE:
                         process_text_batch(text_chunks, chunk_metadata, embedder, pdf_id, points_to_upsert)
