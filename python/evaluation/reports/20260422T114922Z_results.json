@@ -1,0 +1,1569 @@
+{
+  "meta": {
+    "name": "sample",
+    "pdf_id": "eval_fixture_acme",
+    "description": "Ten questions on the Acme multi-page fixture PDF (keyword, multi-hop, numerical, broad)."
+  },
+  "summary": {
+    "configs": {
+      "naive": {
+        "metrics": {
+          "faithfulness": {
+            "mean": 0.975,
+            "stdev": 0.042491829279939865
+          },
+          "answer_relevancy": {
+            "mean": 0.97,
+            "stdev": 0.04830458915396479
+          },
+          "context_recall": {
+            "mean": 1.0,
+            "stdev": 0.0
+          },
+          "conciseness": {
+            "mean": 0.7729354636591479,
+            "stdev": 0.27195310102488435
+          }
+        },
+        "n": 10
+      },
+      "neurosymbolic": {
+        "metrics": {
+          "faithfulness": {
+            "mean": 0.99,
+            "stdev": 0.031622776601683784
+          },
+          "answer_relevancy": {
+            "mean": 0.96,
+            "stdev": 0.05163977794943221
+          },
+          "context_recall": {
+            "mean": 1.0,
+            "stdev": 0.0
+          },
+          "conciseness": {
+            "mean": 0.7999897372742201,
+            "stdev": 0.26578518300564213
+          }
+        },
+        "n": 10
+      }
+    },
+    "win_rate": {
+      "naive": 1,
+      "neurosymbolic": 4,
+      "tie": 5
+    },
+    "wins_by_question": {
+      "q01": {
+        "winner": "naive",
+        "naive": 1.0,
+        "neurosymbolic": 0.975
+      },
+      "q02": {
+        "winner": "tie",
+        "naive": 1.0,
+        "neurosymbolic": 1.0
+      },
+      "q03": {
+        "winner": "neurosymbolic",
+        "naive": 0.975,
+        "neurosymbolic": 0.9821428571428572
+      },
+      "q04": {
+        "winner": "neurosymbolic",
+        "naive": 0.9125,
+        "neurosymbolic": 0.9821428571428572
+      },
+      "q05": {
+        "winner": "tie",
+        "naive": 0.859375,
+        "neurosymbolic": 0.859375
+      },
+      "q06": {
+        "winner": "neurosymbolic",
+        "naive": 0.8416666666666667,
+        "neurosymbolic": 0.846551724137931
+      },
+      "q07": {
+        "winner": "tie",
+        "naive": 0.975,
+        "neurosymbolic": 0.975
+      },
+      "q08": {
+        "winner": "tie",
+        "naive": 1.0,
+        "neurosymbolic": 1.0
+      },
+      "q09": {
+        "winner": "tie",
+        "naive": 0.8214285714285714,
+        "neurosymbolic": 0.8214285714285714
+      },
+      "q10": {
+        "winner": "neurosymbolic",
+        "naive": 0.9098684210526315,
+        "neurosymbolic": 0.9333333333333333
+      }
+    }
+  },
+  "results": [
+    {
+      "question_id": "q01",
+      "question_type": "keyword",
+      "config": "naive",
+      "question": "What was the total revenue for 2024?",
+      "answer": "1.2 million dollars.",
+      "gold_answer": "1.2 million dollars, up from 0.9 million in 2023.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.6082238,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 2,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.41334504,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 3,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.32367492,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 4,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.28472692,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 5,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.17005262,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q01",
+      "question_type": "keyword",
+      "config": "neurosymbolic",
+      "question": "What was the total revenue for 2024?",
+      "answer": "1.  2 million dollars.",
+      "gold_answer": "1.2 million dollars, up from 0.9 million in 2023.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.013934426229508197,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 2,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.013709677419354839,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 3,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.013492063492063491,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 4,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.013185096153846155,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 5,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.013173076923076923,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "What was the total revenue for 2024?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer directly states the total revenue for 2024 as provided in the context.",
+            "sub_queries": []
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q02",
+      "question_type": "keyword",
+      "config": "naive",
+      "question": "Who is the CEO of Acme Corp?",
+      "answer": "Jane Doe",
+      "gold_answer": "Jane Doe, appointed in January 2024.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.6172429,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.28166044,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.19917959,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 4,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.19136783,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 5,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.16898899,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q02",
+      "question_type": "keyword",
+      "config": "neurosymbolic",
+      "question": "Who is the CEO of Acme Corp?",
+      "answer": "Jane Doe",
+      "gold_answer": "Jane Doe, appointed in January 2024.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.013934426229508197,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.013709677419354839,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.013392857142857142,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 4,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.013272283272283272,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 5,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.013185096153846155,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "Who is the CEO of Acme Corp?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer directly states the CEO of Acme Corp, as found in the provided context.",
+            "sub_queries": []
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q03",
+      "question_type": "multi_hop",
+      "config": "naive",
+      "question": "Which product launched in Q1 2024 and who leads Team Red?",
+      "answer": "Product line Alpha launched in Q1 2024, and Alice Chen leads Team Red.",
+      "gold_answer": "Product Alpha launched in Q1; Alice Chen leads Team Red (responsible for Alpha).",
+      "sources": [
+        {
+          "id": 1,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.5087031,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.48336503,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.32012898,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 4,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.31891903,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 5,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.21148549,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        }
+      ],
+      "scores": {
+        "faithfulness": 0.9,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q03",
+      "question_type": "multi_hop",
+      "config": "neurosymbolic",
+      "question": "Which product launched in Q1 2024 and who leads Team Red?",
+      "answer": "Product line Alpha was launched in Q1 2024, and Alice Chen leads Team Red.",
+      "gold_answer": "Product Alpha launched in Q1; Alice Chen leads Team Red (responsible for Alpha).",
+      "sources": [
+        {
+          "id": 1,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.01621996703963917,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.016131830251343734,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.015793010752688172,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 4,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.01546474358974359,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 5,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.010667349377026795,
+          "methods": [
+            "sq0",
+            "sq1"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.9285714285714286
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "Which product launched in Q1 2024 and who leads Team Red?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer accurately identifies the product launch and the team lead from the provided context.",
+            "sub_queries": [
+              "Which product launched in Q1 2024 and who leads Team Red?",
+              "Product launches Q1 2024",
+              "Team Red leadership"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q04",
+      "question_type": "multi_hop",
+      "config": "naive",
+      "question": "What is Carol Smith's title and which team does Bob Martinez work on?",
+      "answer": "Carol Smith is the Vice President of Engineering. Bob Martinez works on Team Blue, focused on Beta and mobile clients.",
+      "gold_answer": "Carol Smith is Vice President of Engineering; Bob Martinez is on Team Blue.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.44788677,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 2,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.17211623,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.65
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q04",
+      "question_type": "multi_hop",
+      "config": "neurosymbolic",
+      "question": "What is Carol Smith's title and which team does Bob Martinez work on?",
+      "answer": "Carol Smith is the Vice President of Engineering. Bob Martinez works on Team Blue.",
+      "gold_answer": "Carol Smith is Vice President of Engineering; Bob Martinez is on Team Blue.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.01639344262295082,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 2,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.016129032258064516,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 3,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.010499338624338623,
+          "methods": [
+            "sq0",
+            "sq2"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 4,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.010336538461538461,
+          "methods": [
+            "sq0",
+            "sq2"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads"
+        },
+        {
+          "id": 5,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.005291005291005291,
+          "methods": [
+            "sq0"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.9285714285714286
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "What is Carol Smith's title and which team does Bob Martinez work on?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer accurately extracts Carol Smith's title and Bob Martinez's team from the provided context.",
+            "sub_queries": [
+              "What is Carol Smith's title and which team does Bob Martinez work on?",
+              "Carol Smith's title",
+              "Bob Martinez's team"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q05",
+      "question_type": "numerical",
+      "config": "naive",
+      "question": "What were revenues in 2023 and 2024?",
+      "answer": "In 2023, total revenue was 0.9 million dollars. In 2024, total revenue was 1.2 million dollars.",
+      "gold_answer": "2023: 0.9 million; 2024: 1.2 million (dollars).",
+      "sources": [
+        {
+          "id": 1,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.5679743,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 2,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.4330026,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 3,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.35544124,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 4,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.34479153,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 5,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.14010963,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.4375
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q05",
+      "question_type": "numerical",
+      "config": "neurosymbolic",
+      "question": "What were revenues in 2023 and 2024?",
+      "answer": "In 2023, total revenue was 0.9 million dollars. In 2024, total revenue was 1.2 million dollars.",
+      "gold_answer": "2023: 0.9 million; 2024: 1.2 million (dollars).",
+      "sources": [
+        {
+          "id": 1,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.01639344262295082,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 2,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.0160436934630483,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 3,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.015958354668032085,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 4,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.015625,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 5,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.015384615384615385,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.4375
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "What were revenues in 2023 and 2024?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer accurately extracts the revenue figures from the provided context.",
+            "sub_queries": [
+              "What were revenues in 2023 and 2024?",
+              "2023 revenues",
+              "2024 revenues"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q06",
+      "question_type": "broad",
+      "config": "naive",
+      "question": "Summarize the main legal and competitive risks described in the report.",
+      "answer": "According to the documents, the main legal and competitive risks are:\n\n*   A legal case (44-XX) regarding a supplier contract is pending.\n*   Market competition may compress margins in 2025.",
+      "gold_answer": "Market competition may compress margins; legal case 44-XX is pending re supplier contract; compliance monitors EU/UK regulations.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.5128404,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 2,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.29138464,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 3,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.24636376,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 4,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.21616611,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 5,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.14565662,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        }
+      ],
+      "scores": {
+        "faithfulness": 0.9,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 0.5666666666666667
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q06",
+      "question_type": "broad",
+      "config": "neurosymbolic",
+      "question": "Summarize the main legal and competitive risks described in the report.",
+      "answer": "According to the documents, the main legal and competitive risks are:\n\n*   A pending legal case (44-XX) regarding a supplier contract.\n*   Market competition may compress margins in 2025.",
+      "gold_answer": "Market competition may compress margins; legal case 44-XX is pending re supplier contract; compliance monitors EU/UK regulations.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.016327340031729243,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 2,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.016131130753023932,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 3,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.015937019969278033,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 4,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.015625,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 5,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.015384615384615385,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        }
+      ],
+      "scores": {
+        "faithfulness": 0.9,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 0.5862068965517241
+      },
+      "trace": {
+        "route": "broad",
+        "weights": [
+          0.4,
+          0.15,
+          0.44999999999999996
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "Summarize the main legal and competitive risks described in the report.",
+            "score": 0.8,
+            "passed": true,
+            "reason": "The answer accurately identifies and summarizes the key legal and competitive risks mentioned in the provided context.",
+            "sub_queries": [
+              "Summarize the main legal and competitive risks described in the report.",
+              "What legal regulations are discussed in the report?",
+              "What competitive strategies are identified in the report?",
+              "What potential financial risks are outlined in the report?"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 0.8,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q07",
+      "question_type": "keyword",
+      "config": "naive",
+      "question": "What is the number of the pending legal case mentioned?",
+      "answer": "44-XX",
+      "gold_answer": "44-XX",
+      "sources": [
+        {
+          "id": 1,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.4223077,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.16584505,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.1151351,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q07",
+      "question_type": "keyword",
+      "config": "neurosymbolic",
+      "question": "What is the number of the pending legal case mentioned?",
+      "answer": "44-XX",
+      "gold_answer": "44-XX",
+      "sources": [
+        {
+          "id": 1,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.01639344262295082,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.016129032258064516,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.015790343915343914,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 4,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.01562754375254375,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 5,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.01546474358974359,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "What is the number of the pending legal case mentioned?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer directly states the number of the pending legal case as found in the context.",
+            "sub_queries": [
+              "What is the number of the pending legal case mentioned?",
+              "What legal case is pending?",
+              "What is the case number?"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q08",
+      "question_type": "multi_hop",
+      "config": "naive",
+      "question": "When is EU expansion planned and which product line targets the consumer market?",
+      "answer": "EU expansion is planned for 2025. Product line Beta targets the consumer market.",
+      "gold_answer": "EU expansion in 2025; Product Beta is for the consumer market (Q3 2024).",
+      "sources": [
+        {
+          "id": 1,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.54862463,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 2,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.49202204,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 3,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.41315252,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 4,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.22892049,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 5,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.18096286,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q08",
+      "question_type": "multi_hop",
+      "config": "neurosymbolic",
+      "question": "When is EU expansion planned and which product line targets the consumer market?",
+      "answer": "EU expansion is planned in 2025. Product line Beta targets the consumer market.",
+      "gold_answer": "EU expansion in 2025; Product Beta is for the consumer market (Q3 2024).",
+      "sources": [
+        {
+          "id": 1,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.01621996703963917,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 2,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.016129032258064516,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 3,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.015881147540983607,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 4,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.01571021571021571,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 5,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.01546474358974359,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 1.0
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "When is EU expansion planned and which product line targets the consumer market?",
+            "score": 0.9,
+            "passed": true,
+            "reason": "The answer accurately reflects the planned EU expansion in 2025 and identifies product line Beta as targeting the consumer market, both supported by the context.",
+            "sub_queries": [
+              "When is EU expansion planned and which product line targets the consumer market?",
+              "EU expansion timeline",
+              "Consumer market product lines"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 0.9,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q09",
+      "question_type": "keyword",
+      "config": "naive",
+      "question": "When was Product Beta released?",
+      "answer": "Product Beta was released in Q3 2024.",
+      "gold_answer": "Q3 2024.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.56048584,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.34596753,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.18626836,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 4,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.16351825,
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        },
+        {
+          "id": 5,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.15586087,
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.2857142857142857
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q09",
+      "question_type": "keyword",
+      "config": "neurosymbolic",
+      "question": "When was Product Beta released?",
+      "answer": "Product Beta was released in Q3 2024.",
+      "gold_answer": "Q3 2024.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.013934426229508197,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 2,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.013709677419354839,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 3,
+          "page": 1,
+          "document": "fixture.pdf",
+          "score": 0.013296703296703297,
+          "methods": [
+            "vector",
+            "bm25"
+          ],
+          "text": "Annual Report 2024 ? Acme Corp This report summarizes financial and operational results for fiscal year 2024. Total revenue for 2024 was 1.2 million dollars, up from 0.9 million in 2023. The CEO is Jane Doe, appointed in January 2024."
+        },
+        {
+          "id": 4,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.006349206349206349,
+          "methods": [
+            "vector"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 5,
+          "page": 5,
+          "document": "fixture.pdf",
+          "score": 0.00625,
+          "methods": [
+            "vector"
+          ],
+          "text": "## Conclusion \n\nManagement plans to expand operations into the European Union in 2025. This concludes the five-page summary document for evaluation benchmarks."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 1.0,
+        "context_recall": 1.0,
+        "conciseness": 0.2857142857142857
+      },
+      "trace": {
+        "route": "specific",
+        "weights": [
+          0.4,
+          0.44999999999999996,
+          0.15
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "When was Product Beta released?",
+            "score": 1.0,
+            "passed": true,
+            "reason": "The answer directly states the release date of Product Beta as provided in the context.",
+            "sub_queries": []
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 1.0,
+        "final_passed": true
+      }
+    },
+    {
+      "question_id": "q10",
+      "question_type": "multi_hop",
+      "config": "naive",
+      "question": "How do Team Red and Team Blue work together, and what do they share?",
+      "answer": "Team Red and Team Blue collaborate through a shared API gateway, and they share the same core analytics engine.",
+      "gold_answer": "They collaborate through a shared API gateway; both use the same core in-house analytics engine.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.48478186,
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 2,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.17122844,
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        },
+        {
+          "id": 3,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.14496957,
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        }
+      ],
+      "scores": {
+        "faithfulness": 0.95,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 0.7894736842105263
+      },
+      "trace": {}
+    },
+    {
+      "question_id": "q10",
+      "question_type": "multi_hop",
+      "config": "neurosymbolic",
+      "question": "How do Team Red and Team Blue work together, and what do they share?",
+      "answer": "Team Red and Team Blue collaborate through a shared API gateway. They share the same core analytics engine.",
+      "gold_answer": "They collaborate through a shared API gateway; both use the same core in-house analytics engine.",
+      "sources": [
+        {
+          "id": 1,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.01639344262295082,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads Team Red, responsible for the Alpha product. Bob Martinez works on Team Blue, focused on Beta and mobile clients. Team Red and Team Blue collaborate through a shared API gateway."
+        },
+        {
+          "id": 2,
+          "page": 4,
+          "document": "fixture.pdf",
+          "score": 0.016001024065540194,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "Risks and legal \n\nMarket competition may compress margins in 2025. \n\nA legal case numbered 44-XX is pending regarding a supplier contract. The compliance team monitors regulatory changes in the European Union and United Kingdom."
+        },
+        {
+          "id": 3,
+          "page": 3,
+          "document": "fixture.pdf",
+          "score": 0.015749007936507936,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "## Organization \n\nEngineering is led by Carol Smith, Vice President of Engineering. Alice Chen leads"
+        },
+        {
+          "id": 4,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.015504807692307693,
+          "methods": [
+            "sq0",
+            "sq1",
+            "sq2",
+            "sq3"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customer"
+        },
+        {
+          "id": 5,
+          "page": 2,
+          "document": "fixture.pdf",
+          "score": 0.008064516129032258,
+          "methods": [
+            "sq0",
+            "sq3"
+          ],
+          "text": "## Products and roadmap \n\nProduct line Alpha was launched in Q1 2024 and targets enterprise customers. Product line Beta was released in Q3 2024 for the consumer market. Both products share the same core analytics engine developed in-house."
+        }
+      ],
+      "scores": {
+        "faithfulness": 1.0,
+        "answer_relevancy": 0.9,
+        "context_recall": 1.0,
+        "conciseness": 0.8333333333333334
+      },
+      "trace": {
+        "route": "broad",
+        "weights": [
+          0.4,
+          0.15,
+          0.44999999999999996
+        ],
+        "attempts": [
+          {
+            "attempt": 0,
+            "query": "How do Team Red and Team Blue work together, and what do they share?",
+            "score": 0.9,
+            "passed": true,
+            "reason": "The answer accurately reflects the collaboration details and shared analytics engine from the provided context.",
+            "sub_queries": [
+              "How do Team Red and Team Blue work together, and what do they share?",
+              "Team Red operational procedures",
+              "Team Blue operational procedures",
+              "Team Red and Team Blue shared objectives"
+            ]
+          }
+        ],
+        "retries_used": 0,
+        "final_score": 0.9,
+        "final_passed": true
+      }
+    }
+  ]
+}

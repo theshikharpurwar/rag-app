@@ -1,0 +1,67 @@
+meta:
+  name: sample
+  pdf_id: eval_fixture_acme
+  fixture_pdf: fixture.pdf
+  collection_name: documents
+  description: "Ten questions on the Acme multi-page fixture PDF (keyword, multi-hop, numerical, broad)."
+
+questions:
+  - id: q01
+    type: keyword
+    question: "What was the total revenue for 2024?"
+    gold_answer: "1.2 million dollars, up from 0.9 million in 2023."
+    gold_pages: [1]
+
+  - id: q02
+    type: keyword
+    question: "Who is the CEO of Acme Corp?"
+    gold_answer: "Jane Doe, appointed in January 2024."
+    gold_pages: [1]
+
+  - id: q03
+    type: multi_hop
+    question: "Which product launched in Q1 2024 and who leads Team Red?"
+    gold_answer: "Product Alpha launched in Q1; Alice Chen leads Team Red (responsible for Alpha)."
+    gold_pages: [2, 3]
+
+  - id: q04
+    type: multi_hop
+    question: "What is Carol Smith's title and which team does Bob Martinez work on?"
+    gold_answer: "Carol Smith is Vice President of Engineering; Bob Martinez is on Team Blue."
+    gold_pages: [3]
+
+  - id: q05
+    type: numerical
+    question: "What were revenues in 2023 and 2024?"
+    gold_answer: "2023: 0.9 million; 2024: 1.2 million (dollars)."
+    gold_pages: [1]
+
+  - id: q06
+    type: broad
+    question: "Summarize the main legal and competitive risks described in the report."
+    gold_answer: "Market competition may compress margins; legal case 44-XX is pending re supplier contract; compliance monitors EU/UK regulations."
+    gold_pages: [4]
+
+  - id: q07
+    type: keyword
+    question: "What is the number of the pending legal case mentioned?"
+    gold_answer: "44-XX"
+    gold_pages: [4]
+
+  - id: q08
+    type: multi_hop
+    question: "When is EU expansion planned and which product line targets the consumer market?"
+    gold_answer: "EU expansion in 2025; Product Beta is for the consumer market (Q3 2024)."
+    gold_pages: [2, 5]
+
+  - id: q09
+    type: keyword
+    question: "When was Product Beta released?"
+    gold_answer: "Q3 2024."
+    gold_pages: [2]
+
+  - id: q10
+    type: multi_hop
+    question: "How do Team Red and Team Blue work together, and what do they share?"
+    gold_answer: "They collaborate through a shared API gateway; both use the same core in-house analytics engine."
+    gold_pages: [3]

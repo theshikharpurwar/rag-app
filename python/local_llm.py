@@ -45,15 +45,11 @@ from config import (
     AGENT_FUSION_RRF_K,
 )
 
-# Import reranker
-from reranker import SimpleReranker
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Print current configuration for debugging to stderr instead of stdout
-import sys
+
 def print_config_to_stderr():
     """Print the current model configuration for debugging to stderr."""
     print("=" * 60, file=sys.stderr)
@@ -67,10 +63,76 @@ def print_config_to_stderr():
     print(f"Collection:       {DEFAULT_COLLECTION}", file=sys.stderr)
     print("=" * 60, file=sys.stderr)
 
-print_config_to_stderr()
 
-# --- Configuration (now imported from central config) ---
-# --- End Configuration ---
+_RUNTIME_INITIALIZED = False
+
+# --- Client/Model references (populated by init_runtime) ---
+embedder = None
+llm = None
+reranker = None
+SKIP_RERANKING = os.environ.get("SKIP_RERANKING", "false").lower() == "true"
+
+
+def init_runtime():
+    """
+    Load embedder, optional reranker, and LLM. Idempotent; safe to call from
+    main() and from evaluation harness imports.
+    """
+    global embedder, llm, reranker, _RUNTIME_INITIALIZED, SKIP_RERANKING
+    if _RUNTIME_INITIALIZED:
+        return
+    print_config_to_stderr()
+    SKIP_RERANKING = os.environ.get("SKIP_RERANKING", "false").lower() == "true"
+
+    try:
+        logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
+        embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME)
+        logger.info("Embedding model loaded.")
+    except Exception as e:
+        logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
+        sys.exit("Embedding model failed to load")
+
+    try:
+        if SKIP_RERANKING:
+            logger.info("Reranker disabled via SKIP_RERANKING=true.")
+            reranker = None
+        else:
+            from reranker import SimpleReranker
+
+            logger.info("Initializing reranker model...")
+            reranker = SimpleReranker()
+            logger.info("Reranker model loaded successfully.")
+    except Exception as e:
+        logger.warning(f"Failed to load reranker: {e}. Continuing without reranking.")
+        reranker = None
+
+    try:
+        logger.info(f"Initializing LLM: {LLM_MODEL_NAME} targeting {OLLAMA_API_BASE}")
+        llm = OllamaLLM(model_name=LLM_MODEL_NAME, api_base=OLLAMA_API_BASE)
+        logger.info(f"LLM instance for '{LLM_MODEL_NAME}' created.")
+
+        try:
+            test_response = requests.get(f"{OLLAMA_HOST_URL}/api/tags", timeout=5)
+            if test_response.status_code == 200:
+                logger.info(f"Successfully connected to Ollama at {OLLAMA_HOST_URL}")
+                available_models = [m.get('name') for m in test_response.json().get('models', [])]
+                if LLM_MODEL_NAME not in available_models and f"{LLM_MODEL_NAME}:latest" not in available_models:
+                    logger.warning(
+                        f"Model '{LLM_MODEL_NAME}' not found in host Ollama models: {available_models}. Please pull it."
+                    )
+            else:
+                logger.warning(
+                    f"Connected to Ollama host {OLLAMA_HOST_URL} but got status {test_response.status_code}."
+                )
+        except requests.exceptions.RequestException as conn_err:
+            logger.error(
+                f"Could not connect to Ollama at {OLLAMA_HOST_URL}. Is Ollama running on the host? Error: {conn_err}"
+            )
+    except Exception as e:
+        logger.critical(f"CRITICAL: LLM init/check failed: {e}", exc_info=True)
+        sys.exit("LLM failed to initialize")
+
+    _RUNTIME_INITIALIZED = True
 
 def check_dependencies():
     """Check if Qdrant and Ollama are running and provide guidance if not."""
@@ -128,57 +190,6 @@ To run Ollama locally:
     
     return True
 
-# --- Client/Model Initialization ---
-embedder = None # Changed variable name for clarity
-llm = None
-reranker = None  # Add reranker
-
-try:
-    logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
-    # Use Ollama embedder (no heavy ML dependencies)
-    embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME)
-    logger.info("Embedding model loaded.")
-except Exception as e:
-    logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
-    sys.exit("Embedding model failed to load")
-
-SKIP_RERANKING = os.environ.get("SKIP_RERANKING", "false").lower() == "true"
-
-try:
-    if SKIP_RERANKING:
-        logger.info("Reranker disabled via SKIP_RERANKING=true.")
-        reranker = None
-    else:
-        logger.info("Initializing reranker model...")
-        reranker = SimpleReranker()
-        logger.info("Reranker model loaded successfully.")
-except Exception as e:
-    logger.warning(f"Failed to load reranker: {e}. Continuing without reranking.")
-    reranker = None  # Graceful degradation
-
-try:
-    logger.info(f"Initializing LLM: {LLM_MODEL_NAME} targeting {OLLAMA_API_BASE}")
-    llm = OllamaLLM(model_name=LLM_MODEL_NAME, api_base=OLLAMA_API_BASE)
-    logger.info(f"LLM instance for '{LLM_MODEL_NAME}' created.")
-    
-    # Check connection to host Ollama
-    try:
-        test_response = requests.get(f"{OLLAMA_HOST_URL}/api/tags", timeout=5)
-        if test_response.status_code == 200:
-            logger.info(f"Successfully connected to Ollama at {OLLAMA_HOST_URL}")
-            # Check if target model exists
-            available_models = [m.get('name') for m in test_response.json().get('models', [])]
-            if LLM_MODEL_NAME not in available_models and f"{LLM_MODEL_NAME}:latest" not in available_models:
-                logger.warning(f"Model '{LLM_MODEL_NAME}' not found in host Ollama models: {available_models}. Please pull it.")
-        else:
-            logger.warning(f"Connected to Ollama host {OLLAMA_HOST_URL} but got status {test_response.status_code}.")
-    except requests.exceptions.RequestException as conn_err:
-         logger.error(f"Could not connect to Ollama at {OLLAMA_HOST_URL}. Is Ollama running on the host? Error: {conn_err}")
-         # Consider exiting if LLM is mandatory: sys.exit("Ollama connection failed")
-except Exception as e:
-     logger.critical(f"CRITICAL: LLM init/check failed: {e}", exc_info=True)
-     sys.exit("LLM failed to initialize")
-
 def get_qdrant_client():
     """Initializes and returns a Qdrant client."""
     try:
@@ -189,7 +200,6 @@ def get_qdrant_client():
     except Exception as e:
         logger.error(f"Failed to connect to Qdrant service '{QDRANT_HOST}': {str(e)}")
         raise ConnectionError(f"Could not connect to Qdrant service '{QDRANT_HOST}'") from e
-# --- End Client/Model Initialization ---
 
 # --- Core RAG Functions ---
 def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT):
@@ -462,6 +472,129 @@ def improve_response_structure(text, query):
         return text
 # --- End Core RAG Functions ---
 
+
+def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTION):
+    """
+    Build hybrid (RRF) or vector-only retrieve_fn for one document.
+    Used by main() and by the Phase 4 evaluation runner.
+
+    Returns:
+        (retrieve_fn, qdrant_client) where retrieve_fn(query_text, weights) -> (context_str, sources).
+    """
+    qdrant_client = get_qdrant_client()
+
+    bm25_index = None
+    knowledge_graph = None
+    graph_retriever = None
+
+    bm25_path = os.path.join(INDICES_DIR, f"{pdf_id}_bm25.pkl")
+    kg_path = os.path.join(INDICES_DIR, f"{pdf_id}_graph.json")
+
+    try:
+        from retrieval.bm25_search import BM25Index
+
+        bm25_index = BM25Index()
+        if not bm25_index.load(bm25_path):
+            bm25_index = None
+            logger.info(f"[Hybrid] No BM25 index for PDF {pdf_id}, skipping BM25 path")
+    except Exception as e:
+        logger.warning(f"[Hybrid] BM25 load failed: {e}")
+        bm25_index = None
+
+    if ENABLE_KNOWLEDGE_GRAPH:
+        try:
+            from retrieval.knowledge_graph import KnowledgeGraph
+            from retrieval.graph_retrieval import GraphRetriever
+
+            knowledge_graph = KnowledgeGraph()
+            if knowledge_graph.load(kg_path):
+                graph_retriever = GraphRetriever(
+                    knowledge_graph,
+                    llm=llm,
+                    traversal_depth=GRAPH_TRAVERSAL_DEPTH,
+                )
+                logger.info(
+                    f"[Hybrid] KG loaded: {knowledge_graph.num_nodes} nodes, "
+                    f"{knowledge_graph.num_edges} edges"
+                )
+            else:
+                knowledge_graph = None
+                logger.info(f"[Hybrid] No KG for PDF {pdf_id}, skipping graph path")
+        except Exception as e:
+            logger.warning(f"[Hybrid] KG load failed: {e}")
+            knowledge_graph = None
+            graph_retriever = None
+
+    def _retrieve_and_format(query_text, weights):
+        v_w, b_w, g_w = weights
+        retrieved = retrieve_context(
+            qdrant_client,
+            collection_name,
+            query_text,
+            pdf_id,
+            limit=CONTEXT_RETRIEVAL_LIMIT,
+        )
+
+        has_hybrid_local = bm25_index is not None or graph_retriever is not None
+        if has_hybrid_local:
+            try:
+                from retrieval.rrf_fusion import hybrid_retrieve
+
+                fused = hybrid_retrieve(
+                    query=query_text,
+                    pdf_id=pdf_id,
+                    vector_results=retrieved,
+                    bm25_index=bm25_index,
+                    knowledge_graph=knowledge_graph,
+                    graph_retriever=graph_retriever,
+                    vector_weight=v_w,
+                    bm25_weight=b_w,
+                    graph_weight=g_w,
+                    rrf_k=RRF_K,
+                    top_k=CONTEXT_RETRIEVAL_LIMIT,
+                )
+
+                ctx = ""
+                srcs = []
+                for i, r in enumerate(fused):
+                    text = r.get("text", "")
+                    page = r.get("page", "N/A")
+                    source = r.get("source", "Unknown")
+                    score = r.get("score", 0.0)
+                    methods = r.get("retrieval_methods", ["unknown"])
+                    if text.strip():
+                        ctx += (
+                            f"CONTENT FROM SOURCE {i+1} "
+                            f"(Document: {source}, Page: {page}, "
+                            f"Score: {score:.4f}, Methods: {', '.join(methods)}):\n"
+                            f"{text}\n\n"
+                        )
+                        srcs.append(
+                            {
+                                "id": i + 1,
+                                "page": page,
+                                "document": source,
+                                "score": score,
+                                "methods": methods,
+                                "text": text,
+                            }
+                        )
+
+                logger.info(
+                    f"[Hybrid] Fused context: {len(srcs)} chunks from {len(fused)} fused results"
+                )
+                return ctx.strip(), srcs
+            except Exception as e:
+                logger.error(
+                    f"[Hybrid] Fusion failed, falling back to vector-only: {e}",
+                    exc_info=True,
+                )
+
+        return format_context_for_llm(retrieved)
+
+    return _retrieve_and_format, qdrant_client
+
+
 # --- Main Execution ---
 def main():
     # *** NOTE: Removed all Flask app related code ***
@@ -472,7 +605,6 @@ def main():
     parser.add_argument('--history', type=str, default='[]', help='Chat history as a JSON string')
     args = parser.parse_args()
 
-    # Check if dependencies are available
     logger.info("Checking required services...")
     if not check_dependencies():
         result = {
@@ -483,11 +615,13 @@ def main():
         print(json.dumps(result))
         sys.exit(1)
 
-    if not embedder or not llm: # Check models loaded
-         logger.critical("Models did not load.")
-         result = {"answer": "Error: AI models failed.", "sources": []}
-         print(json.dumps(result))
-         sys.exit(1)
+    init_runtime()
+
+    if not embedder or not llm:
+        logger.critical("Models did not load.")
+        result = {"answer": "Error: AI models failed.", "sources": []}
+        print(json.dumps(result))
+        sys.exit(1)
 
     try: # Parse history
         chat_history = json.loads(args.history) #... validate ...
@@ -497,106 +631,10 @@ def main():
 
     result = {}
     try:
-        qdrant_client = get_qdrant_client() # Connect to Qdrant
+        _retrieve_and_format, _qclient = make_retrieve_pipeline(
+            args.pdf_id, args.collection_name
+        )
         logger.info(f"Processing query for PDF ID '{args.pdf_id}': {args.query}")
-
-        # Load BM25 index and Knowledge Graph once up-front; reused across agent retries.
-        bm25_index = None
-        knowledge_graph = None
-        graph_retriever = None
-
-        bm25_path = os.path.join(INDICES_DIR, f"{args.pdf_id}_bm25.pkl")
-        kg_path = os.path.join(INDICES_DIR, f"{args.pdf_id}_graph.json")
-
-        try:
-            from retrieval.bm25_search import BM25Index
-            bm25_index = BM25Index()
-            if not bm25_index.load(bm25_path):
-                bm25_index = None
-                logger.info(f"[Hybrid] No BM25 index for PDF {args.pdf_id}, skipping BM25 path")
-        except Exception as e:
-            logger.warning(f"[Hybrid] BM25 load failed: {e}")
-            bm25_index = None
-
-        if ENABLE_KNOWLEDGE_GRAPH:
-            try:
-                from retrieval.knowledge_graph import KnowledgeGraph
-                from retrieval.graph_retrieval import GraphRetriever
-                knowledge_graph = KnowledgeGraph()
-                if knowledge_graph.load(kg_path):
-                    graph_retriever = GraphRetriever(
-                        knowledge_graph, llm=llm,
-                        traversal_depth=GRAPH_TRAVERSAL_DEPTH
-                    )
-                    logger.info(f"[Hybrid] KG loaded: {knowledge_graph.num_nodes} nodes, "
-                                 f"{knowledge_graph.num_edges} edges")
-                else:
-                    knowledge_graph = None
-                    logger.info(f"[Hybrid] No KG for PDF {args.pdf_id}, skipping graph path")
-            except Exception as e:
-                logger.warning(f"[Hybrid] KG load failed: {e}")
-                knowledge_graph = None
-                graph_retriever = None
-
-        def _retrieve_and_format(query_text, weights):
-            """
-            Runs: vector retrieval -> (optional) hybrid RRF fusion -> context string.
-
-            Parameterised by `weights = (vector_w, bm25_w, graph_w)` so the agent
-            can pass router-adjusted weights while non-agent path uses config defaults.
-            Returns (context_str, sources).
-            """
-            v_w, b_w, g_w = weights
-            retrieved = retrieve_context(
-                qdrant_client, args.collection_name, query_text,
-                args.pdf_id, limit=CONTEXT_RETRIEVAL_LIMIT,
-            )
-
-            has_hybrid_local = bm25_index is not None or graph_retriever is not None
-            if has_hybrid_local:
-                try:
-                    from retrieval.rrf_fusion import hybrid_retrieve
-                    fused = hybrid_retrieve(
-                        query=query_text,
-                        pdf_id=args.pdf_id,
-                        vector_results=retrieved,
-                        bm25_index=bm25_index,
-                        knowledge_graph=knowledge_graph,
-                        graph_retriever=graph_retriever,
-                        vector_weight=v_w,
-                        bm25_weight=b_w,
-                        graph_weight=g_w,
-                        rrf_k=RRF_K,
-                        top_k=CONTEXT_RETRIEVAL_LIMIT,
-                    )
-
-                    ctx = ""
-                    srcs = []
-                    for i, r in enumerate(fused):
-                        text = r.get("text", "")
-                        page = r.get("page", "N/A")
-                        source = r.get("source", "Unknown")
-                        score = r.get("score", 0.0)
-                        methods = r.get("retrieval_methods", ["unknown"])
-                        if text.strip():
-                            ctx += (f"CONTENT FROM SOURCE {i+1} "
-                                    f"(Document: {source}, Page: {page}, "
-                                    f"Score: {score:.4f}, Methods: {', '.join(methods)}):\n"
-                                    f"{text}\n\n")
-                            srcs.append({
-                                "id": i + 1, "page": page, "document": source,
-                                "score": score, "methods": methods, "text": text,
-                            })
-
-                    logger.info(f"[Hybrid] Fused context: {len(srcs)} chunks from "
-                                f"{len(fused)} fused results")
-                    return ctx.strip(), srcs
-                except Exception as e:
-                    logger.error(f"[Hybrid] Fusion failed, falling back to vector-only: {e}",
-                                 exc_info=True)
-
-            # Fallback: vector-only (Phase 1 path)
-            return format_context_for_llm(retrieved)
 
         base_weights = (VECTOR_WEIGHT, BM25_WEIGHT, GRAPH_WEIGHT)
 

@@ -38,6 +38,11 @@ from .models import (
     AGENT_DECOMP_MAX_SUBQUERIES,
     AGENT_DECOMP_MIN_WORDS,
     AGENT_FUSION_RRF_K,
+    # Phase 4: Evaluation
+    JUDGE_LLM_MODEL,
+    EVAL_OUTPUT_DIR,
+    EVAL_JUDGE_TEMPERATURE,
+    EVAL_MAX_CONCURRENCY,
 )
 
 __all__ = [
@@ -75,4 +80,9 @@ __all__ = [
     'AGENT_DECOMP_MAX_SUBQUERIES',
     'AGENT_DECOMP_MIN_WORDS',
     'AGENT_FUSION_RRF_K',
+    # Phase 4
+    'JUDGE_LLM_MODEL',
+    'EVAL_OUTPUT_DIR',
+    'EVAL_JUDGE_TEMPERATURE',
+    'EVAL_MAX_CONCURRENCY',
 ]

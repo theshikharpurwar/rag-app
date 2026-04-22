@@ -104,6 +104,26 @@ AGENT_DECOMP_MIN_WORDS = int(os.environ.get('AGENT_DECOMP_MIN_WORDS', '8'))
 AGENT_FUSION_RRF_K = int(os.environ.get('AGENT_FUSION_RRF_K', '60'))
 
 # =============================================================================
+# 📈 PHASE 4: EVALUATION HARNESS
+# =============================================================================
+
+# LLM-as-Judge model (defaults to main LLM)
+JUDGE_LLM_MODEL = os.environ.get('JUDGE_LLM_MODEL', LLM_MODEL_NAME)
+
+# Default directory for benchmark JSON + markdown reports (under python/ if relative)
+_EVAL_OUT = os.environ.get('EVAL_OUTPUT_DIR', '')
+EVAL_OUTPUT_DIR = _EVAL_OUT if _EVAL_OUT else os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    '..',
+    'evaluation',
+    'reports',
+)
+EVAL_OUTPUT_DIR = os.path.normpath(EVAL_OUTPUT_DIR)
+
+EVAL_JUDGE_TEMPERATURE = float(os.environ.get('EVAL_JUDGE_TEMPERATURE', '0.0'))
+EVAL_MAX_CONCURRENCY = int(os.environ.get('EVAL_MAX_CONCURRENCY', '1'))
+
+# =============================================================================
 # 📝 LOGGING
 # =============================================================================
 
@@ -120,6 +140,8 @@ def print_current_config():
     print(f"Collection:       {DEFAULT_COLLECTION}")
     print(f"Agent Enabled:    {ENABLE_AGENT}")
     print(f"Decomposition:    {ENABLE_DECOMPOSITION}")
+    print(f"Judge LLM:        {JUDGE_LLM_MODEL}")
+    print(f"Eval reports dir: {EVAL_OUTPUT_DIR}")
     print("=" * 60)
 
 # =============================================================================

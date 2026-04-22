@@ -1,0 +1,6 @@
+# Benchmark reports are usually ephemeral — only commit explicitly kept artifacts.
+*
+!.gitignore
+# Keep the first baseline artifact cited from README_v2.md
+!20260422T114922Z_report.md
+!20260422T114922Z_results.json

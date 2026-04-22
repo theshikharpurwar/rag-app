@@ -1,0 +1,25 @@
+meta:
+  name: sample_small
+  pdf_id: eval_fixture_acme
+  fixture_pdf: fixture.pdf
+  collection_name: documents
+  description: "Trimmed 3-question smoke dataset (one keyword, one multi-hop, one broad) for quick naive-vs-neuro-symbolic runs."
+
+questions:
+  - id: q02
+    type: keyword
+    question: "Who is the CEO of Acme Corp?"
+    gold_answer: "Jane Doe, appointed in January 2024."
+    gold_pages: [1]
+
+  - id: q03
+    type: multi_hop
+    question: "Which product launched in Q1 2024 and who leads Team Red?"
+    gold_answer: "Product Alpha launched in Q1; Alice Chen leads Team Red (responsible for Alpha)."
+    gold_pages: [2, 3]
+
+  - id: q06
+    type: broad
+    question: "Summarize the main legal and competitive risks described in the report."
+    gold_answer: "Market competition may compress margins; legal case 44-XX is pending re supplier contract; compliance monitors EU/UK regulations."
+    gold_pages: [4]
