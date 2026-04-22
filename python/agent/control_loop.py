@@ -9,11 +9,13 @@ stays thin.
 import logging
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Callable, List, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
+from .decomposer import QueryDecomposer
 from .grader import AnswerGrader, GradeResult
 from .prompts import REWRITE_PROMPT
 from .query_router import QueryRouter
+from .rag_fusion import RAGFusion
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,8 @@ class AgenticRAG:
         generate_fn: Callable[[str, str, list], str],
         max_retries: int = 2,
         base_weights: Tuple[float, float, float] = (0.4, 0.3, 0.3),
+        decomposer: Optional[QueryDecomposer] = None,
+        fusion: Optional[RAGFusion] = None,
     ):
         self.llm = llm
         self.router = router
@@ -50,20 +54,33 @@ class AgenticRAG:
         self.generate_fn = generate_fn
         self.max_retries = int(max_retries)
         self.base_weights = tuple(base_weights)
+        self.decomposer = decomposer
+        self.fusion = fusion
 
     def run(self, query: str, chat_history: list) -> AgentResult:
-        route = self.router.classify(query)
+        original_query = (query or "").strip()
+        route = self.router.classify(original_query)
         weights = self.router.adjust_weights(route, *self.base_weights)
 
         attempts = []
-        current_query = query
+        current_query = original_query
         last_answer = ""
         last_sources: List[Any] = []
         last_grade: GradeResult = GradeResult(score=0.0, reason="no attempt", passed=False)
 
         # Total attempts = 1 (initial) + max_retries
         for attempt_idx in range(self.max_retries + 1):
-            context_str, sources = self.retrieve_fn(current_query, weights)
+            sub_trace: List[str] = []
+            if self.decomposer and self.fusion:
+                sub_queries = self.decomposer.decompose(current_query)
+                if len(sub_queries) > 1:
+                    context_str, sources = self.fusion.retrieve(sub_queries, weights)
+                    sub_trace = list(sub_queries)
+                else:
+                    context_str, sources = self.retrieve_fn(current_query, weights)
+            else:
+                context_str, sources = self.retrieve_fn(current_query, weights)
+
             answer = self.generate_fn(current_query, context_str, chat_history)
             grade = self.grader.grade(current_query, answer, context_str)
 
@@ -73,6 +90,7 @@ class AgenticRAG:
                 "score": grade.score,
                 "passed": grade.passed,
                 "reason": grade.reason,
+                "sub_queries": sub_trace,
             })
 
             last_answer = answer
@@ -88,7 +106,10 @@ class AgenticRAG:
             # Rewrite query for the next attempt
             try:
                 rewritten = self.llm.generate_response(
-                    prompt=REWRITE_PROMPT.format(query=current_query, reason=grade.reason or "low confidence"),
+                    prompt=REWRITE_PROMPT.format(
+                        query=original_query,
+                        reason=grade.reason or "low confidence",
+                    ),
                     temperature=0.3,
                     max_tokens=80,
                 )

@@ -49,12 +49,17 @@ services:
       - RRF_K=60
       - GRAPH_TRAVERSAL_DEPTH=2
       - INDICES_DIR=/app/uploads/indices
-      # Phase 3: Agentic self-correction (opt-in; adds up to ~9 LLM calls per query)
+      # Phase 3: Agentic self-correction (opt-in; worst-case ~9–12 LLM calls with decomposition)
       # Override from shell: `ENABLE_AGENT=true docker compose up -d backend`
       - ENABLE_AGENT=${ENABLE_AGENT:-false}
       - AGENT_MAX_RETRIES=${AGENT_MAX_RETRIES:-2}
       - AGENT_CONFIDENCE_THRESHOLD=${AGENT_CONFIDENCE_THRESHOLD:-0.5}
       - AGENT_ROUTER_WEIGHT_BOOST=${AGENT_ROUTER_WEIGHT_BOOST:-0.15}
+      # Phase 3.5: decomposition + RAG-Fusion (requires ENABLE_AGENT=true)
+      - ENABLE_DECOMPOSITION=${ENABLE_DECOMPOSITION:-false}
+      - AGENT_DECOMP_MAX_SUBQUERIES=${AGENT_DECOMP_MAX_SUBQUERIES:-3}
+      - AGENT_DECOMP_MIN_WORDS=${AGENT_DECOMP_MIN_WORDS:-8}
+      - AGENT_FUSION_RRF_K=${AGENT_FUSION_RRF_K:-60}
     depends_on:
       - mongo
       - qdrant

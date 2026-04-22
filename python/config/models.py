@@ -97,6 +97,12 @@ AGENT_CONFIDENCE_THRESHOLD = float(os.environ.get('AGENT_CONFIDENCE_THRESHOLD', 
 # Kept small so a misclassification cannot collapse any single retrieval path.
 AGENT_ROUTER_WEIGHT_BOOST = float(os.environ.get('AGENT_ROUTER_WEIGHT_BOOST', '0.15'))
 
+# Phase 3.5: query decomposition + RAG-Fusion (only when ENABLE_AGENT=true)
+ENABLE_DECOMPOSITION = os.environ.get('ENABLE_DECOMPOSITION', 'false').lower() == 'true'
+AGENT_DECOMP_MAX_SUBQUERIES = int(os.environ.get('AGENT_DECOMP_MAX_SUBQUERIES', '3'))
+AGENT_DECOMP_MIN_WORDS = int(os.environ.get('AGENT_DECOMP_MIN_WORDS', '8'))
+AGENT_FUSION_RRF_K = int(os.environ.get('AGENT_FUSION_RRF_K', '60'))
+
 # =============================================================================
 # 📝 LOGGING
 # =============================================================================
@@ -113,6 +119,7 @@ def print_current_config():
     print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}")
     print(f"Collection:       {DEFAULT_COLLECTION}")
     print(f"Agent Enabled:    {ENABLE_AGENT}")
+    print(f"Decomposition:    {ENABLE_DECOMPOSITION}")
     print("=" * 60)
 
 # =============================================================================

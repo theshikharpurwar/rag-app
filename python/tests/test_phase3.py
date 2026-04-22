@@ -1,10 +1,11 @@
 # python/tests/test_phase3.py
 """
-Unit tests for Phase 3: Agentic self-correction.
+Unit tests for Phase 3: Agentic self-correction and Phase 3.5 decomposition
+/ RAG-Fusion.
 
 Covers QueryRouter (classification + weight adjustment), AnswerGrader
-(JSON parsing + threshold behaviour), and AgenticRAG (happy / retry /
-exhaust control-flow paths).
+(JSON parsing + threshold behaviour), AgenticRAG (happy / retry /
+exhaust), QueryDecomposer, RAGFusion, and nested decomposition + retry.
 
 Run: cd python && python -m pytest tests/test_phase3.py -v
 """
@@ -29,13 +30,21 @@ class ScriptedLLM:
 
     def __init__(self, router_response="BROAD",
                  grader_responses=None,
-                 rewrite_response="rewritten query"):
+                 rewrite_response="rewritten query",
+                 decompose_response=None,
+                 decompose_responses=None):
         self.router_response = router_response
         self.grader_responses = list(grader_responses or [])
         self.rewrite_response = rewrite_response
+        self.decompose_response = decompose_response
+        self._decompose_queue = (
+            list(decompose_responses) if decompose_responses is not None else None
+        )
         self.calls = []  # list of dicts: {"kind": ..., "prompt": ...}
 
     def _classify_prompt(self, prompt):
+        if "You break a complex question" in prompt:
+            return "decompose"
         if "SPECIFIC" in prompt and "BROAD" in prompt and "Question:" in prompt:
             return "router"
         if "JSON:" in prompt and '"score"' in prompt:
@@ -49,6 +58,12 @@ class ScriptedLLM:
         kind = self._classify_prompt(prompt)
         self.calls.append({"kind": kind, "prompt": prompt})
 
+        if kind == "decompose":
+            if self._decompose_queue:
+                return self._decompose_queue.pop(0)
+            if self.decompose_response is not None:
+                return self.decompose_response
+            return "1. sub one\n2. sub two"
         if kind == "router":
             return self.router_response
         if kind == "grader":
@@ -243,6 +258,7 @@ class TestAgenticRAG:
         assert res.trace["retries_used"] == 0
         assert res.trace["final_passed"] is True
         assert len(res.trace["attempts"]) == 1
+        assert res.trace["attempts"][0]["sub_queries"] == []
         assert len(r_log) == 1
         assert len(g_log) == 1
         # No rewrite should have been requested
@@ -391,3 +407,207 @@ class TestAgenticRAG:
         _, b_w, g_w = r_log[0]["weights"]
         assert b_w > 0.3
         assert g_w < 0.3
+
+
+# =============================================================================
+# Phase 3.5: QueryDecomposer
+# =============================================================================
+
+class TestQueryDecomposer:
+    def test_simple_query_skips_llm(self):
+        from agent.decomposer import QueryDecomposer
+
+        llm = ScriptedLLM()
+        d = QueryDecomposer(llm, max_subqueries=3, min_words=8)
+        q = "Who is the CEO?"
+        assert d.decompose(q) == [q]
+        assert not any(c["kind"] == "decompose" for c in llm.calls)
+
+    def test_complex_query_calls_llm(self):
+        from agent.decomposer import QueryDecomposer
+
+        llm = ScriptedLLM(decompose_response="1. First aspect\n2. Second aspect")
+        d = QueryDecomposer(llm, max_subqueries=3, min_words=8)
+        q = "one two three four five six seven and eight nine"
+        subs = d.decompose(q)
+        assert subs[0] == q
+        assert len(subs) >= 2
+        assert any(c["kind"] == "decompose" for c in llm.calls)
+
+    def test_malformed_llm_falls_back(self):
+        from agent.decomposer import QueryDecomposer
+
+        llm = ScriptedLLM(decompose_response="")
+        d = QueryDecomposer(llm, max_subqueries=3, min_words=8)
+        q = "one two three four five six seven and eight nine"
+        assert d.decompose(q) == [q]
+
+    def test_llm_exception_falls_back(self):
+        from agent.decomposer import QueryDecomposer
+
+        class BoomLLM:
+            def generate_response(self, **kw):
+                raise RuntimeError("down")
+
+        d = QueryDecomposer(BoomLLM(), max_subqueries=3, min_words=8)
+        q = "one two three four five six seven and eight nine"
+        assert d.decompose(q) == [q]
+
+    def test_max_subqueries_cap(self):
+        from agent.decomposer import QueryDecomposer
+
+        llm = ScriptedLLM(
+            decompose_response="1. a\n2. b\n3. c\n4. d\n5. e",
+        )
+        d = QueryDecomposer(llm, max_subqueries=2, min_words=8)
+        q = "one two three four five six seven and eight nine"
+        subs = d.decompose(q)
+        assert subs[0] == q
+        assert len(subs) <= 3
+
+
+# =============================================================================
+# Phase 3.5: RAGFusion
+# =============================================================================
+
+class TestRAGFusion:
+    def test_single_subquery_preserves_one_chunk(self):
+        from agent.rag_fusion import RAGFusion
+
+        def retrieve_fn(query, weights):
+            return f"ctx:{query}", [
+                {"text": "chunk", "page": 1, "document": "D", "score": 0.5},
+            ]
+
+        fusion = RAGFusion(retrieve_fn, rrf_k=60, top_k=5)
+        ctx1, s1 = fusion.retrieve(["only"], (0.4, 0.3, 0.3))
+        assert len(s1) == 1
+        assert s1[0]["text"] == "chunk"
+        assert "chunk" in ctx1
+
+    def test_overlap_dedupes(self):
+        from agent.rag_fusion import RAGFusion
+
+        def retrieve_fn(query, weights):
+            if query == "a":
+                return "", [
+                    {"text": "overlap text", "page": 1, "document": "D", "score": 0.9},
+                ]
+            return "", [
+                {"text": "overlap text", "page": 1, "document": "D", "score": 0.7},
+            ]
+
+        fusion = RAGFusion(retrieve_fn, rrf_k=60, top_k=5)
+        _ctx, sources = fusion.retrieve(["a", "b"], (0.4, 0.3, 0.3))
+        assert len(sources) == 1
+
+    def test_disjoint_union(self):
+        from agent.rag_fusion import RAGFusion
+
+        def retrieve_fn(query, weights):
+            if query == "a":
+                return "", [{"text": "alpha", "page": 1, "document": "D", "score": 0.9}]
+            return "", [{"text": "beta", "page": 2, "document": "D", "score": 0.8}]
+
+        fusion = RAGFusion(retrieve_fn, rrf_k=60, top_k=5)
+        _ctx, sources = fusion.retrieve(["a", "b"], (0.4, 0.3, 0.3))
+        texts = {s["text"] for s in sources}
+        assert texts == {"alpha", "beta"}
+
+
+# =============================================================================
+# Phase 3.5: AgenticRAG + decomposition
+# =============================================================================
+
+class TestAgenticRAG_Decomposition:
+    def test_without_fusion_empty_sub_queries_trace(self):
+        from agent import AgenticRAG, AnswerGrader, QueryRouter
+
+        llm = ScriptedLLM(
+            router_response="SPECIFIC",
+            grader_responses=['{"score": 0.9, "reason": "good"}'],
+        )
+        retrieve_fn, _ = _make_retrieve_fn()
+        generate_fn, _ = _make_generate_fn()
+
+        agent = AgenticRAG(
+            llm=llm,
+            router=QueryRouter(llm, weight_boost=0.15),
+            grader=AnswerGrader(llm, threshold=0.5),
+            retrieve_fn=retrieve_fn,
+            generate_fn=generate_fn,
+            max_retries=2,
+            base_weights=(0.4, 0.3, 0.3),
+        )
+        res = agent.run("short", chat_history=[])
+        assert res.trace["attempts"][0]["sub_queries"] == []
+
+    def test_fusion_populates_sub_queries_and_nested_retry(self):
+        from agent import AgenticRAG, AnswerGrader, QueryRouter
+        from agent.decomposer import QueryDecomposer
+        from agent.rag_fusion import RAGFusion
+
+        COMPLEX = "one two three four five six seven and eight nine"
+        REWRITE_COMPLEX = "one two three four five six seven and eight rewrite"
+
+        llm = ScriptedLLM(
+            router_response="BROAD",
+            grader_responses=[
+                '{"score": 0.1, "reason": "bad"}',
+                '{"score": 0.85, "reason": "ok"}',
+            ],
+            rewrite_response=REWRITE_COMPLEX,
+            decompose_response="1. subq alpha\n2. subq beta",
+        )
+        retrieve_fn, r_log = _make_retrieve_fn()
+        generate_fn, _ = _make_generate_fn()
+
+        agent = AgenticRAG(
+            llm=llm,
+            router=QueryRouter(llm, weight_boost=0.15),
+            grader=AnswerGrader(llm, threshold=0.5),
+            retrieve_fn=retrieve_fn,
+            generate_fn=generate_fn,
+            max_retries=2,
+            base_weights=(0.4, 0.3, 0.3),
+            decomposer=QueryDecomposer(llm, max_subqueries=3, min_words=8),
+            fusion=RAGFusion(retrieve_fn, rrf_k=60, top_k=5),
+        )
+
+        res = agent.run(COMPLEX, chat_history=[])
+
+        assert res.trace["retries_used"] == 1
+        assert len(res.trace["attempts"]) == 2
+        assert len(res.trace["attempts"][0]["sub_queries"]) > 1
+        assert len(res.trace["attempts"][1]["sub_queries"]) > 1
+        # 3 sub-queries × 2 attempts
+        assert len(r_log) == 6
+
+    def test_rewrite_prompt_anchors_original_question(self):
+        from agent import AgenticRAG, AnswerGrader, QueryRouter
+
+        llm = ScriptedLLM(
+            router_response="BROAD",
+            grader_responses=[
+                '{"score": 0.1, "reason": "bad"}',
+                '{"score": 0.9, "reason": "ok"}',
+            ],
+            rewrite_response="rewritten",
+        )
+        retrieve_fn, _ = _make_retrieve_fn()
+        generate_fn, _ = _make_generate_fn()
+
+        agent = AgenticRAG(
+            llm=llm,
+            router=QueryRouter(llm, weight_boost=0.15),
+            grader=AnswerGrader(llm, threshold=0.5),
+            retrieve_fn=retrieve_fn,
+            generate_fn=generate_fn,
+            max_retries=2,
+            base_weights=(0.4, 0.3, 0.3),
+        )
+        agent.run("original question", chat_history=[])
+
+        rewrite_calls = [c for c in llm.calls if c["kind"] == "rewrite"]
+        assert len(rewrite_calls) == 1
+        assert "original question" in rewrite_calls[0]["prompt"]

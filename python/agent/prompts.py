@@ -63,3 +63,14 @@ Original question: {query}
 Grader feedback:   {reason}
 
 Rewritten question:"""
+
+
+DECOMPOSITION_PROMPT = """You break a complex question into at most {n} focused sub-questions for document retrieval.
+
+Rules:
+- Each sub-question must be self-contained and searchable (concrete nouns, no pronouns like "it" without antecedent).
+- If the question is already simple or atomic, return it unchanged as a single line (no numbering).
+- Otherwise return a numbered list only (one sub-question per line), no preamble, no explanation.
+
+Question: {query}
+Sub-questions:"""

@@ -9,7 +9,7 @@
 
 A **Neuro-Symbolic Agentic RAG** system for local document Q&A. Three layers:
 
-1. **Agentic control loop** (query routing, self-correction) — *not built yet*.
+1. **Agentic control loop** (query routing, self-correction, optional decomposition + RAG-Fusion) — *shipped, opt-in via env*.
 2. **Hybrid knowledge store** — Qdrant vectors + NetworkX knowledge graph.
 3. **Fusion retrieval** — Weighted RRF over vector + BM25 + graph traversal.
 
@@ -25,50 +25,33 @@ Keep this table in sync with [README_v2.md](README_v2.md) when a phase changes.
 |---|---|---|---|
 | **1. Foundation RAG** | PDF ingest, chunking, embedding, vector retrieval, LLM, chat history, Docker | **DONE** | Shipped and working |
 | **2. Hybrid + Knowledge Graph** | BM25, entity extraction, NetworkX KG, Leiden communities, graph BFS, weighted RRF | **DONE** | Tests in [python/tests/test_phase2.py](python/tests/test_phase2.py). Uncommitted perf tweaks on disk (see §4). |
-| **3. Agentic self-correction** | Query router, hallucination grader, query decomposition, RAG-Fusion, retry loop | **IN PROGRESS** | Router + grader + retry loop shipped (opt-in via `ENABLE_AGENT=true`). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py). Decomposer + RAG-Fusion deferred to **Phase 3.5**. |
+| **3. Agentic self-correction** | Query router, hallucination grader, retry + rewrite loop | **DONE** | Opt-in via `ENABLE_AGENT` (default `false`). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py). |
+| **3.5. Multi-query retrieval** | Query decomposition + RAG-Fusion (RRF across sub-queries) | **DONE** | Opt-in via `ENABLE_DECOMPOSITION` (default `false`; requires `ENABLE_AGENT=true`). |
 | **4. Evaluation** | LLM-as-Judge, Naive vs Neuro-Symbolic benchmark, KG visualisation | **NOT STARTED** | No harness yet |
 
 ---
 
 ## 3. Where to resume — next task
 
-**Phase 3.5: add query decomposition and RAG-Fusion to the existing agent loop.**
+**Phase 4: evaluation harness** — LLM-as-Judge, Naive vs Neuro-Symbolic benchmark, KG visualisation (see [README_v2.md](README_v2.md) roadmap).
 
-Phase 3 medium scope already shipped (see §2):
-
-| File | Status | Notes |
-|---|---|---|
-| [python/agent/prompts.py](python/agent/prompts.py) | ✅ | `ROUTER_PROMPT`, `GRADER_PROMPT`, `REWRITE_PROMPT` |
-| [python/agent/query_router.py](python/agent/query_router.py) | ✅ | `QueryRouter.classify` + `adjust_weights` (soft RRF bias) |
-| [python/agent/grader.py](python/agent/grader.py) | ✅ | `AnswerGrader.grade` returns `GradeResult(score, reason, passed)` |
-| [python/agent/control_loop.py](python/agent/control_loop.py) | ✅ | `AgenticRAG.run` — route → retrieve → generate → grade → rewrite → retry |
-| `python/agent/decomposer.py` | ❌ TODO | Break complex queries into sub-queries |
-| `python/agent/rag_fusion.py` | ❌ TODO | Multi-query retrieval + dedup/merge (Phase 3.5) |
-
-**What's already wired:** in [python/local_llm.py](python/local_llm.py) `main()`, when `ENABLE_AGENT=true` the final generation step is replaced by `AgenticRAG.run(...)`. The JSON payload shape (`{answer, sources}`) is unchanged so backend/frontend need no edits. Retrieval is encapsulated in an inner `_retrieve_and_format(query, weights)` helper so a multi-query RAG-Fusion version can drop in by swapping the `retrieve_fn` constructor arg.
-
-**Phase 3.5 plan:** add `decomposer.py` (LLM-based sub-query generator) and `rag_fusion.py` (call `retrieve_fn` once per sub-query, RRF-merge across sub-queries, dedup). Wire via a new `ENABLE_DECOMPOSITION` flag so it can be turned on independently.
+Agent stack (see §2): [python/agent/](python/agent/) — `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`. Wired in [python/local_llm.py](python/local_llm.py) `main()`: when `ENABLE_AGENT=true`, `AgenticRAG.run(...)` replaces the single-shot generate path; when `ENABLE_DECOMPOSITION=true` as well, complex queries are decomposed and retrieved per sub-query, then RRF-merged. JSON payload shape (`{answer, sources}`) is unchanged.
 
 Active env vars (all in [python/config/models.py](python/config/models.py)):
-- `ENABLE_AGENT` — bool, default `false`. Master toggle.
+- `ENABLE_AGENT` — bool, default `false`. Master toggle for the agent loop.
 - `AGENT_MAX_RETRIES` — int, default `2`.
 - `AGENT_CONFIDENCE_THRESHOLD` — float, default `0.5`. Below this, grader triggers a retry.
 - `AGENT_ROUTER_WEIGHT_BOOST` — float, default `0.15`. Soft RRF nudge from the router.
+- `ENABLE_DECOMPOSITION` — bool, default `false`. Phase 3.5 multi-query retrieval (requires agent).
+- `AGENT_DECOMP_MAX_SUBQUERIES` — int, default `3`. Cap on LLM-emitted sub-questions.
+- `AGENT_DECOMP_MIN_WORDS` — int, default `8`. Skip decomposition when the query is shorter and has no multi-part triggers.
+- `AGENT_FUSION_RRF_K` — int, default `60`. RRF `k` for merging ranked lists across sub-queries.
 
 ---
 
 ## 4. Uncommitted work at handoff — DO NOT CLOBBER
 
-`git status` currently shows modifications that are in-progress perf work. Before editing these files, run `git diff` and preserve the intent:
-
-| File | In-progress change |
-|---|---|
-| [python/retrieval/entity_extractor.py](python/retrieval/entity_extractor.py) | Added `batch_size=3` param and `_extract_batch()`: batches multiple chunks into one LLM call during KG construction to cut Ollama round-trips. |
-| [python/retrieval/graph_retrieval.py](python/retrieval/graph_retrieval.py) | In `extract_query_entities()`: added keyword-match fast path against existing graph nodes; only falls back to LLM when keyword match finds nothing. |
-| [README_v2.md](README_v2.md) | Minor edit |
-| `python/retrieval/__pycache__/*.pyc`, `python/tests/__pycache__/*.pyc` | Stale bytecode tracked in git. Should be added to `.gitignore` (`__pycache__/`, `*.pyc`). |
-
-Decide with the user before committing: either (a) commit these as a "perf: batch KG extraction + keyword-first graph entity match" commit, or (b) keep them as WIP while Phase 3 is built on top.
+Before editing retrieval or ingest code, run `git status` / `git diff`. If bytecode (`__pycache__`, `*.pyc`) appears tracked, prefer adding those patterns to `.gitignore` rather than committing churn.
 
 ---
 
@@ -78,13 +61,13 @@ Only the files that matter. Start here.
 
 ### Python (ML / retrieval)
 - [python/compute_embeddings.py](python/compute_embeddings.py) — ingestion pipeline: PDF → chunks → embeddings → Qdrant + BM25 + KG (see lines ~496–534 for Phase 2 wiring).
-- [python/local_llm.py](python/local_llm.py) — query pipeline: embed → retrieve → RRF fuse → rerank → LLM. Lines ~496–578 do hybrid retrieval; line ~585 is the Phase 3 wiring point.
+- [python/local_llm.py](python/local_llm.py) — query pipeline: embed → retrieve → RRF fuse → rerank → LLM. Hybrid retrieval and Phase 3 / 3.5 agent wiring live in `main()`.
 - [python/retrieval/](python/retrieval/) — `bm25_search.py`, `entity_extractor.py`, `knowledge_graph.py`, `graph_retrieval.py`, `rrf_fusion.py`.
 - [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py) — `OllamaEmbedder` wrapper.
 - [python/llm/ollama_llm.py](python/llm/ollama_llm.py) — `OllamaLLM` wrapper (uses `/api/chat`, structured messages).
 - [python/reranker/](python/reranker/) — optional cross-encoder reranker.
 - [python/config/models.py](python/config/models.py) — **all tunable knobs**. Read this before changing behaviour.
-- [python/agent/](python/agent/) — Phase 3 loop: `prompts.py`, `query_router.py`, `grader.py`, `control_loop.py`. Phase 3.5 (`decomposer.py`, `rag_fusion.py`) lives here.
+- [python/agent/](python/agent/) — Phase 3–3.5: `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`.
 - [python/tests/test_phase2.py](python/tests/test_phase2.py), [python/tests/test_phase3.py](python/tests/test_phase3.py) — pytest suites.
 
 ### Backend (Node/Express)
@@ -122,6 +105,10 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 | `AGENT_MAX_RETRIES` | `2` | Max extra retrieve+generate+grade cycles after the first attempt |
 | `AGENT_CONFIDENCE_THRESHOLD` | `0.5` | Grader score below which a retry is triggered |
 | `AGENT_ROUTER_WEIGHT_BOOST` | `0.15` | How much the router shifts RRF weight between BM25 and graph |
+| `ENABLE_DECOMPOSITION` | `false` | When `ENABLE_AGENT=true`, run query decomposition + RAG-Fusion for complex queries |
+| `AGENT_DECOMP_MAX_SUBQUERIES` | `3` | Max sub-questions from the decomposer LLM (original query is always retrieved too) |
+| `AGENT_DECOMP_MIN_WORDS` | `8` | Below this word count (and no multi-part triggers), skip decomposition |
+| `AGENT_FUSION_RRF_K` | `60` | RRF smoothing for merging results across sub-queries |
 
 ---
 
@@ -161,7 +148,7 @@ Endpoints: frontend `:3000`, backend `:5000`, Qdrant dashboard `:6333/dashboard`
 5. **Ollama connectivity from containers.** Must use `host.containers.internal` (Podman/Docker Desktop). Plain `localhost` will not reach the host Ollama.
 6. **Vector-size coupling.** Qdrant collection `documents` is created with `DEFAULT_VECTOR_SIZE` from config. Changing `EMBEDDING_MODEL` to a different-dimension model requires deleting and recreating the collection (old vectors are incompatible).
 7. **KG extraction is the slowest step** on ingest (many LLM calls per chunk). The in-progress `batch_size=3` change in `entity_extractor.py` is the fix — keep it.
-8. **Agent loop inflates LLM calls.** With defaults (`AGENT_MAX_RETRIES=2`), worst-case query = 1 route + 3×(generate + grade) + 2 rewrites = up to 9 LLM calls. Tail latency on gemma3:4b can hit 20–40s. `ENABLE_AGENT=false` by default for this reason — flip it on once you're OK with the cost.
+8. **Agent loop inflates LLM calls.** With defaults (`AGENT_MAX_RETRIES=2`), worst-case ≈ **1 router + 3×(decompose + generate + grade) + 2 rewrites** (up to **12** LLM calls when decomposition runs every attempt). Without `ENABLE_DECOMPOSITION`, decompose calls are skipped. Tail latency on gemma3:4b can reach many minutes on the exhaust path. `ENABLE_AGENT=false` by default — flip it on once you're OK with the cost.
 
 ---
 

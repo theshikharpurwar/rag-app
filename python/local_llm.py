@@ -39,6 +39,10 @@ from config import (
     AGENT_MAX_RETRIES,
     AGENT_CONFIDENCE_THRESHOLD,
     AGENT_ROUTER_WEIGHT_BOOST,
+    ENABLE_DECOMPOSITION,
+    AGENT_DECOMP_MAX_SUBQUERIES,
+    AGENT_DECOMP_MIN_WORDS,
+    AGENT_FUSION_RRF_K,
 )
 
 # Import reranker
@@ -275,10 +279,11 @@ def format_context_for_llm(results):
                 context_str += f"CONTENT FROM SOURCE {i+1} (Document: {doc_name}, Page: {page}, Score: {score:.3f}):\n{text}\n\n"
                 
                 sources.append({
-                    "id": i + 1, 
-                    "page": page, 
-                    "document": doc_name, 
-                    "score": score
+                    "id": i + 1,
+                    "page": page,
+                    "document": doc_name,
+                    "score": score,
+                    "text": text,
                 })
         except Exception as e: 
             logger.warning(f"Failed to format hit {i}: {e}")
@@ -578,8 +583,10 @@ def main():
                                     f"(Document: {source}, Page: {page}, "
                                     f"Score: {score:.4f}, Methods: {', '.join(methods)}):\n"
                                     f"{text}\n\n")
-                            srcs.append({"id": i + 1, "page": page, "document": source,
-                                         "score": score, "methods": methods})
+                            srcs.append({
+                                "id": i + 1, "page": page, "document": source,
+                                "score": score, "methods": methods, "text": text,
+                            })
 
                     logger.info(f"[Hybrid] Fused context: {len(srcs)} chunks from "
                                 f"{len(fused)} fused results")
@@ -594,8 +601,28 @@ def main():
         base_weights = (VECTOR_WEIGHT, BM25_WEIGHT, GRAPH_WEIGHT)
 
         if ENABLE_AGENT:
-            from agent import QueryRouter, AnswerGrader, AgenticRAG
+            from agent import (
+                QueryRouter,
+                AnswerGrader,
+                AgenticRAG,
+                QueryDecomposer,
+                RAGFusion,
+            )
             logger.info("[Agent] ENABLE_AGENT=true — running agentic control loop")
+            decomposer = None
+            fusion = None
+            if ENABLE_DECOMPOSITION:
+                decomposer = QueryDecomposer(
+                    llm,
+                    max_subqueries=AGENT_DECOMP_MAX_SUBQUERIES,
+                    min_words=AGENT_DECOMP_MIN_WORDS,
+                )
+                fusion = RAGFusion(
+                    _retrieve_and_format,
+                    rrf_k=AGENT_FUSION_RRF_K,
+                    top_k=CONTEXT_RETRIEVAL_LIMIT,
+                )
+                logger.info("[Agent] ENABLE_DECOMPOSITION=true — RAG-Fusion path enabled")
             agent = AgenticRAG(
                 llm=llm,
                 router=QueryRouter(llm, weight_boost=AGENT_ROUTER_WEIGHT_BOOST),
@@ -604,6 +631,8 @@ def main():
                 generate_fn=lambda q, ctx, hist: generate_rag_response(q, ctx, hist),
                 max_retries=AGENT_MAX_RETRIES,
                 base_weights=base_weights,
+                decomposer=decomposer,
+                fusion=fusion,
             )
             ar = agent.run(args.query, chat_history)
             logger.info(f"[Agent] trace: {ar.trace}")
