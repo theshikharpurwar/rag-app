@@ -27,13 +27,13 @@ Keep this table in sync with [README_v2.md](README_v2.md) when a phase changes.
 | **2. Hybrid + Knowledge Graph** | BM25, entity extraction, NetworkX KG, Leiden communities, graph BFS, weighted RRF | **DONE** | Tests in [python/tests/test_phase2.py](python/tests/test_phase2.py). Uncommitted perf tweaks on disk (see §4). |
 | **3. Agentic self-correction** | Query router, hallucination grader, retry + rewrite loop | **DONE** | Opt-in via `ENABLE_AGENT` (default `false`). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py). |
 | **3.5. Multi-query retrieval** | Query decomposition + RAG-Fusion (RRF across sub-queries) | **DONE** | Opt-in via `ENABLE_DECOMPOSITION` (default `false`; requires `ENABLE_AGENT=true`). |
-| **4. Evaluation** | LLM-as-Judge, Naive vs Neuro-Symbolic benchmark, KG visualisation | **NOT STARTED** | No harness yet |
+| **4. Evaluation** | LLM-as-Judge, Naive vs Neuro-Symbolic benchmark, report generation, KG visualisation | **BASELINE SHIPPED** | Harness: [python/evaluation/](python/evaluation/) — `run_benchmark` CLI, [python/tests/test_phase4.py](python/tests/test_phase4.py). First baseline report: [python/evaluation/reports/20260422T114922Z_report.md](python/evaluation/reports/20260422T114922Z_report.md) (n=10; neuro-symbolic 4 wins, naive 1, ties 5). **KG visualisation** still open. |
 
 ---
 
 ## 3. Where to resume — next task
 
-**Phase 4: evaluation harness** — LLM-as-Judge, Naive vs Neuro-Symbolic benchmark, KG visualisation (see [README_v2.md](README_v2.md) roadmap).
+**Phase 4 (remaining): knowledge graph visualisation** — LLM-as-Judge + naive vs neuro-symbolic benchmark + reports are in [python/evaluation/](python/evaluation/) (see [README_v2.md](README_v2.md) roadmap).
 
 Agent stack (see §2): [python/agent/](python/agent/) — `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`. Wired in [python/local_llm.py](python/local_llm.py) `main()`: when `ENABLE_AGENT=true`, `AgenticRAG.run(...)` replaces the single-shot generate path; when `ENABLE_DECOMPOSITION=true` as well, complex queries are decomposed and retrieved per sub-query, then RRF-merged. JSON payload shape (`{answer, sources}`) is unchanged.
 
@@ -46,6 +46,10 @@ Active env vars (all in [python/config/models.py](python/config/models.py)):
 - `AGENT_DECOMP_MAX_SUBQUERIES` — int, default `3`. Cap on LLM-emitted sub-questions.
 - `AGENT_DECOMP_MIN_WORDS` — int, default `8`. Skip decomposition when the query is shorter and has no multi-part triggers.
 - `AGENT_FUSION_RRF_K` — int, default `60`. RRF `k` for merging ranked lists across sub-queries.
+- `JUDGE_LLM_MODEL` — str, default same as `LLM_MODEL`. LLM-as-Judge for Phase 4 metrics.
+- `EVAL_OUTPUT_DIR` — path, default `python/evaluation/reports` (from config file location if unset).
+- `EVAL_JUDGE_TEMPERATURE` — float, default `0.0`. Judge calls use this temperature.
+- `EVAL_MAX_CONCURRENCY` — int, default `1` (reserved; benchmark runs serially).
 
 ---
 
@@ -61,14 +65,15 @@ Only the files that matter. Start here.
 
 ### Python (ML / retrieval)
 - [python/compute_embeddings.py](python/compute_embeddings.py) — ingestion pipeline: PDF → chunks → embeddings → Qdrant + BM25 + KG (see lines ~496–534 for Phase 2 wiring).
-- [python/local_llm.py](python/local_llm.py) — query pipeline: embed → retrieve → RRF fuse → rerank → LLM. Hybrid retrieval and Phase 3 / 3.5 agent wiring live in `main()`.
+- [python/local_llm.py](python/local_llm.py) — query pipeline: embed → retrieve → RRF fuse → rerank → LLM. Hybrid retrieval; Phase 3 / 3.5 agent wiring in `main()`; `init_runtime()` + `make_retrieve_pipeline()` for evaluation and subprocess use.
+- [python/evaluation/](python/evaluation/) — Phase 4: `judge.py`, `runner.py`, `report.py`, `run_benchmark.py`, `datasets/`.
 - [python/retrieval/](python/retrieval/) — `bm25_search.py`, `entity_extractor.py`, `knowledge_graph.py`, `graph_retrieval.py`, `rrf_fusion.py`.
 - [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py) — `OllamaEmbedder` wrapper.
 - [python/llm/ollama_llm.py](python/llm/ollama_llm.py) — `OllamaLLM` wrapper (uses `/api/chat`, structured messages).
 - [python/reranker/](python/reranker/) — optional cross-encoder reranker.
 - [python/config/models.py](python/config/models.py) — **all tunable knobs**. Read this before changing behaviour.
 - [python/agent/](python/agent/) — Phase 3–3.5: `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`.
-- [python/tests/test_phase2.py](python/tests/test_phase2.py), [python/tests/test_phase3.py](python/tests/test_phase3.py) — pytest suites.
+- [python/tests/test_phase2.py](python/tests/test_phase2.py), [python/tests/test_phase3.py](python/tests/test_phase3.py), [python/tests/test_phase4.py](python/tests/test_phase4.py) — pytest suites.
 
 ### Backend (Node/Express)
 - [backend/routes/api.js](backend/routes/api.js) — `/upload`, `/query`, `/reset`, `/pdfs`. Spawns Python as subprocess; reads JSON from stdout.
@@ -109,6 +114,10 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 | `AGENT_DECOMP_MAX_SUBQUERIES` | `3` | Max sub-questions from the decomposer LLM (original query is always retrieved too) |
 | `AGENT_DECOMP_MIN_WORDS` | `8` | Below this word count (and no multi-part triggers), skip decomposition |
 | `AGENT_FUSION_RRF_K` | `60` | RRF smoothing for merging results across sub-queries |
+| `JUDGE_LLM_MODEL` | same as `LLM_MODEL` | Ollama model for Phase 4 LLM-as-Judge |
+| `EVAL_OUTPUT_DIR` | `python/evaluation/reports` (from package path) | Where benchmark JSON + markdown are written |
+| `EVAL_JUDGE_TEMPERATURE` | `0.0` | Judge sampling temperature |
+| `EVAL_MAX_CONCURRENCY` | `1` | Placeholder; benchmarks run one question at a time |
 
 ---
 
@@ -121,8 +130,11 @@ docker compose up --build -d
 # Watch backend + Python logs (most debugging happens here)
 docker compose logs -f backend
 
-# Run Phase 2 + 3 unit tests
-cd python && python -m pytest tests/test_phase2.py tests/test_phase3.py -v
+# Run Phase 2 + 3 + 4 unit tests
+cd python && python -m pytest tests/test_phase2.py tests/test_phase3.py tests/test_phase4.py -v
+
+# Phase 4 benchmark (needs Ollama + Qdrant; ingests dataset fixture when not skipped)
+cd python && python -m evaluation.run_benchmark --dataset evaluation/datasets/sample.yaml
 
 # Reset Qdrant + Mongo + uploads (for clean re-ingestion)
 # Via API:

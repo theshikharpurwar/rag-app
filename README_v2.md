@@ -145,6 +145,31 @@ Shipped behind `ENABLE_AGENT=true` (default `false`, so Phase 2 behaviour is pre
 
 Implementation: [python/agent/](python/agent/). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py). Wired into [python/local_llm.py](python/local_llm.py) `main()` behind `ENABLE_AGENT` / `ENABLE_DECOMPOSITION`.
 
+### Phase 4: Evaluation harness (baseline shipped — KG visualisation pending)
+
+| Component | Status | Description |
+|---|---|---|
+| LLM-as-Judge | Shipped | Faithfulness, answer relevancy, context recall (plus deterministic conciseness) in [python/evaluation/judge.py](python/evaluation/judge.py) |
+| Naive vs neuro-symbolic benchmark | Shipped | Vector-only vs hybrid + `AgenticRAG` + decomposition + RAG-Fusion in [python/evaluation/runner.py](python/evaluation/runner.py) (independent of `ENABLE_AGENT` env) |
+| Report generation | Shipped | JSON + Markdown aggregates in [python/evaluation/report.py](python/evaluation/report.py) |
+| CLI | Shipped | `python -m evaluation.run_benchmark` — see [python/evaluation/datasets/README.md](python/evaluation/datasets/README.md) |
+| Knowledge graph visualisation | Not started | Follow-up |
+
+Tests: [python/tests/test_phase4.py](python/tests/test_phase4.py).
+
+**First baseline artifact** (`sample.yaml`, 10 questions × naive + neuro-symbolic on `gemma3:4b`):
+[`python/evaluation/reports/20260422T114922Z_report.md`](python/evaluation/reports/20260422T114922Z_report.md)
+
+| Metric | Naive | Neuro-Symbolic | Δ |
+|---|---|---|---|
+| faithfulness | 0.975 ± 0.042 | **0.990 ± 0.032** | **+0.015** |
+| answer_relevancy | **0.970 ± 0.048** | 0.960 ± 0.052 | −0.010 |
+| context_recall | 1.000 | 1.000 | tie |
+| conciseness | 0.773 ± 0.272 | **0.800 ± 0.266** | **+0.027** |
+
+**Win rate (higher mean of four metrics per question):** neuro-symbolic **4**, naive **1**, tie 5.
+Neuro-symbolic dominates multi-hop (3/4 wins + 1 tie) and broad-summary questions — the advantage is most visible where naive's vector-only recall slipped to 2–3 sources while hybrid + fusion retrieved the top-5 limit. On a 5-page fixture `context_recall = 1.000` is structural rather than evidence of retrieval quality; larger/harder corpora are the next step. Results are directional (n=10, not statistically significant).
+
 ---
 
 ## Technical Pipeline
@@ -316,6 +341,7 @@ rag-app/
 │   ├── reranker/
 │   │   └── simple_reranker.py  # Cross-encoder reranking (optional)
 │   ├── agent/                  # Agentic control loop (query router, grader, retry)
+│   ├── evaluation/             # Phase 4: LLM-as-Judge benchmark + reports
 │   ├── retrieval/              # Hybrid retrieval algorithms (RRF, graph traversal)
 │   ├── utils/
 │   │   └── qdrant_utils.py     # Collection management utilities
@@ -401,6 +427,10 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | `AGENT_DECOMP_MAX_SUBQUERIES` | `3` | Max sub-questions from the decomposer |
 | `AGENT_DECOMP_MIN_WORDS` | `8` | Skip decomposition for shorter queries without multi-part triggers |
 | `AGENT_FUSION_RRF_K` | `60` | RRF `k` when merging retrieval lists across sub-queries |
+| `JUDGE_LLM_MODEL` | same as `LLM_MODEL` | Ollama model for Phase 4 LLM-as-Judge |
+| `EVAL_OUTPUT_DIR` | (default under `python/evaluation/reports`) | Benchmark JSON + Markdown output directory |
+| `EVAL_JUDGE_TEMPERATURE` | `0.0` | Temperature for judge LLM calls |
+| `EVAL_MAX_CONCURRENCY` | `1` | Reserved; benchmarks run serially |
 
 ### Performance Profiles
 
@@ -507,10 +537,11 @@ Phase 3: Agentic Layer ███████████████████
 ├─ Query decomposition                        ✅
 └─ RAG-Fusion (multi-query)                   ✅
 
-Phase 4: Evaluation ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   0%
-├─ LLM-as-Judge framework                    🔲
-├─ Naive vs Neuro-Symbolic comparison          🔲
-├─ Benchmark report generation                🔲
+Phase 4: Evaluation █████████████████████████░░░░░░  85%
+├─ LLM-as-Judge framework                    ✅
+├─ Naive vs Neuro-Symbolic comparison          ✅
+├─ Benchmark report generation                ✅
+├─ First baseline artifact (n=10, win 4-1-5)   ✅
 └─ Knowledge graph visualization              🔲
 ```
 
@@ -885,7 +916,7 @@ Query:  Question → [Vector Search + BM25 + Graph Traversal] → RRF Fusion →
 | 3 | Create agentic query router and hallucination grader | P1 | Python ML | ✅ Done (Phase 3 medium scope: router + grader + retry loop behind `ENABLE_AGENT`) |
 | 3b | Add query decomposition + RAG-Fusion multi-query | P2 | Python ML | ✅ Done (`ENABLE_DECOMPOSITION`) |
 | 4 | Add automated test suite (pytest + Jest) | P2 | QA | 🔲 Planned |
-| 5 | Implement LLM-as-Judge evaluation framework | P2 | Python ML | 🔲 Planned (Phase 4) |
+| 5 | Implement LLM-as-Judge evaluation framework | P2 | Python ML | ✅ Done (Phase 4 — see [python/evaluation/](python/evaluation/)) |
 | 6 | Add startup RAM profiling for auto-configuration | P3 | DevOps | 🔲 Planned |
 
 ---
