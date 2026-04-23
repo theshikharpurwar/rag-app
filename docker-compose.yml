@@ -54,6 +54,7 @@ services:
       - BM25_WEIGHT=0.3
       - GRAPH_WEIGHT=0.3
       - RRF_K=60
+      - FUSION_METHOD=${FUSION_METHOD:-rrf}
       - GRAPH_TRAVERSAL_DEPTH=2
       - INDICES_DIR=/app/uploads/indices
       - ENABLE_COMMUNITY_SUMMARIES=${ENABLE_COMMUNITY_SUMMARIES:-false}

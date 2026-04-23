@@ -217,4 +217,8 @@ def hybrid_retrieve(query: str,
         return []
 
     # Fuse all available results
+    from config.models import FUSION_METHOD
+    if FUSION_METHOD == "dbsf":
+        from .dbsf_fusion import dbsf_fuse
+        return dbsf_fuse(ranked_lists, weights=weights, top_k=top_k)
     return rrf_fuse(ranked_lists, weights=weights, k=rrf_k, top_k=top_k)

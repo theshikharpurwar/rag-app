@@ -29,6 +29,7 @@ from .models import (
     # Phase 2: Hybrid Retrieval
     ENABLE_KNOWLEDGE_GRAPH,
     RRF_K,
+    FUSION_METHOD,
     VECTOR_WEIGHT,
     BM25_WEIGHT,
     GRAPH_WEIGHT,
@@ -79,6 +80,7 @@ __all__ = [
     # Phase 2
     'ENABLE_KNOWLEDGE_GRAPH',
     'RRF_K',
+    'FUSION_METHOD',
     'VECTOR_WEIGHT',
     'BM25_WEIGHT',
     'GRAPH_WEIGHT',

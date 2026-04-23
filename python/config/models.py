@@ -82,6 +82,7 @@ ENABLE_KNOWLEDGE_GRAPH = os.environ.get('ENABLE_KNOWLEDGE_GRAPH', 'true').lower(
 
 # Reciprocal Rank Fusion parameters
 RRF_K = int(os.environ.get('RRF_K', '60'))             # Smoothing constant
+FUSION_METHOD = os.environ.get('FUSION_METHOD', 'rrf').lower().strip()  # 'rrf' or 'dbsf'
 VECTOR_WEIGHT = float(os.environ.get('VECTOR_WEIGHT', '0.4'))   # α — vector similarity weight
 BM25_WEIGHT = float(os.environ.get('BM25_WEIGHT', '0.3'))       # β — BM25 keyword weight
 GRAPH_WEIGHT = float(os.environ.get('GRAPH_WEIGHT', '0.3'))     # γ — graph traversal weight
@@ -163,6 +164,7 @@ def print_current_config():
     print(f"Ollama keep_alive:{OLLAMA_KEEP_ALIVE}")
     print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}")
     print(f"Collection:       {DEFAULT_COLLECTION}")
+    print(f"Fusion method:    {FUSION_METHOD}")
     print(f"Agent Enabled:    {ENABLE_AGENT}")
     print(f"Decomposition:    {ENABLE_DECOMPOSITION}")
     print(f"Community sums:   {ENABLE_COMMUNITY_SUMMARIES}")

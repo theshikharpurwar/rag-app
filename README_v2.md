@@ -413,10 +413,11 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | `SKIP_IMAGES` | `true` | Skip image embedding (text-only embedder) |
 | `HF_HOME` | `/root/.cache/huggingface` | HuggingFace model cache (Docker volume) |
 | `ENABLE_KNOWLEDGE_GRAPH` | `true` | Toggle KG extraction during PDF ingestion (Phase 2) |
-| `VECTOR_WEIGHT` | `0.4` | α — weight for vector similarity in RRF fusion |
-| `BM25_WEIGHT` | `0.3` | β — weight for BM25 keyword search in RRF fusion |
-| `GRAPH_WEIGHT` | `0.3` | γ — weight for graph traversal in RRF fusion |
-| `RRF_K` | `60` | RRF smoothing constant |
+| `VECTOR_WEIGHT` | `0.4` | α — weight for vector similarity in hybrid fusion |
+| `BM25_WEIGHT` | `0.3` | β — weight for BM25 keyword search in hybrid fusion |
+| `GRAPH_WEIGHT` | `0.3` | γ — weight for graph traversal in hybrid fusion |
+| `RRF_K` | `60` | RRF smoothing constant (`FUSION_METHOD=rrf` only) |
+| `FUSION_METHOD` | `rrf` | `rrf` (default) or `dbsf` (score-normalized fusion) |
 | `GRAPH_TRAVERSAL_DEPTH` | `2` | BFS depth limit for knowledge graph traversal |
 | `ENABLE_COMMUNITY_SUMMARIES` | `false` | Generate per-community LLM summaries (+ embeddings) during ingest |
 | `COMMUNITY_SUMMARY_WEIGHT` | `0.2` | RRF weight for community-summary global search when summaries exist |
@@ -525,7 +526,7 @@ Phase 1: Foundation RAG ██████████████████�
 
 Phase 2: Hybrid Retrieval ██████████████████████████████ 100%
 ├─ BM25 keyword search (rank_bm25)           ✅
-├─ Weighted RRF fusion (3-path + opt. community) ✅
+├─ Hybrid fusion: RRF or DBSF (`FUSION_METHOD`, 3-path + opt. community) ✅
 ├─ Entity extraction (LLM triples)            ✅
 ├─ NetworkX knowledge graph + JSON persist    ✅
 ├─ Leiden community detection                 ✅
@@ -559,7 +560,7 @@ Phase 5: Optimization & Depth (planned) ░░░░░░░░░░░░░�
    ├─ 3.2  Ablation CLI (vector / +BM25 / +KG / +agent / +decomp) 🔲
    ├─ 3.3  Statistical significance (paired Wilcoxon, CIs)     ✅
    ├─ 3.4  Adaptive RAG router (complexity-aware path)         ✅
-   ├─ 3.5  Learned fusion or DBSF alternative to RRF           🔲
+   ├─ 3.5  Learned fusion or DBSF alternative to RRF           ✅
    ├─ 3.6a Cross-encoder reranker default-on (bge-reranker-v2-m3) ✅
    ├─ 3.6b Late-interaction reranker for large topM (ColBERT-v2) 🔲
    ├─ 3.7  Ollama infra tuning (num_parallel, num_batch, FA)   ✅
@@ -594,7 +595,7 @@ Ordered by expected impact-per-day. Top two are ½-day bug / correctness fixes a
 | 3.2 | **Ablation CLI** — `--ablation` flag that runs the same dataset across ≥ 4 configurations (vector-only / +BM25 / +BM25+KG / +agent / +agent+decomp) and emits a per-component contribution table | Single most defensible artifact for the provisional patent and for any academic write-up. | One `ablation.md` / `ablation.json` report with per-component deltas on a ≥ 20-question dataset. |
 | 3.3 | **Statistical significance** — ✅ paired Wilcoxon signed-rank tests + bootstrap 95% CIs on per-question metric deltas now computed in `evaluation/report.py`; n < 20 is flagged as directional | Converts raw win counts into interpretable evidence and prevents over-claiming on small fixtures. | ✅ Report summary now includes per-metric Δ, CI, p-value, and `significant / directional / tie` verdicts. |
 | 3.4 | **Adaptive RAG router** — ✅ 3-way `specific` / `broad` / `multi_hop` in [python/agent/query_router.py](python/agent/query_router.py); `multi_hop` does not shift RRF weights and **auto-enables** `QueryDecomposer` + `RAGFusion` in [python/agent/control_loop.py](python/agent/control_loop.py) when `ENABLE_DECOMPOSITION=false` (`trace.auto_decompose`). No parametric-only (no-retrieval) path yet; no web-search path. Tests: [python/tests/test_phase9_adaptive_router.py](python/tests/test_phase9_adaptive_router.py). | Routes comparative / multi-part questions into decomposition without turning decomposition on globally. | `MULTI_HOP` classification triggers sub-queries when the decomposer yields >1 line; injected decomposer is unchanged when `ENABLE_DECOMPOSITION=true`. |
-| 3.5 | **Learned / distribution-based fusion** alternative to weighted RRF — start with Distribution-Based Score Fusion (DBSF, tuning-free) and, if labelled data becomes available, add a small LTR ensemble on top of the three retrieval lists | RRF is a robust default; LTR yields ~3–4% nDCG@10 on BEIR (46.5 → 48.2). DBSF is the safe midpoint. | DBSF selectable via `FUSION_METHOD` env; ablation row shows ≥ 1% nDCG@10 lift on ≥ 20-Q dataset before it replaces RRF. |
+| 3.5 | **Distribution-Based Score Fusion (DBSF)** — ✅ `FUSION_METHOD=dbsf`: per-list μ±3σ normalization of raw retriever scores, then same weighted sum and dedup key as RRF ([python/retrieval/dbsf_fusion.py](python/retrieval/dbsf_fusion.py)); default `rrf`. Learned/LTR fusion still future work. | Heterogeneous score scales (cosine, BM25, graph) fused without rank-only information loss. | Tests: `test_phase10_dbsf.py`; output shape matches `rrf_fuse` for reranker + context formatting. |
 | 3.6a | **Cross-encoder reranker default-on** — ✅ default `SKIP_RERANKING=false`; reranker now runs on the fused hybrid top-M in `local_llm.py` (`RERANK_TOP_M`, default 50, capped at 150), with model selectable via `RERANKER_MODEL` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`, optional `BAAI/bge-reranker-v2-m3`). | Public benchmarks (`recall@10` 72→94%, `precision@10` 65→91%) show cross-encoder reranking is the highest-yield single-stage addition we had not turned on yet. | ✅ Implemented with `test_phase6_rerank.py`; monitor benchmark quality + p95 latency when increasing `RERANK_TOP_M` or using heavier reranker models. |
 | 3.6b | **Late-interaction reranker** for large topM — add ColBERT-v2 as an alternative reranker when topM ≥ 200 | Cross-encoders dominate precision at small M but scale poorly; ColBERT gives sub-10 ms rerank at M=200+. Only worth it after corpus grows. | ColBERT-v2 selectable via `RERANKER=colbert`; quality parity with cross-encoder at topM=50, wins at topM=200. |
 | 3.7 | **Ollama infra tuning** — ✅ per-request `OLLAMA_NUM_BATCH`, optional `OLLAMA_NUM_CTX`, `OLLAMA_KEEP_ALIVE` wired through `OllamaLLM` + `OllamaEmbedder`; micro-bench `python -m evaluation.bench_ollama` (`gen` / `embed`). Host: `OLLAMA_NUM_PARALLEL`, `OLLAMA_FLASH_ATTENTION`. **Do NOT** set `OLLAMA_KV_CACHE_TYPE` ≠ `fp16` on gemma3 pre-0.12.5 (#9683 / #10945 / #11949). | Flash attention + `num_parallel` are the safe wins; KV-cache quantization is risky on gemma3 until Ollama 0.12.5. | ✅ Implemented + documented in `DEPLOYMENT.md` with bench CLI for before/after tok/s and wall-clock; tests: `test_phase7_ollama_tuning.py`. |
