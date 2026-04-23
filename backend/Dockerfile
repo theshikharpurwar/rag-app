@@ -46,6 +46,13 @@ COPY backend/ .
 # Create uploads directory structure (including Phase 2 indices)
 RUN mkdir -p ./uploads/images ./uploads/indices
 
+# Install curl for health-check in start.sh
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Copy startup script
+COPY backend/start.sh ./start.sh
+RUN chmod +x ./start.sh
+
 # Expose the port the Node server listens on
 EXPOSE 5000
 
@@ -53,5 +60,5 @@ EXPOSE 5000
 ENV NODE_ENV=production
 ENV PORT=5000
 
-# Command to run the server
-CMD ["node", "server.js"]
+# Start Python query server + Node via wrapper script
+CMD ["./start.sh"]

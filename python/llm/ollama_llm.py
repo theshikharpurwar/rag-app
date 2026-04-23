@@ -1,9 +1,9 @@
 # D:\rag-app\python\llm\ollama_llm.py
 
 import logging
-import requests
-import json
 import os
+
+import requests
 
 from config.models import OLLAMA_KEEP_ALIVE, OLLAMA_NUM_BATCH, OLLAMA_NUM_CTX
 
@@ -96,24 +96,17 @@ class OllamaLLM:
             payload = {
                 "model": self.model_name,
                 "messages": chat_messages,
-                "stream": True,
+                "stream": False,
                 "options": options,
                 "keep_alive": self.keep_alive,
             }
 
             logger.info(f"Sending request to: {self.api_base}/chat")
-            response = requests.post(f"{self.api_base}/chat", json=payload, timeout=120, stream=True)
+            response = requests.post(f"{self.api_base}/chat", json=payload, timeout=120)
 
             if response.status_code == 200:
-                full_response = ""
-                for line in response.iter_lines():
-                    if line:
-                        chunk = json.loads(line)
-                        content = chunk.get("message", {}).get("content", "")
-                        full_response += content
-                        if chunk.get("done", False):
-                            break
-
+                result = response.json()
+                full_response = result.get("message", {}).get("content", "")
                 logger.info(f"Successfully generated response: {full_response[:50]}...")
                 return full_response
             else:

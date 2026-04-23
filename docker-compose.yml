@@ -34,6 +34,8 @@ services:
       - LLM_MODEL=gemma3:4b
       - EMBEDDING_MODEL=nomic-embed-text-v2-moe
       - NODE_ENV=production
+      # Persistent Python query server (inside same container)
+      - PYTHON_QUERY_URL=http://localhost:5001
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       # Cache HuggingFace models in the mounted volume

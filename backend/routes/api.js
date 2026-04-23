@@ -1,13 +1,16 @@
-// FILE: backend/routes/api.js (Full Code - Reverted to spawn, kept pdf_id passing)
+// FILE: backend/routes/api.js
 
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process'); // Re-added spawn
+const { spawn } = require('child_process');
 const PDFModel = require('../models/pdf');
 const logger = console;
+
+// Persistent Python query server (replaces subprocess-per-query)
+const PYTHON_QUERY_URL = process.env.PYTHON_QUERY_URL || 'http://localhost:5001';
 
 // Multer setup with file validation
 const uploadsDir = path.resolve(__dirname, '../uploads');
@@ -119,6 +122,15 @@ router.post('/upload', (req, res) => {
     // Await the script completion
     const processingResult = await runEmbeddingScript();
 
+    // Clear Python query server pipeline cache so re-uploaded PDFs are fresh
+    try {
+      const fetch = (await import('node-fetch')).default;
+      await fetch(`${PYTHON_QUERY_URL}/cache/clear`, { method: 'POST', timeout: 2000 });
+      logger.info('Python pipeline cache cleared after upload.');
+    } catch (_cacheErr) {
+      logger.warn('Could not clear Python pipeline cache (server may not be running yet).');
+    }
+
     // Send final success response
     res.status(200).json({
         success: true, message: 'File uploaded and processed.', pdf: processingResult.pdf
@@ -139,75 +151,75 @@ router.get('/pdfs', async (req, res) => {
     logger.info('Fetching PDFs...'); try { const pdfs = await PDFModel.find({}, { filename: 1, originalName: 1, size: 1, pageCount: 1, uploadDate: 1, processed: 1 }).sort({ uploadDate: -1 }); res.status(200).json({ success: true, pdfs }); } catch (err) { logger.error('Fetch PDFs failed:', err); res.status(500).json({ success: false, message: 'Error fetching PDFs' }); }
 });
 
-// --- MODIFIED /query route: Uses spawn, passes pdf_id ---
+// --- /query route: HTTP to persistent Python query server ---
 router.post('/query', async (req, res) => {
   logger.info('Received query request.');
   try {
     const { pdfId, query, history } = req.body;
-    
+
     // Validation
-    if (!pdfId || !query) { 
-      return res.status(400).json({ 
-        success: false, 
-        message: 'PDF ID and query are required' 
-      }); 
-    }
-    
-    if (typeof query !== 'string' || query.trim().length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Query must be a non-empty string' 
-      }); 
-    }
-    
-    if (query.length > 1000) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Query too long. Maximum 1000 characters.' 
-      }); 
+    if (!pdfId || !query) {
+      return res.status(400).json({
+        success: false,
+        message: 'PDF ID and query are required'
+      });
     }
 
-    // Optional: Check if PDF is processed before spawning python
+    if (typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query must be a non-empty string'
+      });
+    }
+
+    if (query.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query too long. Maximum 1000 characters.'
+      });
+    }
+
+    // Check if PDF is processed
     const pdf = await PDFModel.findById(pdfId, { processed: 1 });
     if (!pdf) { return res.status(404).json({ success: false, message: 'PDF not found' }); }
     if (pdf.processed !== true) { return res.status(400).json({ success: false, message: 'PDF is still processing or failed.' }); }
 
-    logger.info(`Querying PDF ID: ${pdfId}`);
-    const pythonExecutable = 'python'; // Or python3
-    const pythonScript = path.resolve(__dirname, '../../python/local_llm.py');
-    const pythonArgs = [ pythonScript, query, '--collection_name', 'documents', '--pdf_id', pdfId ];
-    if (history && Array.isArray(history)) { pythonArgs.push('--history', JSON.stringify(history)); }
+    logger.info(`Querying PDF ID: ${pdfId} via persistent Python server`);
 
-    logger.info(`Spawning: ${pythonExecutable} ${pythonArgs.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')}`); // Log command properly
-    
-    // Pass environment variables explicitly to ensure they're available in the spawned process
-    const env = {
-      ...process.env,
-      QDRANT_HOST: process.env.QDRANT_HOST || 'qdrant', 
-      QDRANT_PORT: process.env.QDRANT_PORT || '6333'
-    };
-    logger.info(`Using QDRANT_HOST=${env.QDRANT_HOST}, QDRANT_PORT=${env.QDRANT_PORT}`);
-    
-    const pythonProcess = spawn(pythonExecutable, pythonArgs, { env });
-
-    let pythonOutput = ''; let pythonError = '';
-    pythonProcess.stdout.on('data', (data) => { pythonOutput += data.toString(); });
-    pythonProcess.stderr.on('data', (data) => { logger.error(`Query script stderr: ${data}`); pythonError += data.toString(); });
-
-    pythonProcess.on('close', (code) => {
-      logger.info(`Query script exited code ${code}`);
-      if (code === 0 && pythonOutput) {
-        try {
-          const result = JSON.parse(pythonOutput);
-          res.status(200).json({ success: true, answer: result.answer, sources: result.sources || [] });
-        } catch (err) { logger.error('Parse Error:', err); logger.error('Raw output:', pythonOutput); res.status(500).json({ success: false, message: 'Parse Error', error: err.message, rawOutput: pythonOutput }); }
-      } else { logger.error(`Script Fail. Code: ${code}. Err: ${pythonError}. Out: ${pythonOutput}`); res.status(500).json({ success: false, message: 'Script Error', error: pythonError || `Code ${code}` }); }
+    const fetch = (await import('node-fetch')).default;
+    const pyResponse = await fetch(`${PYTHON_QUERY_URL}/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        pdf_id: pdfId,
+        collection_name: 'documents',
+        history: (history && Array.isArray(history)) ? history : [],
+      }),
+      timeout: 120000,  // 2 minute timeout
     });
-   pythonProcess.on('error', (spawnError) => { logger.error('Spawn Error:', spawnError); res.status(500).json({ success: false, message: 'Spawn Error', error: spawnError.message }); });
 
-  } catch (err) { logger.error('Query Route Error:', err); res.status(500).json({ success: false, message: 'Server Error' }); }
+    const result = await pyResponse.json();
+
+    if (pyResponse.ok) {
+      res.status(200).json({
+        success: true,
+        answer: result.answer,
+        sources: result.sources || [],
+      });
+    } else {
+      logger.error(`Python query server returned ${pyResponse.status}:`, result);
+      res.status(pyResponse.status).json({
+        success: false,
+        message: result.answer || 'Query processing failed',
+      });
+    }
+  } catch (err) {
+    logger.error('Query Route Error:', err.message || err);
+    res.status(500).json({ success: false, message: 'Server Error: ' + (err.message || 'Unknown') });
+  }
 });
-// --- END MODIFIED /query route ---
+// --- END /query route ---
 
 
 // Reset route

@@ -28,6 +28,9 @@ rank_bm25>=0.2.2
 pyvis>=0.3.2
 matplotlib>=3.8
 
+# Persistent query server
+flask>=3.0
+
 # Basic utilities
 numpy
 scipy>=1.11

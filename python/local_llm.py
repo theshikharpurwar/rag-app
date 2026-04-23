@@ -113,24 +113,6 @@ def init_runtime():
         logger.info(f"Initializing LLM: {LLM_MODEL_NAME} targeting {OLLAMA_API_BASE}")
         llm = OllamaLLM(model_name=LLM_MODEL_NAME, api_base=OLLAMA_API_BASE)
         logger.info(f"LLM instance for '{LLM_MODEL_NAME}' created.")
-
-        try:
-            test_response = requests.get(f"{OLLAMA_HOST_URL}/api/tags", timeout=5)
-            if test_response.status_code == 200:
-                logger.info(f"Successfully connected to Ollama at {OLLAMA_HOST_URL}")
-                available_models = [m.get('name') for m in test_response.json().get('models', [])]
-                if LLM_MODEL_NAME not in available_models and f"{LLM_MODEL_NAME}:latest" not in available_models:
-                    logger.warning(
-                        f"Model '{LLM_MODEL_NAME}' not found in host Ollama models: {available_models}. Please pull it."
-                    )
-            else:
-                logger.warning(
-                    f"Connected to Ollama host {OLLAMA_HOST_URL} but got status {test_response.status_code}."
-                )
-        except requests.exceptions.RequestException as conn_err:
-            logger.error(
-                f"Could not connect to Ollama at {OLLAMA_HOST_URL}. Is Ollama running on the host? Error: {conn_err}"
-            )
     except Exception as e:
         logger.critical(f"CRITICAL: LLM init/check failed: {e}", exc_info=True)
         sys.exit("LLM failed to initialize")

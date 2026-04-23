@@ -3,7 +3,6 @@ Phase 7: per-request Ollama tuning (num_batch, num_ctx, keep_alive) on chat; kee
 """
 
 import importlib
-import json
 import os
 import sys
 from unittest.mock import MagicMock
@@ -32,22 +31,17 @@ def _tags_response(model: str = "gemma3:4b"):
     return m
 
 
-def _stream_chat_response(content: str = "ok"):
+def _non_stream_chat_response(content: str = "ok"):
     class _Resp:
         status_code = 200
 
-        def iter_lines(self, decode_unicode=False):
-            yield json.dumps(
-                {
-                    "message": {"role": "assistant", "content": content},
-                    "done": True,
-                    "eval_count": 8,
-                    "eval_duration": 2_000_000_000,
-                }
-            ).encode()
-
-        def close(self):
-            pass
+        def json(self):
+            return {
+                "message": {"role": "assistant", "content": content},
+                "done": True,
+                "eval_count": 8,
+                "eval_duration": 2_000_000_000,
+            }
 
     return _Resp()
 
@@ -57,10 +51,10 @@ def test_chat_payload_carries_options_and_keep_alive(monkeypatch):
 
     captured = {}
 
-    def fake_post(url, json=None, timeout=120, stream=False, **kwargs):
+    def fake_post(url, json=None, timeout=120, **kwargs):
         captured["url"] = url
         captured["json"] = json
-        return _stream_chat_response()
+        return _non_stream_chat_response()
 
     monkeypatch.setattr(ollama_llm_module.requests, "post", fake_post)
     monkeypatch.setattr(ollama_llm_module.requests, "get", lambda *a, **k: _tags_response())
@@ -80,6 +74,7 @@ def test_chat_payload_carries_options_and_keep_alive(monkeypatch):
     assert p["options"]["num_ctx"] == 4096
     assert p["options"]["num_predict"] == 100
     assert p["options"]["temperature"] == 0.4
+    assert p["stream"] is False
 
 
 def test_chat_num_ctx_omitted_when_not_set(monkeypatch):
@@ -89,7 +84,7 @@ def test_chat_num_ctx_omitted_when_not_set(monkeypatch):
 
     def fake_post(url, json=None, **kwargs):
         captured["json"] = json
-        return _stream_chat_response()
+        return _non_stream_chat_response()
 
     monkeypatch.setattr(ollama_llm_module.requests, "post", fake_post)
     monkeypatch.setattr(ollama_llm_module.requests, "get", lambda *a, **k: _tags_response())
@@ -124,7 +119,7 @@ def test_config_env_overrides_reload(monkeypatch):
 
     def fake_post(url, json=None, **kwargs):
         captured["json"] = json
-        return _stream_chat_response()
+        return _non_stream_chat_response()
 
     monkeypatch.setattr(ollama_llm_module.requests, "post", fake_post)
     monkeypatch.setattr(ollama_llm_module.requests, "get", lambda *a, **k: _tags_response())
@@ -149,7 +144,7 @@ def test_config_num_ctx_zero_means_none_after_reload(monkeypatch):
 
     def fake_post(url, json=None, **kwargs):
         captured["json"] = json
-        return _stream_chat_response()
+        return _non_stream_chat_response()
 
     monkeypatch.setattr(ollama_llm_module.requests, "post", fake_post)
     monkeypatch.setattr(ollama_llm_module.requests, "get", lambda *a, **k: _tags_response())
