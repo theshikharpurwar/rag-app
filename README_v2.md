@@ -115,7 +115,7 @@ The core retrieval-augmented generation pipeline is fully implemented and operat
 | **Vector Store** | Qdrant | Cosine similarity search with pdf_id filtering and batch upsert |
 | **LLM** | `gemma3:4b` | Google's 2025 multimodal model via Ollama `/api/chat` endpoint |
 | **Chat History** | Structured messages | Real `user`/`assistant` role turns passed to the LLM (not raw text concatenation) |
-| **Reranking** | Cross-encoder (optional) | `cross-encoder/ms-marco-MiniLM-L-6-v2` for result refinement (toggle via `SKIP_RERANKING`) |
+| **Reranking** | Cross-encoder or ColBERT (optional) | `get_reranker()`: default cross-encoder; `RERANKER_TYPE=colbert` for ragatouille/ColBERT-v2 (toggle via `SKIP_RERANKING`) |
 | **Frontend** | React SPA | PDF upload, real-time chat interface, conversation history management |
 | **Backend** | Node.js/Express | REST API orchestrating Python ML scripts, MongoDB metadata, file management |
 | **Containerization** | Docker Compose | Full orchestration: frontend (Nginx), backend (Node+Python), MongoDB, Qdrant |
@@ -409,7 +409,11 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | `QDRANT_PORT` | `6333` | Qdrant service port |
 | `MONGODB_URI` | `mongodb://mongo:27017/rag_db` | MongoDB connection string |
 | `USE_DOCLING` | `false` | Enable IBM Docling for ML-powered extraction |
-| `SKIP_RERANKING` | `true` | Disable cross-encoder reranking (saves ~250MB RAM) |
+| `SKIP_RERANKING` | `true` | Disable reranking (saves ~250MB RAM with cross-encoder) |
+| `RERANKER_TYPE` | `cross_encoder` | `cross_encoder` or `colbert` (ragatouille; larger model) |
+| `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder id when `RERANKER_TYPE=cross_encoder` |
+| `COLBERT_MODEL` | `colbert-ir/colbertv2.0` | ColBERT pretrained id when `RERANKER_TYPE=colbert` |
+| `RERANK_TOP_M` | `50` | Fused candidates passed to reranker (cap 150) |
 | `SKIP_IMAGES` | `true` | Skip image embedding (text-only embedder) |
 | `HF_HOME` | `/root/.cache/huggingface` | HuggingFace model cache (Docker volume) |
 | `ENABLE_KNOWLEDGE_GRAPH` | `true` | Toggle KG extraction during PDF ingestion (Phase 2) |
@@ -562,7 +566,7 @@ Phase 5: Optimization & Depth (planned) ░░░░░░░░░░░░░�
    ├─ 3.4  Adaptive RAG router (complexity-aware path)         ✅
    ├─ 3.5  Learned fusion or DBSF alternative to RRF           ✅
    ├─ 3.6a Cross-encoder reranker default-on (bge-reranker-v2-m3) ✅
-   ├─ 3.6b Late-interaction reranker for large topM (ColBERT-v2) 🔲
+   ├─ 3.6b Late-interaction reranker for large topM (ColBERT-v2) ✅
    ├─ 3.7  Ollama infra tuning (num_parallel, num_batch, FA)   ✅
    ├─ 3.8  GraphRAG community summaries + global-search path   ✅
    └─ 3.9  Batch ingest embedding (/api/embed array input)     ✅
@@ -597,7 +601,7 @@ Ordered by expected impact-per-day. Top two are ½-day bug / correctness fixes a
 | 3.4 | **Adaptive RAG router** — ✅ 3-way `specific` / `broad` / `multi_hop` in [python/agent/query_router.py](python/agent/query_router.py); `multi_hop` does not shift RRF weights and **auto-enables** `QueryDecomposer` + `RAGFusion` in [python/agent/control_loop.py](python/agent/control_loop.py) when `ENABLE_DECOMPOSITION=false` (`trace.auto_decompose`). No parametric-only (no-retrieval) path yet; no web-search path. Tests: [python/tests/test_phase9_adaptive_router.py](python/tests/test_phase9_adaptive_router.py). | Routes comparative / multi-part questions into decomposition without turning decomposition on globally. | `MULTI_HOP` classification triggers sub-queries when the decomposer yields >1 line; injected decomposer is unchanged when `ENABLE_DECOMPOSITION=true`. |
 | 3.5 | **Distribution-Based Score Fusion (DBSF)** — ✅ `FUSION_METHOD=dbsf`: per-list μ±3σ normalization of raw retriever scores, then same weighted sum and dedup key as RRF ([python/retrieval/dbsf_fusion.py](python/retrieval/dbsf_fusion.py)); default `rrf`. Learned/LTR fusion still future work. | Heterogeneous score scales (cosine, BM25, graph) fused without rank-only information loss. | Tests: `test_phase10_dbsf.py`; output shape matches `rrf_fuse` for reranker + context formatting. |
 | 3.6a | **Cross-encoder reranker default-on** — ✅ default `SKIP_RERANKING=false`; reranker now runs on the fused hybrid top-M in `local_llm.py` (`RERANK_TOP_M`, default 50, capped at 150), with model selectable via `RERANKER_MODEL` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`, optional `BAAI/bge-reranker-v2-m3`). | Public benchmarks (`recall@10` 72→94%, `precision@10` 65→91%) show cross-encoder reranking is the highest-yield single-stage addition we had not turned on yet. | ✅ Implemented with `test_phase6_rerank.py`; monitor benchmark quality + p95 latency when increasing `RERANK_TOP_M` or using heavier reranker models. |
-| 3.6b | **Late-interaction reranker** for large topM — add ColBERT-v2 as an alternative reranker when topM ≥ 200 | Cross-encoders dominate precision at small M but scale poorly; ColBERT gives sub-10 ms rerank at M=200+. Only worth it after corpus grows. | ColBERT-v2 selectable via `RERANKER=colbert`; quality parity with cross-encoder at topM=50, wins at topM=200. |
+| 3.6b | **Late-interaction reranker** — ✅ `RERANKER_TYPE=colbert` loads ColBERT-v2 via ragatouille ([python/reranker/colbert_reranker.py](python/reranker/colbert_reranker.py)); `COLBERT_MODEL` env; `get_reranker()` in [python/reranker/__init__.py](python/reranker/__init__.py); falls back to cross-encoder on failure; optional dep `ragatouille` in [python/requirements.txt](python/requirements.txt). Tests: `test_phase11_colbert.py`. | Better scaling at large `RERANK_TOP_M` than full cross-encoder passes; heavier default memory. | Same `rerank(query, docs, top_k)` contract as `SimpleReranker`; skips rerank when `len(docs) <= top_k` like the cross-encoder path. |
 | 3.7 | **Ollama infra tuning** — ✅ per-request `OLLAMA_NUM_BATCH`, optional `OLLAMA_NUM_CTX`, `OLLAMA_KEEP_ALIVE` wired through `OllamaLLM` + `OllamaEmbedder`; micro-bench `python -m evaluation.bench_ollama` (`gen` / `embed`). Host: `OLLAMA_NUM_PARALLEL`, `OLLAMA_FLASH_ATTENTION`. **Do NOT** set `OLLAMA_KV_CACHE_TYPE` ≠ `fp16` on gemma3 pre-0.12.5 (#9683 / #10945 / #11949). | Flash attention + `num_parallel` are the safe wins; KV-cache quantization is risky on gemma3 until Ollama 0.12.5. | ✅ Implemented + documented in `DEPLOYMENT.md` with bench CLI for before/after tok/s and wall-clock; tests: `test_phase7_ollama_tuning.py`. |
 | 3.8 | **GraphRAG community summaries + global-search path** — ✅ opt-in `ENABLE_COMMUNITY_SUMMARIES`: ingest-time LLM + embed per Leiden community into `_graph.json`; `GraphRetriever.global_search` adds a 4th RRF list (weight `COMMUNITY_SUMMARY_WEIGHT`, vector/BM25/graph scaled down) when the agent route is not `specific` (non-agent queries still get the path). Tests: `test_phase8_graphrag.py`. | Closes the GraphRAG gap on global/summary-style retrieval without forcing extra ingest cost by default. | Summaries persist in graph JSON; hybrid fusion includes `community_summary` provenance when enabled; router-`specific` skips the path to protect factoid queries. |
 | 3.9 | **Batch ingest embedding** — ✅ `OllamaEmbedder.encode_text` in `python/embeddings/ollama_embed.py` batches texts via `POST /api/embed` with array `input` (size capped by `EMBED_BATCH_SIZE`, default 32); per-item `POST /api/embeddings` fallback when `/api/embed` returns 404 (older Ollama). | 3–10× fewer HTTP round-trips on embedding-bound ingest; unblocks larger fixtures. | ✅ Implemented with `test_phase5_batch_embed.py`; measure ≥ 3× wall-clock on embedding-bound runs vs one-request-per-chunk baseline on the Tier 2.2 fixture. |

@@ -100,10 +100,10 @@ def init_runtime():
             logger.info("Reranker disabled via SKIP_RERANKING=true.")
             reranker = None
         else:
-            from reranker import SimpleReranker
+            from reranker import get_reranker
 
             logger.info("Initializing reranker model...")
-            reranker = SimpleReranker()
+            reranker = get_reranker()
             logger.info("Reranker model loaded successfully.")
     except Exception as e:
         logger.warning(f"Failed to load reranker: {e}. Continuing without reranking.")

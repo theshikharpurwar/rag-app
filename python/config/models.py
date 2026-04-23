@@ -21,6 +21,9 @@ EMBED_BATCH_SIZE = int(os.environ.get('EMBED_BATCH_SIZE', '32'))
 # Cross-encoder reranker model and oversampling size before rerank
 RERANKER_MODEL = os.environ.get('RERANKER_MODEL', 'cross-encoder/ms-marco-MiniLM-L-6-v2')
 RERANK_TOP_M = min(int(os.environ.get('RERANK_TOP_M', '50')), 150)
+# Reranker backend: cross_encoder (default) or colbert (requires ragatouille)
+RERANKER_TYPE = os.environ.get('RERANKER_TYPE', 'cross_encoder').lower().strip()
+COLBERT_MODEL = os.environ.get('COLBERT_MODEL', 'colbert-ir/colbertv2.0')
 
 # =============================================================================
 # 📊 MODEL SPECIFICATIONS (Auto-derived from model names)
@@ -156,6 +159,8 @@ def print_current_config():
     print(f"Embedding Model:  {EMBEDDING_MODEL_NAME}")
     print(f"Embed batch size: {EMBED_BATCH_SIZE}")
     print(f"Reranker model:   {RERANKER_MODEL}")
+    print(f"Reranker type:    {RERANKER_TYPE}")
+    print(f"ColBERT model:    {COLBERT_MODEL}")
     print(f"Rerank top-M:     {RERANK_TOP_M}")
     print(f"Vector Size:      {DEFAULT_VECTOR_SIZE}")
     print(f"Ollama Host:      {OLLAMA_HOST_URL}")

@@ -46,6 +46,8 @@ services:
       # Optional reranker tuning
       # - RERANKER_MODEL=BAAI/bge-reranker-v2-m3
       # - RERANK_TOP_M=50
+      - RERANKER_TYPE=${RERANKER_TYPE:-cross_encoder}
+      - COLBERT_MODEL=${COLBERT_MODEL:-colbert-ir/colbertv2.0}
       # Skip image embedding — OllamaEmbedder only handles text, not images
       - SKIP_IMAGES=true
       # Phase 2: Hybrid Retrieval & Knowledge Graphs

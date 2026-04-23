@@ -12,6 +12,8 @@ qdrant-client
 
 # Reranking (lightweight cross-encoder)
 sentence-transformers>=2.2.2
+# ColBERT late-interaction (optional; only loaded when RERANKER_TYPE=colbert)
+ragatouille>=0.0.8
 
 # Document parsing (Docling for RAG-optimized extraction, PyMuPDF as default/fallback)
 docling>=2.14.0,<3.0.0
