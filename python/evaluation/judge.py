@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from agent.grader import AnswerGrader
 
-from config import EVAL_JUDGE_TEMPERATURE, JUDGE_LLM_MODEL, OLLAMA_API_BASE
+from config import (
+    EVAL_JUDGE_TEMPERATURE,
+    EVAL_MAX_CONCURRENCY,
+    JUDGE_LLM_MODEL,
+    OLLAMA_API_BASE,
+)
 from llm.ollama_llm import OllamaLLM
 
 _FAITH_PROMPT = """You are an evaluator. Rate how well the ANSWER is grounded in the CONTEXT (faithfulness).
@@ -68,6 +74,14 @@ class EvaluationJudge:
         gold_pages: Optional[List[int]] = None,
         sources: Optional[List[Any]] = None,
     ) -> MetricScores:
+        """Score faithfulness, relevancy, and context recall.
+
+        When retrieval is non-empty, the three LLM judge calls run under
+        :class:`~concurrent.futures.ThreadPoolExecutor` with at most
+        ``min(3, EVAL_MAX_CONCURRENCY)`` workers. Each call catches its own
+        failures and returns a neutral score (see ``_call_json_score``), so
+        overlapping work does not leave partially applied side effects.
+        """
         ctx = context if context else ""
         has_sources = bool(sources)
         has_context = bool(ctx.strip())
@@ -77,11 +91,26 @@ class EvaluationJudge:
         # cannot support the gold answer. Avoid letting a noisy LLM judge return
         # arbitrary scores for empty context.
         empty_retrieval = not has_sources and not has_context
-        f = 0.0 if empty_retrieval else self._faithfulness(query, answer, ctx)
-        r = self._relevancy(query, answer)
-        cr = 0.0 if empty_retrieval else self._context_recall(
-            query, gold_answer, ctx, gold_pages, sources
-        )
+        if empty_retrieval:
+            f = 0.0
+            cr = 0.0
+            r = self._relevancy(query, answer)
+        else:
+            workers = max(1, min(3, EVAL_MAX_CONCURRENCY))
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                fut_f = ex.submit(self._faithfulness, query, answer, ctx)
+                fut_r = ex.submit(self._relevancy, query, answer)
+                fut_cr = ex.submit(
+                    self._context_recall,
+                    query,
+                    gold_answer,
+                    ctx,
+                    gold_pages,
+                    sources,
+                )
+                f = fut_f.result()
+                r = fut_r.result()
+                cr = fut_cr.result()
         c = _conciseness(gold_answer, answer)
         return MetricScores(
             faithfulness=f, answer_relevancy=r, context_recall=cr, conciseness=c

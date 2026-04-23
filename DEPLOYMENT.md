@@ -104,6 +104,12 @@ docker-compose up -d
 - Frontend: http://localhost:3000 (or your custom FRONTEND_PORT)
 - Backend API: http://localhost:5000 (or your custom BACKEND_PORT)
 
+## Benchmarking performance (Phase 4)
+
+The evaluation harness (`python -m evaluation.run_benchmark`) can run up to three LLM-as-Judge calls in parallel per question/config when `EVAL_MAX_CONCURRENCY` is greater than `1` (see `python/config/models.py`). Client-side parallelism only helps if the Ollama server can serve that many concurrent generations: set **`OLLAMA_NUM_PARALLEL`** on the Ollama host to at least the same value (how you set it depends on install — e.g. systemd unit `Environment=OLLAMA_NUM_PARALLEL=3` or the equivalent for your platform). If the server stays at parallel `1`, extra client threads mostly queue at Ollama and wall-clock stays near serial.
+
+Raising parallelism increases peak RAM: a rough rule for **gemma3:4b** at Q4_K_M is on the order of **~2.5 GiB × concurrency**; on an 8 GiB machine, `EVAL_MAX_CONCURRENCY=3` may be tight if other services are loaded. Start with `2` and watch `ollama` / system memory before going higher.
+
 ## Troubleshooting
 
 ### Connection Issues

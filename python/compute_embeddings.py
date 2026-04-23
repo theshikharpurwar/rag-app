@@ -291,7 +291,7 @@ def extract_with_docling(pdf_path):
 
 
 # Using process_pdf function name, includes pdf_id argument
-def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
+def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION, reset=False):
     """Process PDF, extract text & images, compute embeddings, store in Qdrant with pdf_id."""
     if not pdf_id:
         logger.error("Missing pdf_id for processing.")
@@ -357,6 +357,42 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION):
             logger.error(f"Error setting up Qdrant collection: {e}", exc_info=True)
             return {"success": False, "error": f"Qdrant collection setup failed: {e}"}
         # --- END CORRECTED Qdrant Check ---
+
+        if reset:
+            pdf_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="pdf_id",
+                        match=models.MatchValue(value=pdf_id),
+                    )
+                ]
+            )
+            if collection_info:
+                try:
+                    pre = client.count(
+                        collection_name=collection_name,
+                        count_filter=pdf_filter,
+                        exact=True,
+                    ).count
+                    if pre > 0:
+                        client.delete(
+                            collection_name=collection_name,
+                            points_selector=models.FilterSelector(filter=pdf_filter),
+                            wait=True,
+                        )
+                        logger.info(
+                            f"[Reset] Deleted {pre} existing points for pdf_id={pdf_id}"
+                        )
+                    else:
+                        logger.info(f"[Reset] No existing points for pdf_id={pdf_id}")
+                except Exception as e:
+                    logger.warning(
+                        f"[Reset] pdf_id-scoped delete failed (continuing): {e}"
+                    )
+            else:
+                logger.info(
+                    "[Reset] Fresh or recreated collection — no pdf_id-scoped delete needed"
+                )
 
         document = fitz.open(pdf_path)
         num_pages = len(document)
@@ -682,6 +718,11 @@ def main():
     parser.add_argument('--pdf_id', required=True, help='MongoDB ID of the PDF document')
     parser.add_argument('--collection_name', default=DEFAULT_COLLECTION, help='Name of the Qdrant collection')
     parser.add_argument('--skip_images', action='store_true', help='Skip processing images to improve speed')
+    parser.add_argument(
+        '--reset',
+        action='store_true',
+        help='Delete existing Qdrant points for this pdf_id before upsert (idempotent re-ingest)',
+    )
     args = parser.parse_args()
 
     # Override global setting if explicitly set in command line
@@ -690,7 +731,9 @@ def main():
         SKIP_IMAGES = True
         logger.info("Image processing disabled via command line flag")
 
-    result = process_pdf(args.pdf_path, args.pdf_id, args.collection_name)
+    result = process_pdf(
+        args.pdf_path, args.pdf_id, args.collection_name, reset=args.reset
+    )
     print(json.dumps(result)) # Output result as JSON for backend
 
 if __name__ == "__main__":

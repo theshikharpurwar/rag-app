@@ -179,7 +179,7 @@ class TestKnowledgeGraph:
     @pytest.fixture
     def sample_sources(self, sample_triples):
         return [
-            {"page": 1, "source": "test.pdf", "chunk_index": 0, "chunk_text_preview": "ML text"}
+            {"page": 1, "source": "test.pdf", "chunk_index": 0, "chunk_text": "ML text"}
         ] * len(sample_triples)
 
     def test_build_graph(self, sample_triples, sample_sources):
@@ -321,9 +321,18 @@ class TestGraphRetriever:
             ("neural network", "used_for", "deep learning"),
         ]
         sources = [
-            {"page": 1, "source": "test.pdf", "chunk_index": 0, "chunk_text_preview": "ML is a subset of AI"},
-            {"page": 1, "source": "test.pdf", "chunk_index": 1, "chunk_text_preview": "DL is a subset of ML"},
-            {"page": 2, "source": "test.pdf", "chunk_index": 2, "chunk_text_preview": "NNs are used for DL"},
+            {
+                "page": 1,
+                "source": "test.pdf",
+                "chunk_index": 0,
+                "chunk_text": (
+                    "ML is a subset of AI. "
+                    "This sentence is intentionally long to ensure graph retrieval keeps full chunk text "
+                    "instead of falling back to a truncated preview."
+                ),
+            },
+            {"page": 1, "source": "test.pdf", "chunk_index": 1, "chunk_text": "DL is a subset of ML"},
+            {"page": 2, "source": "test.pdf", "chunk_index": 2, "chunk_text": "NNs are used for DL"},
         ]
         kg.build_from_triples(triples, sources)
         return kg
@@ -336,6 +345,10 @@ class TestGraphRetriever:
 
         assert len(results) > 0
         assert all(r["retrieval_method"] == "graph" for r in results)
+        assert any(
+            "This sentence is intentionally long to ensure graph retrieval keeps full chunk text" in r["text"]
+            for r in results
+        )
 
     def test_no_match(self, kg_with_data):
         from retrieval.graph_retrieval import GraphRetriever

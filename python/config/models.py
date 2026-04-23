@@ -121,6 +121,7 @@ EVAL_OUTPUT_DIR = _EVAL_OUT if _EVAL_OUT else os.path.join(
 EVAL_OUTPUT_DIR = os.path.normpath(EVAL_OUTPUT_DIR)
 
 EVAL_JUDGE_TEMPERATURE = float(os.environ.get('EVAL_JUDGE_TEMPERATURE', '0.0'))
+# Max concurrent LLM judge calls per benchmark run (faithfulness / relevancy / recall); clamped to 1–3 in judge.
 EVAL_MAX_CONCURRENCY = int(os.environ.get('EVAL_MAX_CONCURRENCY', '1'))
 
 # =============================================================================

@@ -16,6 +16,7 @@ class BenchmarkMeta:
     name: str
     pdf_id: str
     fixture_pdf: str
+    distractor_pdfs: List[str]
     collection_name: str
     description: str = ""
 
@@ -50,11 +51,15 @@ def load_dataset(path: str) -> BenchmarkDataset:
     for key in ("name", "pdf_id", "fixture_pdf"):
         if key not in m or not str(m.get(key, "")).strip():
             raise ValueError(f"meta.{key} is required")
+    raw_distractors = m.get("distractor_pdfs") or []
+    if not isinstance(raw_distractors, list):
+        raise ValueError("meta.distractor_pdfs must be a list when provided")
 
     meta = BenchmarkMeta(
         name=str(m["name"]).strip(),
         pdf_id=str(m["pdf_id"]).strip(),
         fixture_pdf=str(m["fixture_pdf"]).strip(),
+        distractor_pdfs=[str(p).strip() for p in raw_distractors if str(p).strip()],
         collection_name=str(m.get("collection_name") or "documents").strip(),
         description=str(m.get("description") or "").strip(),
     )
@@ -94,3 +99,10 @@ def resolve_fixture_path(dataset: BenchmarkDataset) -> str:
     return os.path.normpath(
         os.path.join(dataset.dataset_dir, dataset.meta.fixture_pdf)
     )
+
+
+def resolve_distractor_paths(dataset: BenchmarkDataset) -> List[str]:
+    return [
+        os.path.normpath(os.path.join(dataset.dataset_dir, rel_path))
+        for rel_path in dataset.meta.distractor_pdfs
+    ]

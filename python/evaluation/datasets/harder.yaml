@@ -1,0 +1,99 @@
+meta:
+  name: harder
+  pdf_id: eval_fixture_acme_harder
+  fixture_pdf: fixture.pdf
+  distractor_pdfs:
+    - ../../test_files/sample.pdf
+  collection_name: documents
+  description: "Harder fixture benchmark with additional question coverage and one distractor PDF ingested into the same collection."
+
+questions:
+  - id: hq01
+    type: keyword
+    question: "What was Acme Corp's total revenue in 2024?"
+    gold_answer: "1.2 million dollars."
+    gold_pages: [1]
+
+  - id: hq02
+    type: numerical
+    question: "What were revenues in 2023 and 2024?"
+    gold_answer: "2023: 0.9 million dollars; 2024: 1.2 million dollars."
+    gold_pages: [1]
+
+  - id: hq03
+    type: keyword
+    question: "Who is the CEO and when were they appointed?"
+    gold_answer: "Jane Doe, appointed in January 2024."
+    gold_pages: [1]
+
+  - id: hq04
+    type: multi_hop
+    question: "Which product launched first in 2024, and what market does Product Beta target?"
+    gold_answer: "Product Alpha launched first in Q1 2024; Product Beta targets the consumer market."
+    gold_pages: [2]
+
+  - id: hq05
+    type: keyword
+    question: "When was Product Beta released?"
+    gold_answer: "Q3 2024."
+    gold_pages: [2]
+
+  - id: hq06
+    type: multi_hop
+    question: "What common technical component do Product Alpha and Product Beta share?"
+    gold_answer: "They share the same core in-house analytics engine."
+    gold_pages: [2]
+
+  - id: hq07
+    type: keyword
+    question: "Who leads Team Red and what is Team Red responsible for?"
+    gold_answer: "Alice Chen leads Team Red, and Team Red is responsible for Product Alpha."
+    gold_pages: [3]
+
+  - id: hq08
+    type: keyword
+    question: "Which team does Bob Martinez work on, and what is that team's focus?"
+    gold_answer: "Bob Martinez works on Team Blue, focused on Product Beta and mobile clients."
+    gold_pages: [3]
+
+  - id: hq09
+    type: multi_hop
+    question: "How do Team Red and Team Blue collaborate?"
+    gold_answer: "They collaborate through a shared API gateway."
+    gold_pages: [3]
+
+  - id: hq10
+    type: broad
+    question: "Summarize the legal and competitive risks described for 2025."
+    gold_answer: "Competition may compress margins in 2025, and a pending supplier-contract legal case (44-XX) is an additional risk."
+    gold_pages: [4]
+
+  - id: hq11
+    type: keyword
+    question: "What is the number of the pending legal case?"
+    gold_answer: "44-XX."
+    gold_pages: [4]
+
+  - id: hq12
+    type: multi_hop
+    question: "Which regions are explicitly monitored by compliance, and where does management plan to expand in 2025?"
+    gold_answer: "Compliance monitors EU and UK regulatory changes, and management plans expansion into the European Union in 2025."
+    gold_pages: [4, 5]
+
+  - id: hq13
+    type: keyword
+    question: "What year does management plan EU expansion?"
+    gold_answer: "2025."
+    gold_pages: [5]
+
+  - id: hq14
+    type: broad
+    question: "Give a compact summary of Acme's 2024 position across finance, products, and organization."
+    gold_answer: "Acme grew revenue to 1.2M, launched Alpha and Beta, and operated with Carol Smith leading engineering while Team Red and Team Blue coordinated through a shared gateway."
+    gold_pages: [1, 2, 3]
+
+  - id: hq15
+    type: keyword
+    question: "What is the title of Carol Smith?"
+    gold_answer: "Vice President of Engineering."
+    gold_pages: [3]

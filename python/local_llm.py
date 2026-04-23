@@ -303,6 +303,18 @@ def format_context_for_llm(results):
 def estimate_tokens(text):
     return len(text.split())  # Basic token estimate
 
+
+_LEADING_LIST_MARKER_RE = re.compile(r"^\s*(?:\d+\.|[-*\u2022])\s+")
+
+
+def _strip_leading_list_marker(text: str) -> str:
+    stripped = text.lstrip()
+    lines = [ln for ln in stripped.splitlines() if ln.strip()]
+    if len(lines) <= 1 or not any(_LEADING_LIST_MARKER_RE.match(ln) for ln in lines[1:]):
+        return _LEADING_LIST_MARKER_RE.sub("", stripped, count=1)
+    return text
+
+
 def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
     """Generates a response using the LLM /api/chat with structured message roles."""
     if not llm:
@@ -326,7 +338,9 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
         "role": "system",
         "content": (
             "You are a helpful assistant that answers questions about documents. "
-            "Answer only from the provided document extracts. Be concise and accurate.\n\n"
+            "Answer only from the provided document extracts. Be concise and accurate. "
+            "Reply in plain prose — do not begin the answer with a numbered list marker "
+            "(for example '1.') or a bullet ('-', '*'), and do not wrap a single fact in a list.\n\n"
             f"Document extracts:\n{context_str}"
         )
     })
@@ -370,6 +384,7 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
         response = re.sub(r'^(ANSWER:?|Answer:?)\s*', '', response, flags=re.IGNORECASE)
         response = re.sub(r'User:.*$', '', response, flags=re.DOTALL).strip()
         response = re.sub(r'Human:.*$', '', response, flags=re.DOTALL).strip()
+        response = _strip_leading_list_marker(response)
         return response.strip()
 
     except Exception as e:

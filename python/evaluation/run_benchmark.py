@@ -29,13 +29,15 @@ from config import (
     EVAL_OUTPUT_DIR,
 )
 
-from .dataset import load_dataset, resolve_fixture_path
+from .dataset import load_dataset, resolve_distractor_paths, resolve_fixture_path
 from .judge import EvaluationJudge
 from .report import PerQuestionResult, write_reports
 from .runner import run_one
 
 
-def _ingest_fixture(pdf_path: str, pdf_id: str, collection_name: str) -> None:
+def _ingest_fixture(
+    pdf_path: str, pdf_id: str, collection_name: str, reset: bool = False
+) -> None:
     script = os.path.join(_PARDIR, "compute_embeddings.py")
     if not os.path.isfile(script):
         print(f"compute_embeddings.py not found at {script}", file=sys.stderr)
@@ -50,6 +52,8 @@ def _ingest_fixture(pdf_path: str, pdf_id: str, collection_name: str) -> None:
         "--collection_name",
         collection_name,
     ]
+    if reset:
+        cmd.append("--reset")
     print(f"[Eval] Ingest: {' '.join(cmd)}", file=sys.stderr)
     proc = subprocess.run(
         cmd,
@@ -92,6 +96,20 @@ def _parse_configs(s: str) -> list:
     return parts
 
 
+def _distractor_pdf_id(primary_pdf_id: str, distractor_path: str, idx: int) -> str:
+    stem = os.path.splitext(os.path.basename(distractor_path))[0]
+    safe_stem = "".join(ch if ch.isalnum() or ch in ("_", "-") else "_" for ch in stem)
+    return f"{primary_pdf_id}__distractor_{idx}_{safe_stem}"
+
+
+def _iter_ingest_targets(dataset) -> list[tuple[str, str]]:
+    fixture = resolve_fixture_path(dataset)
+    targets = [(fixture, dataset.meta.pdf_id)]
+    for idx, distractor_path in enumerate(resolve_distractor_paths(dataset), start=1):
+        targets.append((distractor_path, _distractor_pdf_id(dataset.meta.pdf_id, distractor_path, idx)))
+    return targets
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Phase 4 evaluation benchmark")
     parser.add_argument(
@@ -117,13 +135,21 @@ def main() -> None:
         action="store_true",
         help="Do not re-run compute_embeddings (assume pdf_id already in Qdrant)",
     )
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help=(
+            "Pass --reset to compute_embeddings (pdf_id-scoped delete before upsert; "
+            "idempotent re-ingest)"
+        ),
+    )
     args = parser.parse_args()
 
-    if EVAL_MAX_CONCURRENCY != 1:
-        print(
-            f"[Eval] EVAL_MAX_CONCURRENCY={EVAL_MAX_CONCURRENCY} (only 1 is used for now)",
-            file=sys.stderr,
-        )
+    print(
+        f"[Eval] EVAL_MAX_CONCURRENCY={EVAL_MAX_CONCURRENCY} "
+        "(parallel LLM judge calls per run; question/config loop stays serial)",
+        file=sys.stderr,
+    )
 
     ds_path = os.path.abspath(args.dataset)
     if not os.path.isfile(ds_path):
@@ -131,17 +157,20 @@ def main() -> None:
         sys.exit(1)
 
     dataset = load_dataset(ds_path)
-    fixture = resolve_fixture_path(dataset)
-    if not os.path.isfile(fixture):
-        print(f"Fixture PDF not found: {fixture}", file=sys.stderr)
-        sys.exit(1)
+    ingest_targets = _iter_ingest_targets(dataset)
+    for path, _ in ingest_targets:
+        if not os.path.isfile(path):
+            print(f"Fixture PDF not found: {path}", file=sys.stderr)
+            sys.exit(1)
 
     if not args.skip_ingest:
-        _ingest_fixture(
-            fixture,
-            dataset.meta.pdf_id,
-            dataset.meta.collection_name or DEFAULT_COLLECTION,
-        )
+        for target_path, target_pdf_id in ingest_targets:
+            _ingest_fixture(
+                target_path,
+                target_pdf_id,
+                dataset.meta.collection_name or DEFAULT_COLLECTION,
+                reset=args.reset,
+            )
 
     local_llm.init_runtime()
     if not local_llm.embedder or not local_llm.llm:

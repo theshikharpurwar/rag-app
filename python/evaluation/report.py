@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 import statistics
+import warnings
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+
+import numpy as np
 
 from .dataset import BenchmarkMeta
 
@@ -45,6 +48,78 @@ def _avg_score(r: PerQuestionResult) -> float:
     return sum(vals) / max(1, len(vals))
 
 
+def _paired_metric_vectors(
+    by_q: Dict[str, Dict[str, PerQuestionResult]],
+    cfg_a: str,
+    cfg_b: str,
+    metric: str,
+) -> tuple[list[float], list[float]]:
+    a_vals: list[float] = []
+    b_vals: list[float] = []
+    for qid in sorted(by_q.keys()):
+        mp = by_q[qid]
+        if cfg_a not in mp or cfg_b not in mp:
+            continue
+        a_vals.append(float(mp[cfg_a].scores.get(metric, 0.0)))
+        b_vals.append(float(mp[cfg_b].scores.get(metric, 0.0)))
+    return a_vals, b_vals
+
+
+def _wilcoxon_pvalue_and_statistic(
+    a_vals: list[float], b_vals: list[float]
+) -> tuple[float, float]:
+    if len(a_vals) < 2:
+        return 1.0, 0.0
+    try:
+        from scipy.stats import wilcoxon
+    except Exception:
+        return 1.0, 0.0
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            res = wilcoxon(
+                np.array(b_vals, dtype=float),
+                np.array(a_vals, dtype=float),
+                zero_method="wilcox",
+                alternative="two-sided",
+            )
+    except ValueError:
+        return 1.0, 0.0
+    p_value = float(res.pvalue)
+    statistic = float(res.statistic)
+    if not np.isfinite(p_value) or not np.isfinite(statistic):
+        return 1.0, 0.0
+    return p_value, statistic
+
+
+def _bootstrap_mean_ci(deltas: list[float]) -> tuple[float, float]:
+    if len(deltas) < 2:
+        d = float(deltas[0]) if deltas else 0.0
+        return d, d
+    if all(abs(x - deltas[0]) < 1e-12 for x in deltas):
+        d = float(deltas[0])
+        return d, d
+    try:
+        from scipy.stats import bootstrap
+    except Exception:
+        mean = float(np.mean(np.array(deltas, dtype=float)))
+        return mean, mean
+    arr = np.array(deltas, dtype=float)
+    try:
+        ci = bootstrap(
+            (arr,),
+            np.mean,
+            n_resamples=1000,
+            confidence_level=0.95,
+            method="BCa",
+            random_state=42,
+        ).confidence_interval
+    except Exception:
+        mean = float(np.mean(arr))
+        return mean, mean
+    return float(ci.low), float(ci.high)
+
+
 def build_summary(
     results: List[PerQuestionResult],
 ) -> Dict[str, Any]:
@@ -64,13 +139,14 @@ def build_summary(
         out["configs"][cfg] = {"metrics": per_m, "n": len(rows)}
 
     wins: Dict[str, Any] = {}
+    by_q: Dict[str, Dict[str, PerQuestionResult]] = {}
     cfgs = sorted(by_cfg.keys())
+    for r in results:
+        by_q.setdefault(r.question_id, {})[r.config] = r
+
     if len(cfgs) == 2:
         a, b = cfgs[0], cfgs[1]
         out["win_rate"] = {a: 0, b: 0, "tie": 0}
-        by_q: Dict[str, Dict[str, PerQuestionResult]] = {}
-        for r in results:
-            by_q.setdefault(r.question_id, {})[r.config] = r
         for _qid, mp in by_q.items():
             if a not in mp or b not in mp:
                 continue
@@ -87,6 +163,48 @@ def build_summary(
                 out["win_rate"][b] += 1
                 w = b
             wins[_qid] = {"winner": w, a: s1, b: s2}
+
+        small_n_threshold = 20
+        significance: Dict[str, Any] = {}
+        paired_counts: list[int] = []
+        for metric in metrics:
+            a_vals, b_vals = _paired_metric_vectors(by_q, a, b, metric)
+            n_paired = len(a_vals)
+            paired_counts.append(n_paired)
+            deltas = [bv - av for av, bv in zip(a_vals, b_vals)]
+            delta = float(np.mean(np.array(deltas, dtype=float))) if deltas else 0.0
+            p_value, statistic = _wilcoxon_pvalue_and_statistic(a_vals, b_vals)
+            ci_low, ci_high = _bootstrap_mean_ci(deltas)
+
+            effect = "equal"
+            if delta > 1e-9:
+                effect = f"{b}_higher"
+            elif delta < -1e-9:
+                effect = f"{a}_higher"
+
+            if abs(delta) < 1e-9:
+                verdict = "tie"
+            elif p_value < 0.05 and n_paired >= small_n_threshold:
+                verdict = "significant"
+            else:
+                verdict = "directional"
+
+            significance[metric] = {
+                "n_paired": n_paired,
+                "delta": delta,
+                "p_value": p_value,
+                "statistic": statistic,
+                "ci_low": ci_low,
+                "ci_high": ci_high,
+                "verdict": verdict,
+                "effect": effect,
+            }
+        out["significance"] = significance
+        out["significance_meta"] = {
+            "n_paired_min": min(paired_counts) if paired_counts else 0,
+            "small_n_threshold": small_n_threshold,
+            "pair": {"a": a, "b": b},
+        }
     out["wins_by_question"] = wins
     return out
 
@@ -124,6 +242,34 @@ def render_markdown(
         lines.append("")
         for k, v in wr.items():
             lines.append(f"- **{k}:** {v}")
+        lines.append("")
+
+    significance = summary.get("significance")
+    if significance:
+        meta_sig = summary.get("significance_meta", {})
+        pair = meta_sig.get("pair", {})
+        a = pair.get("a", "config_a")
+        b = pair.get("b", "config_b")
+        lines.append("## Statistical significance (paired Wilcoxon, bootstrap 95% CI)")
+        lines.append("")
+        if int(meta_sig.get("n_paired_min", 0)) < int(
+            meta_sig.get("small_n_threshold", 20)
+        ):
+            lines.append(
+                "_Sample size is below 20 paired questions; treat p-values as "
+                "**directional** evidence._"
+            )
+            lines.append("")
+        lines.append(f"| Metric | Δ ({b} - {a}) | 95% CI (BCa) | p (Wilcoxon) | Verdict |")
+        lines.append("|--------|----------------|--------------|--------------|---------|")
+        for metric, stat in significance.items():
+            lines.append(
+                f"| {metric} | "
+                f"{stat.get('delta', 0.0):+.3f} | "
+                f"[{stat.get('ci_low', 0.0):+.3f}, {stat.get('ci_high', 0.0):+.3f}] | "
+                f"{stat.get('p_value', 1.0):.3f} | "
+                f"{stat.get('verdict', 'directional')} |"
+            )
         lines.append("")
 
     lines.append("## Sample Q&A (up to 3 per config)")

@@ -36,15 +36,15 @@ Keep this table in sync with [README_v2.md](README_v2.md) when a phase changes.
 
 **Phase 4 baseline shipped.** LLM-as-Judge, naive-vs-neuro-symbolic runner, and Markdown + JSON reports are live in [python/evaluation/](python/evaluation/); first artifact is [python/evaluation/reports/20260422T114922Z_report.md](python/evaluation/reports/20260422T114922Z_report.md). Work queued for the next contributor is explicitly grouped as **Tier 2 / Tier 3 future plans** — see the full table in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
 
-**Tier 2 — close Phase 4 scope (top two are ½-day fixes; start there):**
-- **2.5 Graph retrieval full chunk text** — `python/retrieval/graph_retrieval.py:196` emits `chunk_text_preview` (100 chars) as the RRF `text` payload; swap to full chunk text. Highest impact-per-effort in the list.
-- **2.6 Align eval neurosymbolic config with prod** — `python/evaluation/runner.py:104–125` always enables decomposition + RAG-Fusion; `python/local_llm.py` respects `ENABLE_DECOMPOSITION=false` by default. Benchmark is not measuring deployed behaviour.
-- **2.1 KG visualisation** — `python/evaluation/visualize_kg.py --pdf_id` via pyvis + networkx; only remaining Phase 4 scope item.
-- **2.3 Prompt-artifact cleanup** — neurosymbolic path leaks markdown list markers (`"1. 2 million dollars"` on q01); fix in [python/agent/prompts.py](python/agent/prompts.py) or `generate_rag_response` system prompt.
-- **2.4 Ingest idempotency** — `compute_embeddings.py --reset` that scrolls + deletes by `pdf_id` before upsert. Point IDs are `str(uuid.uuid4())` at `compute_embeddings.py:612, 668`, so re-ingest silently duplicates every chunk.
-- **2.2 Harder fixtures + distractor PDFs** *(1–2 days)* — 30–50 page PDF with 10–20 hand-authored Qs; current 5-page fixture makes `context_recall=1.000` structural.
+**Tier 2 — close Phase 4 scope (2.1–2.6 complete):**
+- **2.1 KG visualisation** — ✅ completed via `python/evaluation/visualize_kg.py --pdf_id ...` (pyvis HTML + networkx/matplotlib PNG outputs).
+- **2.2 Harder fixtures + distractor PDFs** — ✅ completed via `python/evaluation/datasets/harder.yaml` (15 curated questions) and benchmark ingest support for optional `distractor_pdfs` into the same collection.
+- **2.3 Prompt-artifact cleanup** — ✅ completed (plain-prose system prompt + `_strip_leading_list_marker` in [python/local_llm.py](python/local_llm.py) `generate_rag_response`).
+- **2.4 Ingest idempotency** — ✅ completed (`compute_embeddings.py --reset` deletes existing Qdrant points for the `pdf_id` before upsert; `evaluation/run_benchmark.py --reset` now forwards that flag during fixture ingest. Backend `/upload` still omits `--reset` — wire in a follow-up for UI re-upload idempotency).
+- **2.5 Graph retrieval full chunk text** — ✅ completed (`chunk_text` now used in graph retrieval with `chunk_text_preview` fallback for legacy graph files).
+- **2.6 Align eval neurosymbolic config with prod** — ✅ completed (evaluation `neurosymbolic` now respects `ENABLE_DECOMPOSITION`, and trace records the effective flag).
 
-**Tier 3 — scale & research depth (multi-day):** parallel judge calls (3.1 — wire `EVAL_MAX_CONCURRENCY`), ablation CLI (3.2), statistical significance (3.3 — paired Wilcoxon + CIs), Adaptive-RAG router (3.4 — no web-tool target), DBSF/LTR fusion (3.5), cross-encoder reranker default-on (3.6a) → ColBERT-v2 for large topM (3.6b), Ollama `num_parallel` + `num_batch` + flash-attention tuning (3.7 — do **not** enable `OLLAMA_KV_CACHE_TYPE` on gemma3 pre-0.12.5 per [upstream #9683](https://github.com/ollama/ollama/issues/9683)), GraphRAG community summaries + global search (3.8), batch ingest `/api/embed` (3.9). Rationale, research citations, and done-criteria live in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
+**Tier 3 — scale & research depth (multi-day):** **3.1 parallel judge calls** — ✅ `EVAL_MAX_CONCURRENCY` wires up to three concurrent LLM judge calls per run in [python/evaluation/judge.py](python/evaluation/judge.py) (`ThreadPoolExecutor`); set `OLLAMA_NUM_PARALLEL` on the server for real speedup (see [DEPLOYMENT.md](DEPLOYMENT.md)). **3.3 statistical significance** — ✅ paired Wilcoxon + BCa bootstrap 95% CIs now render in [python/evaluation/report.py](python/evaluation/report.py), with `n < 20` automatically flagged as directional. Remaining: ablation CLI (3.2), Adaptive-RAG router (3.4 — no web-tool target), DBSF/LTR fusion (3.5), cross-encoder reranker default-on (3.6a) → ColBERT-v2 for large topM (3.6b), Ollama `num_parallel` + `num_batch` + flash-attention tuning (3.7 — do **not** enable `OLLAMA_KV_CACHE_TYPE` on gemma3 pre-0.12.5 per [upstream #9683](https://github.com/ollama/ollama/issues/9683)), GraphRAG community summaries + global search (3.8), batch ingest `/api/embed` (3.9). Rationale, research citations, and done-criteria live in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
 
 Agent stack (see §2): [python/agent/](python/agent/) — `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`. Wired in [python/local_llm.py](python/local_llm.py) `main()`: when `ENABLE_AGENT=true`, `AgenticRAG.run(...)` replaces the single-shot generate path; when `ENABLE_DECOMPOSITION=true` as well, complex queries are decomposed and retrieved per sub-query, then RRF-merged. JSON payload shape (`{answer, sources}`) is unchanged.
 
@@ -60,7 +60,7 @@ Active env vars (all in [python/config/models.py](python/config/models.py)):
 - `JUDGE_LLM_MODEL` — str, default same as `LLM_MODEL`. LLM-as-Judge for Phase 4 metrics.
 - `EVAL_OUTPUT_DIR` — path, default `python/evaluation/reports` (from config file location if unset).
 - `EVAL_JUDGE_TEMPERATURE` — float, default `0.0`. Judge calls use this temperature.
-- `EVAL_MAX_CONCURRENCY` — int, default `1` (reserved; benchmark runs serially).
+- `EVAL_MAX_CONCURRENCY` — int, default `1`. Caps concurrent Phase 4 judge LLM calls per run (`min(3, value)`); question/config loop stays serial. Raise only if Ollama can serve parallel generations (`OLLAMA_NUM_PARALLEL`); see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
@@ -128,7 +128,7 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 | `JUDGE_LLM_MODEL` | same as `LLM_MODEL` | Ollama model for Phase 4 LLM-as-Judge |
 | `EVAL_OUTPUT_DIR` | `python/evaluation/reports` (from package path) | Where benchmark JSON + markdown are written |
 | `EVAL_JUDGE_TEMPERATURE` | `0.0` | Judge sampling temperature |
-| `EVAL_MAX_CONCURRENCY` | `1` | Placeholder; benchmarks run one question at a time |
+| `EVAL_MAX_CONCURRENCY` | `1` | Max concurrent judge LLM calls per run (1–3); benchmark loop over questions/configs stays serial |
 
 ---
 

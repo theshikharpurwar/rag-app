@@ -611,3 +611,32 @@ class TestAgenticRAG_Decomposition:
         rewrite_calls = [c for c in llm.calls if c["kind"] == "rewrite"]
         assert len(rewrite_calls) == 1
         assert "original question" in rewrite_calls[0]["prompt"]
+
+
+# =============================================================================
+# RAG response post-processing (Tier 2.3)
+# =============================================================================
+
+
+class TestStripLeadingListMarker:
+    def test_numbered_single_item(self):
+        from local_llm import _strip_leading_list_marker
+
+        assert _strip_leading_list_marker("1.  2 million dollars.") == "2 million dollars."
+
+    def test_bullet_single_item(self):
+        from local_llm import _strip_leading_list_marker
+
+        assert _strip_leading_list_marker("- Jane Doe") == "Jane Doe"
+
+    def test_multi_item_list_unchanged(self):
+        from local_llm import _strip_leading_list_marker
+
+        text = "1. item one\n2. item two"
+        assert _strip_leading_list_marker(text) == text
+
+    def test_plain_prose_unchanged(self):
+        from local_llm import _strip_leading_list_marker
+
+        text = "plain prose answer."
+        assert _strip_leading_list_marker(text) == text

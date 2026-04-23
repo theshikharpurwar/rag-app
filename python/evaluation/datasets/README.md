@@ -7,6 +7,8 @@ meta:
   name: <string>              # dataset id for reports
   pdf_id: <string>            # stored in Qdrant payload + BM25/KG files under INDICES_DIR
   fixture_pdf: <filename>     # path relative to this directory
+  distractor_pdfs:            # optional; additional PDFs ingested into same collection
+    - <filename_or_relpath>
   collection_name: documents  # optional; Qdrant collection (default: documents)
   description: <string>
 

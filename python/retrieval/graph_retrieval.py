@@ -193,7 +193,7 @@ class GraphRetriever:
                 else:
                     chunk_scores[chunk_key] = {
                         "score": entity_score,
-                        "text": source.get("chunk_text_preview", ""),
+                        "text": source.get("chunk_text") or source.get("chunk_text_preview", ""),
                         "page": source.get("page", "N/A"),
                         "source": source.get("source", "Unknown"),
                         "chunk_index": source.get("chunk_index", 0),

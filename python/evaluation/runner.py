@@ -20,6 +20,7 @@ from config import (
     AGENT_MAX_RETRIES,
     AGENT_ROUTER_WEIGHT_BOOST,
     CONTEXT_RETRIEVAL_LIMIT,
+    ENABLE_DECOMPOSITION,
     VECTOR_WEIGHT,
     BM25_WEIGHT,
     GRAPH_WEIGHT,
@@ -101,16 +102,19 @@ def _run_neurosymbolic(
         raise RuntimeError("local_llm.llm is not initialised; call init_runtime() first")
 
     retrieve_fn, _ = make_retrieve_pipeline(pdf_id, collection_name)
-    decomposer = QueryDecomposer(
-        llm,
-        max_subqueries=AGENT_DECOMP_MAX_SUBQUERIES,
-        min_words=AGENT_DECOMP_MIN_WORDS,
-    )
-    fusion = RAGFusion(
-        retrieve_fn,
-        rrf_k=AGENT_FUSION_RRF_K,
-        top_k=CONTEXT_RETRIEVAL_LIMIT,
-    )
+    decomposer = None
+    fusion = None
+    if ENABLE_DECOMPOSITION:
+        decomposer = QueryDecomposer(
+            llm,
+            max_subqueries=AGENT_DECOMP_MAX_SUBQUERIES,
+            min_words=AGENT_DECOMP_MIN_WORDS,
+        )
+        fusion = RAGFusion(
+            retrieve_fn,
+            rrf_k=AGENT_FUSION_RRF_K,
+            top_k=CONTEXT_RETRIEVAL_LIMIT,
+        )
     base_weights = _base_weights()
     agent = AgenticRAG(
         llm=llm,
@@ -130,5 +134,5 @@ def _run_neurosymbolic(
         answer=ar.answer,
         sources=ar.sources,
         context_for_judge=context_str,
-        trace=ar.trace,
+        trace={**ar.trace, "decomposition_enabled": ENABLE_DECOMPOSITION},
     )

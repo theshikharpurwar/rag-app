@@ -253,7 +253,7 @@ RESPONSE (JSON array only, no markdown, no explanation):"""
                     "page": best_source.get("page", "N/A"),
                     "source": best_source.get("source", "Unknown"),
                     "chunk_index": best_source.get("chunk_index", 0),
-                    "chunk_text_preview": best_source.get("text", "")[:100],
+                    "chunk_text": best_source.get("text", ""),
                 })
 
         # Deduplicate identical triples (keep first occurrence)
