@@ -62,6 +62,12 @@ class AgenticRAG:
         route = self.router.classify(original_query)
         weights = self.router.adjust_weights(route, *self.base_weights)
 
+        decomposer = self.decomposer
+        fusion = self.fusion
+        if route == "multi_hop" and decomposer is None:
+            decomposer = QueryDecomposer(self.llm)
+            fusion = RAGFusion(self.retrieve_fn)
+
         attempts = []
         current_query = original_query
         last_answer = ""
@@ -71,10 +77,10 @@ class AgenticRAG:
         # Total attempts = 1 (initial) + max_retries
         for attempt_idx in range(self.max_retries + 1):
             sub_trace: List[str] = []
-            if self.decomposer and self.fusion:
-                sub_queries = self.decomposer.decompose(current_query)
+            if decomposer and fusion:
+                sub_queries = decomposer.decompose(current_query)
                 if len(sub_queries) > 1:
-                    context_str, sources = self.fusion.retrieve(sub_queries, weights, route)
+                    context_str, sources = fusion.retrieve(sub_queries, weights, route)
                     sub_trace = list(sub_queries)
                 else:
                     context_str, sources = self.retrieve_fn(current_query, weights, route)
@@ -125,6 +131,7 @@ class AgenticRAG:
 
         trace = {
             "route": route,
+            "auto_decompose": route == "multi_hop" and self.decomposer is None,
             "weights": list(weights),
             "attempts": attempts,
             "retries_used": max(0, len(attempts) - 1),

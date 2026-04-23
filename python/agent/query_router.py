@@ -1,10 +1,7 @@
 """
-Query router: classifies a user query as "specific" (keyword-heavy) or
-"broad" (relationship/summary) and produces adjusted RRF weights that
-softly bias retrieval towards the better-suited path.
-
-The bias is a *soft nudge* (default 0.15): a misclassification still
-leaves all three retrieval paths (vector / BM25 / graph) contributing.
+Query router: classifies a user query as specific, broad, or multi_hop
+and produces adjusted RRF weights (multi_hop keeps weights balanced;
+decomposition supplies breadth when enabled or auto-triggered).
 """
 
 import logging
@@ -15,7 +12,7 @@ from .prompts import ROUTER_PROMPT
 
 logger = logging.getLogger(__name__)
 
-Route = Literal["specific", "broad"]
+Route = Literal["specific", "broad", "multi_hop"]
 
 
 class QueryRouter:
@@ -31,23 +28,24 @@ class QueryRouter:
         self.weight_boost = float(weight_boost)
 
     def classify(self, query: str) -> Route:
-        """Return 'specific' or 'broad'. Falls back to 'broad' on any failure."""
+        """Return 'specific', 'broad', or 'multi_hop'. Falls back to 'broad' on failure."""
         prompt = ROUTER_PROMPT.format(query=query)
         try:
             raw = self.llm.generate_response(
-                prompt=prompt, temperature=0.1, max_tokens=8
+                prompt=prompt, temperature=0.1, max_tokens=12
             )
         except Exception as e:
             print(f"[Agent] router LLM call failed: {e}", file=sys.stderr)
             return "broad"
 
         token = (raw or "").strip().upper()
-        # Take first non-empty token, strip punctuation
         first = token.split()[0] if token.split() else ""
         first = first.strip(".,:;!?-_\"'`")
 
         if first.startswith("SPECIFIC"):
             return "specific"
+        if first.startswith("MULTI"):
+            return "multi_hop"
         if first.startswith("BROAD"):
             return "broad"
 
@@ -62,13 +60,17 @@ class QueryRouter:
         graph_w: float,
     ) -> Tuple[float, float, float]:
         """
-        Shift `weight_boost` from one path to another based on route, then
-        renormalize so the three weights sum to the same total as the input.
+        Shift weight_boost between paths based on route, then renormalize.
 
-        - specific: shift from graph -> bm25
-        - broad:    shift from bm25  -> graph
+        - specific:  shift from graph -> bm25
+        - broad:     shift from bm25  -> graph
+        - multi_hop: no shift (decomposition provides breadth)
         """
         v, b, g = float(vector_w), float(bm25_w), float(graph_w)
+
+        if route == "multi_hop":
+            return v, b, g
+
         shift = self.weight_boost
 
         if route == "specific":

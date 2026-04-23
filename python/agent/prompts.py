@@ -5,22 +5,31 @@ Kept in a dedicated module so prompt-engineering lives in one place,
 separate from the orchestration logic.
 """
 
-ROUTER_PROMPT = """You classify a user question into one of two retrieval strategies.
+ROUTER_PROMPT = """You classify a user question into one of three retrieval strategies.
 
 Return EXACTLY one token, no punctuation, no explanation:
 
-- SPECIFIC — the question asks for a concrete fact, name, number, date, quotation,
-  definition, or a single entity's attribute. BM25 keyword matching will help most.
-- BROAD   — the question asks for a summary, comparison, relationship between
-  concepts, multi-hop reasoning, or an overview. Graph traversal will help most.
+- SPECIFIC  — the question asks for a concrete fact, name, number, date,
+  quotation, definition, or a single entity's attribute.
+  BM25 keyword matching will help most.
+- BROAD     — the question asks for a summary, overview, theme,
+  or general description of a topic.
+  Graph traversal and community context will help most.
+- MULTI_HOP — the question compares two or more things, asks about
+  relationships across different sections, contains connectives like
+  "and"/"vs"/"compare"/"both"/"relationship between", or requires
+  connecting information from multiple places in the document.
+  Query decomposition will help most.
 
 Examples:
 Q: "What year was the company founded?"          -> SPECIFIC
 Q: "Who is the CEO?"                             -> SPECIFIC
-Q: "How do the chapters relate to each other?"   -> BROAD
-Q: "Summarize the author's main argument."       -> BROAD
 Q: "What does section 3.2 say about latency?"    -> SPECIFIC
-Q: "Compare the two proposed architectures."     -> BROAD
+Q: "Summarize the author's main argument."       -> BROAD
+Q: "What are the key themes of the document?"    -> BROAD
+Q: "How do the chapters relate to each other?"   -> MULTI_HOP
+Q: "Compare the two proposed architectures."     -> MULTI_HOP
+Q: "What is the relationship between X and Y?"   -> MULTI_HOP
 
 Question: {query}
 Answer:"""

@@ -45,7 +45,7 @@ class ScriptedLLM:
     def _classify_prompt(self, prompt):
         if "You break a complex question" in prompt:
             return "decompose"
-        if "SPECIFIC" in prompt and "BROAD" in prompt and "Question:" in prompt:
+        if "SPECIFIC" in prompt and "MULTI_HOP" in prompt and "Question:" in prompt:
             return "router"
         if "JSON:" in prompt and '"score"' in prompt:
             return "grader"

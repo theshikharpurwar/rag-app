@@ -137,13 +137,13 @@ Shipped behind `ENABLE_AGENT=true` (default `false`, so Phase 2 behaviour is pre
 
 | Component | Status | Description |
 |---|---|---|
-| Query Router | ✅ Implemented | `QueryRouter` classifies queries as "Specific" (→ bias BM25) vs "Broad" (→ bias graph), softly renormalising RRF weights |
+| Query Router | ✅ Implemented | `QueryRouter` 3-way: **Specific** (→ bias BM25), **Broad** (→ bias graph / community context), **Multi-hop** (balanced RRF weights; auto decomposition + RAG-Fusion for that query even when `ENABLE_DECOMPOSITION=false`, see `trace.auto_decompose`) |
 | Hallucination Grader | ✅ Implemented | `AnswerGrader` returns 0.0–1.0 faithfulness+relevance score; parse failures safely default to pass |
 | Self-Correction Loop | ✅ Implemented | `AgenticRAG.run()` orchestrates route → retrieve → generate → grade → rewrite → retry (capped by `AGENT_MAX_RETRIES`); rewrite prompt anchors the **original** user question |
 | Query Decomposition | ✅ Implemented | `QueryDecomposer` breaks complex questions into sub-queries (heuristic skip for short/simple queries) |
 | RAG-Fusion | ✅ Implemented | `RAGFusion` calls `retrieve_fn` per sub-query and RRF-merges chunk lists (Shi et al., 2024) |
 
-Implementation: [python/agent/](python/agent/). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py). Wired into [python/local_llm.py](python/local_llm.py) `main()` behind `ENABLE_AGENT` / `ENABLE_DECOMPOSITION`.
+Implementation: [python/agent/](python/agent/). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py), [python/tests/test_phase9_adaptive_router.py](python/tests/test_phase9_adaptive_router.py). Wired into [python/local_llm.py](python/local_llm.py) `main()` behind `ENABLE_AGENT` / `ENABLE_DECOMPOSITION`.
 
 ### Phase 4: Evaluation harness (baseline shipped — KG visualisation pending)
 
@@ -482,7 +482,7 @@ Where `α` controls the weight between vector similarity (neural) and graph trav
 ### 4. Agentic Self-Correction Loop
 
 A state machine that implements:
-- **Query Classification**: Routes to optimal retrieval strategy (specific → vector, broad → graph).
+- **Query Classification**: 3-way routing — specific (BM25 bias), broad (graph bias), multi-hop (balanced fusion + optional auto decomposition).
 - **Hallucination Detection**: Post-generation check for citation grounding.
 - **Adaptive Retry**: Query rewriting with alternative strategies on failure.
 
@@ -533,7 +533,7 @@ Phase 2: Hybrid Retrieval ██████████████████
 └─ Hybrid pipeline with graceful degradation  ✅
 
 Phase 3: Agentic Layer ████████████████████████████████ 100%
-├─ Query router (specific vs broad)           ✅
+├─ Query router (specific / broad / multi_hop) ✅
 ├─ Hallucination grader                       ✅
 ├─ Self-correction loop (retry + rewrite)     ✅
 ├─ Query decomposition                        ✅
@@ -558,7 +558,7 @@ Phase 5: Optimization & Depth (planned) ░░░░░░░░░░░░░�
    ├─ 3.1  Parallel judge calls (EVAL_MAX_CONCURRENCY wiring)  ✅
    ├─ 3.2  Ablation CLI (vector / +BM25 / +KG / +agent / +decomp) 🔲
    ├─ 3.3  Statistical significance (paired Wilcoxon, CIs)     ✅
-   ├─ 3.4  Adaptive RAG router (complexity-aware path)         🔲
+   ├─ 3.4  Adaptive RAG router (complexity-aware path)         ✅
    ├─ 3.5  Learned fusion or DBSF alternative to RRF           🔲
    ├─ 3.6a Cross-encoder reranker default-on (bge-reranker-v2-m3) ✅
    ├─ 3.6b Late-interaction reranker for large topM (ColBERT-v2) 🔲
@@ -593,7 +593,7 @@ Ordered by expected impact-per-day. Top two are ½-day bug / correctness fixes a
 | 3.1 | **Parallel judge calls** — ✅ `EVAL_MAX_CONCURRENCY` runs the 3 LLM judge calls (faithfulness / relevancy / recall) concurrently via `ThreadPoolExecutor` in `evaluation/judge.py` (default `1` = serial). | Biggest wall-clock lever for the judge phase; real speedup needs Ollama `OLLAMA_NUM_PARALLEL` ≥ concurrency (see `DEPLOYMENT.md`). | ✅ Implemented with tests; measure end-to-end benchmark with server parallelism tuned. |
 | 3.2 | **Ablation CLI** — `--ablation` flag that runs the same dataset across ≥ 4 configurations (vector-only / +BM25 / +BM25+KG / +agent / +agent+decomp) and emits a per-component contribution table | Single most defensible artifact for the provisional patent and for any academic write-up. | One `ablation.md` / `ablation.json` report with per-component deltas on a ≥ 20-question dataset. |
 | 3.3 | **Statistical significance** — ✅ paired Wilcoxon signed-rank tests + bootstrap 95% CIs on per-question metric deltas now computed in `evaluation/report.py`; n < 20 is flagged as directional | Converts raw win counts into interpretable evidence and prevents over-claiming on small fixtures. | ✅ Report summary now includes per-metric Δ, CI, p-value, and `significant / directional / tie` verdicts. |
-| 3.4 | **Adaptive RAG router** — extend the current specific/broad router to a CRAG-style / Adaptive-RAG classifier that routes by *complexity*: no-retrieval (parametric) / single-pass / multi-hop. A web-search path is out of scope until a web tool exists | 2025–26 agentic RAG (CRAG, Self-RAG, Adaptive-RAG) all converge on complexity routing; saves tokens and typically improves accuracy. | Router emits a 3-way label; token cost on the benchmark reduced on trivially parametric questions with no metric regression. |
+| 3.4 | **Adaptive RAG router** — ✅ 3-way `specific` / `broad` / `multi_hop` in [python/agent/query_router.py](python/agent/query_router.py); `multi_hop` does not shift RRF weights and **auto-enables** `QueryDecomposer` + `RAGFusion` in [python/agent/control_loop.py](python/agent/control_loop.py) when `ENABLE_DECOMPOSITION=false` (`trace.auto_decompose`). No parametric-only (no-retrieval) path yet; no web-search path. Tests: [python/tests/test_phase9_adaptive_router.py](python/tests/test_phase9_adaptive_router.py). | Routes comparative / multi-part questions into decomposition without turning decomposition on globally. | `MULTI_HOP` classification triggers sub-queries when the decomposer yields >1 line; injected decomposer is unchanged when `ENABLE_DECOMPOSITION=true`. |
 | 3.5 | **Learned / distribution-based fusion** alternative to weighted RRF — start with Distribution-Based Score Fusion (DBSF, tuning-free) and, if labelled data becomes available, add a small LTR ensemble on top of the three retrieval lists | RRF is a robust default; LTR yields ~3–4% nDCG@10 on BEIR (46.5 → 48.2). DBSF is the safe midpoint. | DBSF selectable via `FUSION_METHOD` env; ablation row shows ≥ 1% nDCG@10 lift on ≥ 20-Q dataset before it replaces RRF. |
 | 3.6a | **Cross-encoder reranker default-on** — ✅ default `SKIP_RERANKING=false`; reranker now runs on the fused hybrid top-M in `local_llm.py` (`RERANK_TOP_M`, default 50, capped at 150), with model selectable via `RERANKER_MODEL` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`, optional `BAAI/bge-reranker-v2-m3`). | Public benchmarks (`recall@10` 72→94%, `precision@10` 65→91%) show cross-encoder reranking is the highest-yield single-stage addition we had not turned on yet. | ✅ Implemented with `test_phase6_rerank.py`; monitor benchmark quality + p95 latency when increasing `RERANK_TOP_M` or using heavier reranker models. |
 | 3.6b | **Late-interaction reranker** for large topM — add ColBERT-v2 as an alternative reranker when topM ≥ 200 | Cross-encoders dominate precision at small M but scale poorly; ColBERT gives sub-10 ms rerank at M=200+. Only worth it after corpus grows. | ColBERT-v2 selectable via `RERANKER=colbert`; quality parity with cross-encoder at topM=50, wins at topM=200. |
