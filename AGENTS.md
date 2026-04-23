@@ -28,12 +28,23 @@ Keep this table in sync with [README_v2.md](README_v2.md) when a phase changes.
 | **3. Agentic self-correction** | Query router, hallucination grader, retry + rewrite loop | **DONE** | Opt-in via `ENABLE_AGENT` (default `false`). Tests: [python/tests/test_phase3.py](python/tests/test_phase3.py). |
 | **3.5. Multi-query retrieval** | Query decomposition + RAG-Fusion (RRF across sub-queries) | **DONE** | Opt-in via `ENABLE_DECOMPOSITION` (default `false`; requires `ENABLE_AGENT=true`). |
 | **4. Evaluation** | LLM-as-Judge, Naive vs Neuro-Symbolic benchmark, report generation, KG visualisation | **BASELINE SHIPPED** | Harness: [python/evaluation/](python/evaluation/) — `run_benchmark` CLI, [python/tests/test_phase4.py](python/tests/test_phase4.py). First baseline report: [python/evaluation/reports/20260422T114922Z_report.md](python/evaluation/reports/20260422T114922Z_report.md) (n=10; neuro-symbolic 4 wins, naive 1, ties 5). **KG visualisation** still open. |
+| **5. Optimization & depth** | Tier 2 (close Phase 4 scope) + Tier 3 (parallel eval, ablations, Adaptive-RAG, DBSF/LTR fusion, ColBERT, Ollama infra) | **PLANNED** | See [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline) for the full table with research citations. |
 
 ---
 
 ## 3. Where to resume — next task
 
-**Phase 4 (remaining): knowledge graph visualisation** — LLM-as-Judge + naive vs neuro-symbolic benchmark + reports are in [python/evaluation/](python/evaluation/) (see [README_v2.md](README_v2.md) roadmap).
+**Phase 4 baseline shipped.** LLM-as-Judge, naive-vs-neuro-symbolic runner, and Markdown + JSON reports are live in [python/evaluation/](python/evaluation/); first artifact is [python/evaluation/reports/20260422T114922Z_report.md](python/evaluation/reports/20260422T114922Z_report.md). Work queued for the next contributor is explicitly grouped as **Tier 2 / Tier 3 future plans** — see the full table in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
+
+**Tier 2 — close Phase 4 scope (top two are ½-day fixes; start there):**
+- **2.5 Graph retrieval full chunk text** — `python/retrieval/graph_retrieval.py:196` emits `chunk_text_preview` (100 chars) as the RRF `text` payload; swap to full chunk text. Highest impact-per-effort in the list.
+- **2.6 Align eval neurosymbolic config with prod** — `python/evaluation/runner.py:104–125` always enables decomposition + RAG-Fusion; `python/local_llm.py` respects `ENABLE_DECOMPOSITION=false` by default. Benchmark is not measuring deployed behaviour.
+- **2.1 KG visualisation** — `python/evaluation/visualize_kg.py --pdf_id` via pyvis + networkx; only remaining Phase 4 scope item.
+- **2.3 Prompt-artifact cleanup** — neurosymbolic path leaks markdown list markers (`"1. 2 million dollars"` on q01); fix in [python/agent/prompts.py](python/agent/prompts.py) or `generate_rag_response` system prompt.
+- **2.4 Ingest idempotency** — `compute_embeddings.py --reset` that scrolls + deletes by `pdf_id` before upsert. Point IDs are `str(uuid.uuid4())` at `compute_embeddings.py:612, 668`, so re-ingest silently duplicates every chunk.
+- **2.2 Harder fixtures + distractor PDFs** *(1–2 days)* — 30–50 page PDF with 10–20 hand-authored Qs; current 5-page fixture makes `context_recall=1.000` structural.
+
+**Tier 3 — scale & research depth (multi-day):** parallel judge calls (3.1 — wire `EVAL_MAX_CONCURRENCY`), ablation CLI (3.2), statistical significance (3.3 — paired Wilcoxon + CIs), Adaptive-RAG router (3.4 — no web-tool target), DBSF/LTR fusion (3.5), cross-encoder reranker default-on (3.6a) → ColBERT-v2 for large topM (3.6b), Ollama `num_parallel` + `num_batch` + flash-attention tuning (3.7 — do **not** enable `OLLAMA_KV_CACHE_TYPE` on gemma3 pre-0.12.5 per [upstream #9683](https://github.com/ollama/ollama/issues/9683)), GraphRAG community summaries + global search (3.8), batch ingest `/api/embed` (3.9). Rationale, research citations, and done-criteria live in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
 
 Agent stack (see §2): [python/agent/](python/agent/) — `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`. Wired in [python/local_llm.py](python/local_llm.py) `main()`: when `ENABLE_AGENT=true`, `AgenticRAG.run(...)` replaces the single-shot generate path; when `ENABLE_DECOMPOSITION=true` as well, complex queries are decomposed and retrieved per sub-query, then RRF-merged. JSON payload shape (`{answer, sources}`) is unchanged.
 

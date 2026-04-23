@@ -537,13 +537,69 @@ Phase 3: Agentic Layer ███████████████████
 ├─ Query decomposition                        ✅
 └─ RAG-Fusion (multi-query)                   ✅
 
-Phase 4: Evaluation █████████████████████████░░░░░░  85%
+Phase 4: Evaluation ████████████████████████████░░  95%
 ├─ LLM-as-Judge framework                    ✅
 ├─ Naive vs Neuro-Symbolic comparison          ✅
 ├─ Benchmark report generation                ✅
 ├─ First baseline artifact (n=10, win 4-1-5)   ✅
-└─ Knowledge graph visualization              🔲
+└─ Knowledge graph visualization              🔲  (deferred → Phase 5 Tier 2.1)
+
+Phase 5: Optimization & Depth (planned) ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%
+├─ Tier 2 — close Phase 4 scope & harden evaluation (≤ 1 day each)
+│  ├─ 2.1 Knowledge graph visualization (pyvis/networkx)       🔲
+│  ├─ 2.2 Larger/harder fixtures + distractor docs             🔲
+│  ├─ 2.3 Prompt-artifact cleanup (markdown-list leakage)      🔲
+│  ├─ 2.4 Ingest idempotency (--reset / pdf_id-scoped wipe)    🔲
+│  ├─ 2.5 Graph retrieval returns full chunk text (not preview) 🔲
+│  └─ 2.6 Align eval neurosymbolic config with prod flags      🔲
+└─ Tier 3 — scale, parallelism, research depth (multi-day)
+   ├─ 3.1  Parallel judge calls (EVAL_MAX_CONCURRENCY wiring)  🔲
+   ├─ 3.2  Ablation CLI (vector / +BM25 / +KG / +agent / +decomp) 🔲
+   ├─ 3.3  Statistical significance (paired Wilcoxon, CIs)     🔲
+   ├─ 3.4  Adaptive RAG router (complexity-aware path)         🔲
+   ├─ 3.5  Learned fusion or DBSF alternative to RRF           🔲
+   ├─ 3.6a Cross-encoder reranker default-on (bge-reranker-v2-m3) 🔲
+   ├─ 3.6b Late-interaction reranker for large topM (ColBERT-v2) 🔲
+   ├─ 3.7  Ollama infra tuning (num_parallel, num_batch, FA)   🔲
+   ├─ 3.8  GraphRAG community summaries + global-search path   🔲
+   └─ 3.9  Batch ingest embedding (/api/embed array input)     🔲
 ```
+
+*(Tier 1 = the Phase 4 baseline already shipped above; the numbering continues from there.)*
+
+### Future Plans — Tier 2 & Tier 3 (post-Phase-4-baseline)
+
+These are the concrete follow-ups identified while shipping the Phase 4 baseline. They are grouped by effort tier, roughly in the order they should be picked up.
+
+#### Tier 2 — close Phase 4 scope & harden the evaluation (≤ 1 day each, except 2.2)
+
+Ordered by expected impact-per-day. Top two are ½-day bug / correctness fixes and should land first.
+
+| ID | Item | Why it matters | Done when |
+|---|---|---|---|
+| 2.5 | **Graph retrieval returns full chunk text** — `python/retrieval/graph_retrieval.py:196` currently emits `chunk_text_preview` (100 chars) as the RRF `text` payload; swap to the full chunk (via `chunk_id` → BM25 lookup, or persist full text on graph node sources) | Silently degrades fused context on graph-heavy queries; purely a consistency bug. Highest impact-per-effort in the whole list. | Graph-backed sources in the benchmark report carry ≥ chunk-level text; faithfulness on multi-hop Qs measurably improves. |
+| 2.6 | **Align eval neurosymbolic config with prod flags** — `python/evaluation/runner.py:104–125` *always* wires decomposition + RAG-Fusion for the `neurosymbolic` config, while `python/local_llm.py` respects `ENABLE_DECOMPOSITION=false` by default | The benchmark is not measuring deployed behaviour. Fix by either (a) respecting the env flag, or (b) adding a third `neurosymbolic-full` config and keeping `neurosymbolic` prod-faithful. | Benchmark can emit both `neurosymbolic` (prod-faithful) and `neurosymbolic-full` (all features on) rows. |
+| 2.1 | **Knowledge graph visualization** — `python/evaluation/visualize_kg.py --pdf_id` renders `{pdf_id}_graph.json` as interactive HTML via `pyvis` + a static PNG via `networkx/matplotlib` | Only remaining Phase 4 scope item; a figure for README / patent spec is disproportionately valuable. | Both `.html` and `.png` produced for the sample fixture; linked from README. |
+| 2.3 | **Prompt-artifact cleanup** — the agent emitted `"1. 2 million dollars"` on q01 (markdown-list leakage); tighten `agent/prompts.py` and/or `generate_rag_response` system prompt | Cheap win that will shift faithfulness/conciseness on neurosymbolic. | No leading list-marker artifacts in answers across the sample dataset. |
+| 2.4 | **Ingest idempotency** — `compute_embeddings.py --reset` that `scroll+delete`s by `pdf_id` before upsert. Point IDs are currently `str(uuid.uuid4())` (verified at `compute_embeddings.py:612, 668`), so re-ingest silently duplicates every chunk | Prevents inflated collection sizes and stale BM25 / graph files across benchmark iterations. | Re-ingesting the same PDF twice leaves collection size unchanged. |
+| 2.2 | **Harder fixtures + distractor docs** *(1–2 days)* — 30–50 page PDF with 10–20 hand-authored questions, plus 2–3 unrelated PDFs ingested into the same collection | 5-page fixture makes `context_recall=1.000` structural; distractor docs make `pdf_id` filtering, BM25 collisions, and graph scoping earn their keep. | At least one metric no longer saturates at 1.0; win-rate gap widens or collapses measurably. |
+
+#### Tier 3 — scale, parallelism, research depth (multi-day each)
+
+| ID | Item | Research anchor / rationale | Done when |
+|---|---|---|---|
+| 3.1 | **Parallel judge calls** — wire `EVAL_MAX_CONCURRENCY` (currently a placeholder) to run the 3 LLM judge calls per question with `asyncio` + a semaphore | Biggest wall-clock lever identified in the Phase 4 audit; Ollama supports concurrent requests via `OLLAMA_NUM_PARALLEL`. Projected ≥ 2× speedup on the 10-Q benchmark — measure before/after rather than taking the projection as fact. | Benchmark wall-clock reduced by ≥ 50% at `EVAL_MAX_CONCURRENCY=3` with no metric regression vs serial run. |
+| 3.2 | **Ablation CLI** — `--ablation` flag that runs the same dataset across ≥ 4 configurations (vector-only / +BM25 / +BM25+KG / +agent / +agent+decomp) and emits a per-component contribution table | Single most defensible artifact for the provisional patent and for any academic write-up. | One `ablation.md` / `ablation.json` report with per-component deltas on a ≥ 20-question dataset. |
+| 3.3 | **Statistical significance** — paired Wilcoxon signed-rank tests + 95% confidence intervals on per-question metric deltas; flag n < 20 results as directional | Current results (n=10, Δ faithfulness = +0.015) are not significant; the report should say so explicitly. | Report Markdown includes p-values + CIs per metric, and a `significant / directional / tie` verdict column. |
+| 3.4 | **Adaptive RAG router** — extend the current specific/broad router to a CRAG-style / Adaptive-RAG classifier that routes by *complexity*: no-retrieval (parametric) / single-pass / multi-hop. A web-search path is out of scope until a web tool exists | 2025–26 agentic RAG (CRAG, Self-RAG, Adaptive-RAG) all converge on complexity routing; saves tokens and typically improves accuracy. | Router emits a 3-way label; token cost on the benchmark reduced on trivially parametric questions with no metric regression. |
+| 3.5 | **Learned / distribution-based fusion** alternative to weighted RRF — start with Distribution-Based Score Fusion (DBSF, tuning-free) and, if labelled data becomes available, add a small LTR ensemble on top of the three retrieval lists | RRF is a robust default; LTR yields ~3–4% nDCG@10 on BEIR (46.5 → 48.2). DBSF is the safe midpoint. | DBSF selectable via `FUSION_METHOD` env; ablation row shows ≥ 1% nDCG@10 lift on ≥ 20-Q dataset before it replaces RRF. |
+| 3.6a | **Cross-encoder reranker default-on** — flip `SKIP_RERANKING` to `false` or swap in `bge-reranker-v2-m3`, keep topM ≤ 150 | Public benchmarks (`recall@10` 72→94%, `precision@10` 65→91%) show cross-encoder reranking is the highest-yield single-stage addition we have not turned on yet. | Reranker on by default; benchmark recall/precision improves without > 500 ms p95 regression per query. |
+| 3.6b | **Late-interaction reranker** for large topM — add ColBERT-v2 as an alternative reranker when topM ≥ 200 | Cross-encoders dominate precision at small M but scale poorly; ColBERT gives sub-10 ms rerank at M=200+. Only worth it after corpus grows. | ColBERT-v2 selectable via `RERANKER=colbert`; quality parity with cross-encoder at topM=50, wins at topM=200. |
+| 3.7 | **Ollama infra tuning** — benchmark with `OLLAMA_NUM_PARALLEL=4`, `num_batch=1024`, `OLLAMA_FLASH_ATTENTION=1`. **Do NOT** set `OLLAMA_KV_CACHE_TYPE` ≠ `fp16` on gemma3 pre-0.12.5 (known kernel-fallback regression; upstream issues #9683 / #10945 / #11949) | Flash attention + `num_parallel` are the safe wins; KV-cache quantization is broken on gemma3 until Ollama 0.12.5. | Tuned flag set documented in `DEPLOYMENT.md` with before/after tok/s + benchmark wall-clock. |
+| 3.8 | **GraphRAG community summaries + global-search path** — after Leiden community detection, generate per-community LLM summaries and route "broad / summarise" queries through a map-reduce global search (à la Microsoft GraphRAG) | The one place where our system is architecturally *behind* GraphRAG: we detect communities and stop. Step-change on summarisation-style queries. | Broad-summary questions in the benchmark use community-summary context; win-rate on that question-type improves. |
+| 3.9 | **Batch ingest embedding** — Ollama's `/api/embed` accepts array input; current `OllamaEmbedder.encode_text` does one HTTP POST per chunk (`ollama_embed.py:77–115`), so ingesting 100 chunks = 100 round-trips | 3–10× faster ingest on larger corpora; unblocks the Tier 2.2 / Tier 3.2 harder-fixture work. | Ingest time on the 30–50 page fixture (Tier 2.2) reduced by ≥ 3× with identical vector output. |
+
+Pick by your current bottleneck: **benchmark speed →** 3.1 + 3.9; **patent / publication →** 3.2 + 3.3; **long-tail recall →** 3.4 + 3.5 + 3.6a; **broad-summary queries →** 3.8.
 
 ---
 
