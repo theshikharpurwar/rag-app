@@ -26,6 +26,10 @@ services:
       - MONGODB_URI=mongodb://mongo:27017/rag_db
       # For accessing Ollama on the host machine
       - OLLAMA_HOST_URL=http://host.containers.internal:11434
+      # Optional per-request Ollama tuning (see DEPLOYMENT.md — host uses OLLAMA_NUM_PARALLEL / FLASH_ATTENTION)
+      # - OLLAMA_NUM_BATCH=1024
+      # - OLLAMA_NUM_CTX=4096
+      # - OLLAMA_KEEP_ALIVE=10m
       # Models defined in python/config/models.py - keep in sync
       - LLM_MODEL=gemma3:4b
       - EMBEDDING_MODEL=nomic-embed-text-v2-moe
@@ -37,8 +41,11 @@ services:
       # Set to 'true' to use Docling for PDF extraction (better quality, slower upload)
       # Disabled by default — loads heavy ML models (~300MB) competing with Ollama on 8GB RAM
       - USE_DOCLING=false
-      # Set to 'false' to enable reranking (adds 4-5s cold-load per query on 8GB RAM)
-      - SKIP_RERANKING=true
+      # Set to 'true' to disable reranking (saves memory on constrained hosts)
+      - SKIP_RERANKING=${SKIP_RERANKING:-false}
+      # Optional reranker tuning
+      # - RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+      # - RERANK_TOP_M=50
       # Skip image embedding — OllamaEmbedder only handles text, not images
       - SKIP_IMAGES=true
       # Phase 2: Hybrid Retrieval & Knowledge Graphs
@@ -49,6 +56,8 @@ services:
       - RRF_K=60
       - GRAPH_TRAVERSAL_DEPTH=2
       - INDICES_DIR=/app/uploads/indices
+      - ENABLE_COMMUNITY_SUMMARIES=${ENABLE_COMMUNITY_SUMMARIES:-false}
+      - COMMUNITY_SUMMARY_WEIGHT=${COMMUNITY_SUMMARY_WEIGHT:-0.2}
       # Phase 3: Agentic self-correction (opt-in; worst-case ~9–12 LLM calls with decomposition)
       # Override from shell: `ENABLE_AGENT=true docker compose up -d backend`
       - ENABLE_AGENT=${ENABLE_AGENT:-false}

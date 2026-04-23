@@ -17,6 +17,7 @@ import time
 from config import (
     LLM_MODEL_NAME,
     EMBEDDING_MODEL_NAME,
+    EMBED_BATCH_SIZE,
     DEFAULT_VECTOR_SIZE,
     QDRANT_HOST,
     QDRANT_PORT,
@@ -33,6 +34,7 @@ from config import (
     BM25_WEIGHT,
     GRAPH_WEIGHT,
     GRAPH_TRAVERSAL_DEPTH,
+    COMMUNITY_SUMMARY_WEIGHT,
     INDICES_DIR,
     # Phase 3: Agentic self-correction
     ENABLE_AGENT,
@@ -43,6 +45,7 @@ from config import (
     AGENT_DECOMP_MAX_SUBQUERIES,
     AGENT_DECOMP_MIN_WORDS,
     AGENT_FUSION_RRF_K,
+    RERANK_TOP_M,
 )
 
 # Configure logging
@@ -86,7 +89,7 @@ def init_runtime():
 
     try:
         logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}")
-        embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME)
+        embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME, batch_size=EMBED_BATCH_SIZE)
         logger.info("Embedding model loaded.")
     except Exception as e:
         logger.critical(f"CRITICAL: Failed to load embedding model: {e}", exc_info=True)
@@ -202,10 +205,17 @@ def get_qdrant_client():
         raise ConnectionError(f"Could not connect to Qdrant service '{QDRANT_HOST}'") from e
 
 # --- Core RAG Functions ---
-def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEXT_RETRIEVAL_LIMIT):
+def retrieve_context(
+    client,
+    collection_name,
+    query,
+    pdf_id_filter,
+    limit=CONTEXT_RETRIEVAL_LIMIT,
+    rerank=True,
+):
     """
     Retrieve context from Qdrant for a specific PDF ID based on query.
-    Fetches more results if reranker is available for better filtering.
+    Fetches more results if reranker is enabled for this retrieval call.
     """
     if not embedder:
         raise RuntimeError("Embedding model is not loaded.")
@@ -229,8 +239,8 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
         # Create filter
         qdrant_filter = models.Filter(must=[models.FieldCondition(key="pdf_id", match=models.MatchValue(value=pdf_id_filter))])
         
-        # Fetch more results if reranker is available (multiply by 4 for better reranking)
-        retrieval_limit = limit * 4 if reranker else limit
+        # Fetch more results when reranking this path, then reduce to `limit`.
+        retrieval_limit = limit * 4 if (reranker and rerank) else limit
         logger.info(f"Searching collection '{collection_name}' (limit={retrieval_limit}) with filter...")
         
         # Search with the original query
@@ -247,8 +257,8 @@ def retrieve_context(client, collection_name, query, pdf_id_filter, limit=CONTEX
             
             logger.info(f"Retrieved {len(search_results)} results from Qdrant for pdf_id '{pdf_id_filter}'.")
             
-            # Apply reranking if available
-            if reranker and len(search_results) > limit:
+            # Apply reranking if enabled for this retrieval call.
+            if reranker and rerank and len(search_results) > limit:
                 logger.info(f"Reranking {len(search_results)} results to top {limit}...")
                 search_results = reranker.rerank(query, search_results, top_k=limit)
                 logger.info(f"After reranking: {len(search_results)} results")
@@ -494,7 +504,7 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
     Used by main() and by the Phase 4 evaluation runner.
 
     Returns:
-        (retrieve_fn, qdrant_client) where retrieve_fn(query_text, weights) -> (context_str, sources).
+        (retrieve_fn, qdrant_client) where retrieve_fn(query_text, weights, route=None) -> (context_str, sources).
     """
     qdrant_client = get_qdrant_client()
 
@@ -540,20 +550,43 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
             knowledge_graph = None
             graph_retriever = None
 
-    def _retrieve_and_format(query_text, weights):
+    def _retrieve_and_format(query_text, weights, route=None):
         v_w, b_w, g_w = weights
+        has_hybrid_local = bm25_index is not None or graph_retriever is not None
+        vector_limit = RERANK_TOP_M if (has_hybrid_local and reranker) else CONTEXT_RETRIEVAL_LIMIT
         retrieved = retrieve_context(
             qdrant_client,
             collection_name,
             query_text,
             pdf_id,
-            limit=CONTEXT_RETRIEVAL_LIMIT,
+            limit=vector_limit,
+            rerank=not has_hybrid_local,
         )
 
-        has_hybrid_local = bm25_index is not None or graph_retriever is not None
         if has_hybrid_local:
             try:
                 from retrieval.rrf_fusion import hybrid_retrieve
+
+                community_results = None
+                community_w = 0.0
+                v_adj, b_adj, g_adj = v_w, b_w, g_w
+                use_community = route != "specific"
+                if (
+                    use_community
+                    and graph_retriever is not None
+                    and knowledge_graph is not None
+                    and knowledge_graph.community_summaries
+                ):
+                    community_results = graph_retriever.global_search(
+                        query_text, embedder=embedder, top_k=3
+                    )
+                    if community_results:
+                        community_w = float(COMMUNITY_SUMMARY_WEIGHT)
+                        denom = max(v_adj + b_adj + g_adj, 1e-9)
+                        scale = (1.0 - community_w) / denom
+                        v_adj *= scale
+                        b_adj *= scale
+                        g_adj *= scale
 
                 fused = hybrid_retrieve(
                     query=query_text,
@@ -562,12 +595,19 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
                     bm25_index=bm25_index,
                     knowledge_graph=knowledge_graph,
                     graph_retriever=graph_retriever,
-                    vector_weight=v_w,
-                    bm25_weight=b_w,
-                    graph_weight=g_w,
+                    vector_weight=v_adj,
+                    bm25_weight=b_adj,
+                    graph_weight=g_adj,
+                    community_results=community_results,
+                    community_weight=community_w,
                     rrf_k=RRF_K,
-                    top_k=CONTEXT_RETRIEVAL_LIMIT,
+                    top_k=vector_limit,
                 )
+                if reranker and len(fused) > CONTEXT_RETRIEVAL_LIMIT:
+                    logger.info(
+                        f"[Hybrid] Reranking fused results {len(fused)} -> {CONTEXT_RETRIEVAL_LIMIT}"
+                    )
+                    fused = reranker.rerank(query_text, fused, top_k=CONTEXT_RETRIEVAL_LIMIT)
 
                 ctx = ""
                 srcs = []

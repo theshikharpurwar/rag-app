@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class RAGFusion:
     def __init__(
         self,
-        retrieve_fn: Callable[[str, Tuple[float, float, float]], Tuple[str, List[Any]]],
+        retrieve_fn: Callable[..., Tuple[str, List[Any]]],
         rrf_k: int = 60,
         top_k: int = 5,
     ):
@@ -29,13 +29,14 @@ class RAGFusion:
         self,
         sub_queries: List[str],
         weights: Tuple[float, float, float],
+        route: str | None = None,
     ) -> Tuple[str, List[Any]]:
         if not sub_queries:
             return "", []
 
         ranked_lists: List[List[dict]] = []
         for i, sq in enumerate(sub_queries):
-            _ctx, sources = self.retrieve_fn(sq, weights)
+            _ctx, sources = self.retrieve_fn(sq, weights, route)
             ranked: List[dict] = []
             method_tag = f"sq{i}"
             for rank, s in enumerate(sources):

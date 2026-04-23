@@ -10,6 +10,8 @@ to query-relevant entities.
 import logging
 import re
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 # Prompt for extracting query entities
@@ -42,6 +44,59 @@ class GraphRetriever:
         self.kg = knowledge_graph
         self.llm = llm
         self.traversal_depth = traversal_depth
+
+    def global_search(self, query: str, embedder=None, top_k: int = 3) -> list[dict]:
+        """
+        Rank persisted community summaries for the query; returns pseudo-chunks for RRF.
+        """
+        summaries = self.kg.community_summaries
+        if not summaries:
+            return []
+
+        scored: list[tuple[int, dict, float]] = []
+
+        if embedder is not None and any(s.get("embedding") for s in summaries.values()):
+            try:
+                query_vec = embedder.encode_text([query], task_type="search_query")[0]
+                for cid, entry in summaries.items():
+                    emb = entry.get("embedding")
+                    if not emb:
+                        continue
+                    q = np.asarray(query_vec, dtype=np.float64)
+                    s = np.asarray(emb, dtype=np.float64)
+                    denom = float(np.linalg.norm(q) * np.linalg.norm(s))
+                    sim = float(np.dot(q, s) / denom) if denom > 0 else 0.0
+                    scored.append((cid, entry, sim))
+            except Exception as e:
+                logger.warning(f"[GraphRetriever] Semantic community scoring failed: {e}")
+                scored = []
+
+        if not scored:
+            query_words = set(query.lower().split())
+            for cid, entry in summaries.items():
+                summary_words = set(entry["summary"].lower().split())
+                overlap = len(query_words & summary_words)
+                score = overlap / max(len(query_words), 1)
+                scored.append((cid, entry, score))
+
+        scored.sort(key=lambda x: x[2], reverse=True)
+
+        results = []
+        for cid, entry, score in scored[:top_k]:
+            if score <= 0:
+                continue
+            n_ent = len(entry.get("entities") or [])
+            results.append({
+                "text": entry["summary"],
+                "page": "community",
+                "source": f"Community {cid} ({n_ent} entities)",
+                "chunk_index": int(cid),
+                "score": score,
+                "retrieval_method": "community_summary",
+            })
+
+        logger.info(f"[GraphRetriever] Global search: {len(results)} community summaries")
+        return results
 
     def extract_query_entities(self, query: str) -> list[str]:
         """

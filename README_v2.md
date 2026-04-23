@@ -418,6 +418,8 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | `GRAPH_WEIGHT` | `0.3` | γ — weight for graph traversal in RRF fusion |
 | `RRF_K` | `60` | RRF smoothing constant |
 | `GRAPH_TRAVERSAL_DEPTH` | `2` | BFS depth limit for knowledge graph traversal |
+| `ENABLE_COMMUNITY_SUMMARIES` | `false` | Generate per-community LLM summaries (+ embeddings) during ingest |
+| `COMMUNITY_SUMMARY_WEIGHT` | `0.2` | RRF weight for community-summary global search when summaries exist |
 | `INDICES_DIR` | `/app/uploads/indices` | Directory for BM25/KG persistence files |
 | `ENABLE_AGENT` | `false` | Phase 3 master toggle: run the agentic self-correction loop instead of a single generate call |
 | `AGENT_MAX_RETRIES` | `2` | Max extra retrieve+generate+grade cycles after the first attempt |
@@ -523,7 +525,7 @@ Phase 1: Foundation RAG ██████████████████�
 
 Phase 2: Hybrid Retrieval ██████████████████████████████ 100%
 ├─ BM25 keyword search (rank_bm25)           ✅
-├─ Weighted RRF fusion (3-path)              ✅
+├─ Weighted RRF fusion (3-path + opt. community) ✅
 ├─ Entity extraction (LLM triples)            ✅
 ├─ NetworkX knowledge graph + JSON persist    ✅
 ├─ Leiden community detection                 ✅
@@ -558,11 +560,11 @@ Phase 5: Optimization & Depth (planned) ░░░░░░░░░░░░░�
    ├─ 3.3  Statistical significance (paired Wilcoxon, CIs)     ✅
    ├─ 3.4  Adaptive RAG router (complexity-aware path)         🔲
    ├─ 3.5  Learned fusion or DBSF alternative to RRF           🔲
-   ├─ 3.6a Cross-encoder reranker default-on (bge-reranker-v2-m3) 🔲
+   ├─ 3.6a Cross-encoder reranker default-on (bge-reranker-v2-m3) ✅
    ├─ 3.6b Late-interaction reranker for large topM (ColBERT-v2) 🔲
-   ├─ 3.7  Ollama infra tuning (num_parallel, num_batch, FA)   🔲
-   ├─ 3.8  GraphRAG community summaries + global-search path   🔲
-   └─ 3.9  Batch ingest embedding (/api/embed array input)     🔲
+   ├─ 3.7  Ollama infra tuning (num_parallel, num_batch, FA)   ✅
+   ├─ 3.8  GraphRAG community summaries + global-search path   ✅
+   └─ 3.9  Batch ingest embedding (/api/embed array input)     ✅
 ```
 
 *(Tier 1 = the Phase 4 baseline already shipped above; the numbering continues from there.)*
@@ -593,11 +595,11 @@ Ordered by expected impact-per-day. Top two are ½-day bug / correctness fixes a
 | 3.3 | **Statistical significance** — ✅ paired Wilcoxon signed-rank tests + bootstrap 95% CIs on per-question metric deltas now computed in `evaluation/report.py`; n < 20 is flagged as directional | Converts raw win counts into interpretable evidence and prevents over-claiming on small fixtures. | ✅ Report summary now includes per-metric Δ, CI, p-value, and `significant / directional / tie` verdicts. |
 | 3.4 | **Adaptive RAG router** — extend the current specific/broad router to a CRAG-style / Adaptive-RAG classifier that routes by *complexity*: no-retrieval (parametric) / single-pass / multi-hop. A web-search path is out of scope until a web tool exists | 2025–26 agentic RAG (CRAG, Self-RAG, Adaptive-RAG) all converge on complexity routing; saves tokens and typically improves accuracy. | Router emits a 3-way label; token cost on the benchmark reduced on trivially parametric questions with no metric regression. |
 | 3.5 | **Learned / distribution-based fusion** alternative to weighted RRF — start with Distribution-Based Score Fusion (DBSF, tuning-free) and, if labelled data becomes available, add a small LTR ensemble on top of the three retrieval lists | RRF is a robust default; LTR yields ~3–4% nDCG@10 on BEIR (46.5 → 48.2). DBSF is the safe midpoint. | DBSF selectable via `FUSION_METHOD` env; ablation row shows ≥ 1% nDCG@10 lift on ≥ 20-Q dataset before it replaces RRF. |
-| 3.6a | **Cross-encoder reranker default-on** — flip `SKIP_RERANKING` to `false` or swap in `bge-reranker-v2-m3`, keep topM ≤ 150 | Public benchmarks (`recall@10` 72→94%, `precision@10` 65→91%) show cross-encoder reranking is the highest-yield single-stage addition we have not turned on yet. | Reranker on by default; benchmark recall/precision improves without > 500 ms p95 regression per query. |
+| 3.6a | **Cross-encoder reranker default-on** — ✅ default `SKIP_RERANKING=false`; reranker now runs on the fused hybrid top-M in `local_llm.py` (`RERANK_TOP_M`, default 50, capped at 150), with model selectable via `RERANKER_MODEL` (default `cross-encoder/ms-marco-MiniLM-L-6-v2`, optional `BAAI/bge-reranker-v2-m3`). | Public benchmarks (`recall@10` 72→94%, `precision@10` 65→91%) show cross-encoder reranking is the highest-yield single-stage addition we had not turned on yet. | ✅ Implemented with `test_phase6_rerank.py`; monitor benchmark quality + p95 latency when increasing `RERANK_TOP_M` or using heavier reranker models. |
 | 3.6b | **Late-interaction reranker** for large topM — add ColBERT-v2 as an alternative reranker when topM ≥ 200 | Cross-encoders dominate precision at small M but scale poorly; ColBERT gives sub-10 ms rerank at M=200+. Only worth it after corpus grows. | ColBERT-v2 selectable via `RERANKER=colbert`; quality parity with cross-encoder at topM=50, wins at topM=200. |
-| 3.7 | **Ollama infra tuning** — benchmark with `OLLAMA_NUM_PARALLEL=4`, `num_batch=1024`, `OLLAMA_FLASH_ATTENTION=1`. **Do NOT** set `OLLAMA_KV_CACHE_TYPE` ≠ `fp16` on gemma3 pre-0.12.5 (known kernel-fallback regression; upstream issues #9683 / #10945 / #11949) | Flash attention + `num_parallel` are the safe wins; KV-cache quantization is broken on gemma3 until Ollama 0.12.5. | Tuned flag set documented in `DEPLOYMENT.md` with before/after tok/s + benchmark wall-clock. |
-| 3.8 | **GraphRAG community summaries + global-search path** — after Leiden community detection, generate per-community LLM summaries and route "broad / summarise" queries through a map-reduce global search (à la Microsoft GraphRAG) | The one place where our system is architecturally *behind* GraphRAG: we detect communities and stop. Step-change on summarisation-style queries. | Broad-summary questions in the benchmark use community-summary context; win-rate on that question-type improves. |
-| 3.9 | **Batch ingest embedding** — Ollama's `/api/embed` accepts array input; current `OllamaEmbedder.encode_text` does one HTTP POST per chunk (`ollama_embed.py:77–115`), so ingesting 100 chunks = 100 round-trips | 3–10× faster ingest on larger corpora; unblocks the Tier 2.2 / Tier 3.2 harder-fixture work. | Ingest time on the 30–50 page fixture (Tier 2.2) reduced by ≥ 3× with identical vector output. |
+| 3.7 | **Ollama infra tuning** — ✅ per-request `OLLAMA_NUM_BATCH`, optional `OLLAMA_NUM_CTX`, `OLLAMA_KEEP_ALIVE` wired through `OllamaLLM` + `OllamaEmbedder`; micro-bench `python -m evaluation.bench_ollama` (`gen` / `embed`). Host: `OLLAMA_NUM_PARALLEL`, `OLLAMA_FLASH_ATTENTION`. **Do NOT** set `OLLAMA_KV_CACHE_TYPE` ≠ `fp16` on gemma3 pre-0.12.5 (#9683 / #10945 / #11949). | Flash attention + `num_parallel` are the safe wins; KV-cache quantization is risky on gemma3 until Ollama 0.12.5. | ✅ Implemented + documented in `DEPLOYMENT.md` with bench CLI for before/after tok/s and wall-clock; tests: `test_phase7_ollama_tuning.py`. |
+| 3.8 | **GraphRAG community summaries + global-search path** — ✅ opt-in `ENABLE_COMMUNITY_SUMMARIES`: ingest-time LLM + embed per Leiden community into `_graph.json`; `GraphRetriever.global_search` adds a 4th RRF list (weight `COMMUNITY_SUMMARY_WEIGHT`, vector/BM25/graph scaled down) when the agent route is not `specific` (non-agent queries still get the path). Tests: `test_phase8_graphrag.py`. | Closes the GraphRAG gap on global/summary-style retrieval without forcing extra ingest cost by default. | Summaries persist in graph JSON; hybrid fusion includes `community_summary` provenance when enabled; router-`specific` skips the path to protect factoid queries. |
+| 3.9 | **Batch ingest embedding** — ✅ `OllamaEmbedder.encode_text` in `python/embeddings/ollama_embed.py` batches texts via `POST /api/embed` with array `input` (size capped by `EMBED_BATCH_SIZE`, default 32); per-item `POST /api/embeddings` fallback when `/api/embed` returns 404 (older Ollama). | 3–10× fewer HTTP round-trips on embedding-bound ingest; unblocks larger fixtures. | ✅ Implemented with `test_phase5_batch_embed.py`; measure ≥ 3× wall-clock on embedding-bound runs vs one-request-per-chunk baseline on the Tier 2.2 fixture. |
 
 Pick by your current bottleneck: **benchmark speed →** 3.1 + 3.9; **patent / publication →** 3.2 + 3.3; **long-tail recall →** 3.4 + 3.5 + 3.6a; **broad-summary queries →** 3.8.
 

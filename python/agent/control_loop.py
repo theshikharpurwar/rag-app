@@ -31,7 +31,7 @@ class AgenticRAG:
     """
     Orchestrates the self-correcting RAG loop.
 
-    retrieve_fn signature: (query: str, weights: tuple[float,float,float]) -> (context_str, sources)
+    retrieve_fn signature: (query, weights, route=None) -> (context_str, sources)
     generate_fn signature: (query: str, context_str: str, chat_history: list) -> answer_str
     """
 
@@ -40,7 +40,7 @@ class AgenticRAG:
         llm,
         router: QueryRouter,
         grader: AnswerGrader,
-        retrieve_fn: Callable[[str, Tuple[float, float, float]], Tuple[str, List[Any]]],
+        retrieve_fn: Callable[..., Tuple[str, List[Any]]],
         generate_fn: Callable[[str, str, list], str],
         max_retries: int = 2,
         base_weights: Tuple[float, float, float] = (0.4, 0.3, 0.3),
@@ -74,12 +74,12 @@ class AgenticRAG:
             if self.decomposer and self.fusion:
                 sub_queries = self.decomposer.decompose(current_query)
                 if len(sub_queries) > 1:
-                    context_str, sources = self.fusion.retrieve(sub_queries, weights)
+                    context_str, sources = self.fusion.retrieve(sub_queries, weights, route)
                     sub_trace = list(sub_queries)
                 else:
-                    context_str, sources = self.retrieve_fn(current_query, weights)
+                    context_str, sources = self.retrieve_fn(current_query, weights, route)
             else:
-                context_str, sources = self.retrieve_fn(current_query, weights)
+                context_str, sources = self.retrieve_fn(current_query, weights, route)
 
             answer = self.generate_fn(current_query, context_str, chat_history)
             grade = self.grader.grade(current_query, answer, context_str)

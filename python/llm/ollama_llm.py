@@ -3,8 +3,9 @@
 import logging
 import requests
 import json
-import time
 import os
+
+from config.models import OLLAMA_KEEP_ALIVE, OLLAMA_NUM_BATCH, OLLAMA_NUM_CTX
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -15,16 +16,25 @@ class OllamaLLM:
     Class to generate text responses using the Ollama API
     """
 
-    def __init__(self, model_name=None, api_base=None):
+    def __init__(self, model_name=None, api_base=None, num_batch=None, num_ctx=None, keep_alive=None):
         """
         Initialize the OllamaLLM with a model
 
         Args:
             model_name (str): Name of the Ollama model to use
             api_base (str, optional): Base URL for Ollama API. Defaults to http://localhost:11434/api
+            num_batch (int, optional): Ollama options.num_batch (default from OLLAMA_NUM_BATCH)
+            num_ctx (int | None, optional): Ollama options.num_ctx; omit when None or 0 (model default)
+            keep_alive (str, optional): Top-level keep_alive for /api/chat (default OLLAMA_KEEP_ALIVE)
         """
         # Get model from environment variable or use the provided one or default to phi2
         self.model_name = model_name or os.environ.get('LLM_MODEL', 'phi2')
+        self.num_batch = int(num_batch if num_batch is not None else OLLAMA_NUM_BATCH)
+        if num_ctx is not None:
+            self.num_ctx = int(num_ctx) if int(num_ctx) > 0 else None
+        else:
+            self.num_ctx = OLLAMA_NUM_CTX
+        self.keep_alive = keep_alive if keep_alive is not None else OLLAMA_KEEP_ALIVE
         logger.info(f"Initializing OllamaLLM with model: {self.model_name}")
 
         # Get the API base URL from the environment or use the provided one
@@ -76,14 +86,19 @@ class OllamaLLM:
         logger.info(f"Sending {len(chat_messages)} message(s) to /api/chat...")
 
         try:
+            options = {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+                "num_batch": self.num_batch,
+            }
+            if self.num_ctx is not None:
+                options["num_ctx"] = self.num_ctx
             payload = {
                 "model": self.model_name,
                 "messages": chat_messages,
                 "stream": True,
-                "options": {
-                    "num_predict": max_tokens,
-                    "temperature": temperature
-                }
+                "options": options,
+                "keep_alive": self.keep_alive,
             }
 
             logger.info(f"Sending request to: {self.api_base}/chat")

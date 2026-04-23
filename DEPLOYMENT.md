@@ -110,6 +110,74 @@ The evaluation harness (`python -m evaluation.run_benchmark`) can run up to thre
 
 Raising parallelism increases peak RAM: a rough rule for **gemma3:4b** at Q4_K_M is on the order of **~2.5 GiB × concurrency**; on an 8 GiB machine, `EVAL_MAX_CONCURRENCY=3` may be tight if other services are loaded. Start with `2` and watch `ollama` / system memory before going higher.
 
+## Ollama tuning (Tier 3.7)
+
+Two layers: **host** environment variables read by `ollama serve`, and **per-request** JSON fields this app sends on `/api/chat` and `/api/embed`.
+
+### Host-side (Ollama server process)
+
+Set these on the machine where Ollama runs (not in the app container unless you containerize Ollama). Examples:
+
+**systemd** (`/etc/systemd/system/ollama.service` drop-in or override):
+
+```ini
+[Service]
+Environment="OLLAMA_NUM_PARALLEL=2"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+```
+
+**macOS (launchd)** — add to the plist `EnvironmentVariables` or export before `ollama serve` in your shell profile.
+
+| Variable | Effect |
+|---|---|
+| `OLLAMA_NUM_PARALLEL` | Concurrent model executions the server will schedule (raise only if RAM allows; pair with `EVAL_MAX_CONCURRENCY` for judge parallelism). |
+| `OLLAMA_FLASH_ATTENTION` | Enables flash attention where supported (often a safe throughput win on GPU paths). |
+
+**KV cache / gemma3:** do **not** set `OLLAMA_KV_CACHE_TYPE` to a non-default value for **gemma3** on Ollama **before 0.12.5** — known kernel fallback / quality regressions (upstream [#9683](https://github.com/ollama/ollama/issues/9683), [#10945](https://github.com/ollama/ollama/issues/10945), [#11949](https://github.com/ollama/ollama/issues/11949)). Prefer upgrading Ollama before experimenting with KV-cache quantization.
+
+### Request-side (this repo — Python → Ollama)
+
+Configured in [python/config/models.py](python/config/models.py) and forwarded by [python/llm/ollama_llm.py](python/llm/ollama_llm.py) (chat) and [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py) (embeddings).
+
+| Variable | Default | Effect |
+|---|---|---|
+| `OLLAMA_NUM_BATCH` | `512` | Passed as `options.num_batch` on `/api/chat` (batch size for prompt processing). |
+| `OLLAMA_NUM_CTX` | `0` (unset) | When **> 0**, passed as `options.num_ctx`. **`0` means “use the model default”** — recommended so long prompts are not silently truncated. |
+| `OLLAMA_KEEP_ALIVE` | `5m` | Top-level `keep_alive` on `/api/chat` and embedding requests; keeps models loaded between calls (raises RAM if set very high). |
+
+Optional examples for `docker-compose.yml` (backend `environment:`) are commented next to `OLLAMA_HOST_URL`.
+
+### Micro-benchmark CLI
+
+Validate host + request knobs with before/after numbers (run from `python/` with Ollama reachable at `OLLAMA_HOST_URL`):
+
+```bash
+cd python
+python -m evaluation.bench_ollama gen --model gemma3:4b --prompts 20 --concurrency 2
+python -m evaluation.bench_ollama embed --model nomic-embed-text-v2-moe --items 200 --batch 32
+python -m evaluation.bench_ollama gen --model gemma3:4b --prompts 10 --json   # machine-readable summary
+```
+
+Example **human-readable** excerpt (values depend on hardware; sequential vs concurrent shows queueing when `OLLAMA_NUM_PARALLEL` is low):
+
+```
+bench_ollama gen  model=gemma3:4b  requests=20  concurrency=2
+  sequential: wall=45.20s  p50=2.100s  p95=2.800s  median tok/s=42.5
+  concurrent: wall=28.10s  p50=2.050s  p95=3.400s  median tok/s=41.2
+```
+
+After raising `OLLAMA_NUM_PARALLEL` and enabling flash attention on the host, re-run the same command: **wall** for the concurrent phase and **median tok/s** should move; if parallelism is still `1`, concurrent wall time stays near sequential.
+
+## Reranker defaults and RAM (Phase 3.6a)
+
+Cross-encoder reranking is now enabled by default in dev compose (`SKIP_RERANKING=false`). This improves retrieval precision, but adds model-load latency and memory pressure.
+
+- Default model: `cross-encoder/ms-marco-MiniLM-L-6-v2` (smaller; recommended for 8GB hosts).
+- Optional heavier model: `BAAI/bge-reranker-v2-m3` via `RERANKER_MODEL`, only if you have RAM headroom.
+- Candidate pool before rerank is controlled by `RERANK_TOP_M` (default `50`, capped at `150`); increasing it can improve quality but raises latency.
+
+If the host is memory-constrained, set `SKIP_RERANKING=true` to disable reranking, or keep reranking on and reduce `RERANK_TOP_M`.
+
 ## Troubleshooting
 
 ### Connection Issues

@@ -6,6 +6,7 @@ This improves retrieval quality by reordering the top-k results.
 import logging
 from sentence_transformers import CrossEncoder
 import numpy as np
+from config import RERANKER_MODEL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,18 +21,18 @@ class SimpleReranker:
     Speed: Very fast, suitable for real-time use
     """
     
-    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(self, model_name=None):
         """
         Initialize the reranker with a lightweight cross-encoder model.
         
         Args:
             model_name (str): Name of the cross-encoder model to use
         """
-        self.model_name = model_name
-        logger.info(f"Loading reranker model: {model_name}")
+        self.model_name = model_name or RERANKER_MODEL
+        logger.info(f"Loading reranker model: {self.model_name}")
         
         try:
-            self.model = CrossEncoder(model_name, max_length=512)
+            self.model = CrossEncoder(self.model_name, max_length=512)
             logger.info(f"✓ Reranker model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load reranker model: {e}")

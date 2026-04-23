@@ -15,6 +15,14 @@ import networkx as nx
 
 logger = logging.getLogger(__name__)
 
+COMMUNITY_SUMMARY_PROMPT = """Summarize the following group of related entities and their relationships in 2-3 sentences.
+Focus on what this group is about and how the entities relate to each other.
+
+Entities: {entities}
+Relationships: {relationships}
+
+Summary:"""
+
 
 def _try_leiden_communities(graph: nx.DiGraph) -> dict:
     """
@@ -79,7 +87,12 @@ class KnowledgeGraph:
     def __init__(self):
         self.graph = nx.DiGraph()
         self._communities = {}
+        self._community_summaries: dict[int, dict] = {}
         self._is_built = False
+
+    @property
+    def community_summaries(self) -> dict[int, dict]:
+        return getattr(self, "_community_summaries", {}) or {}
 
     @property
     def num_nodes(self) -> int:
@@ -161,6 +174,68 @@ class KnowledgeGraph:
         logger.info(f"[KG] Assigned {self.num_communities} communities to {self.num_nodes} nodes")
         return self._communities
 
+    def generate_community_summaries(self, llm, embedder=None) -> dict[int, dict]:
+        """
+        LLM summary per Leiden community; optional embedder stores vectors for query-time similarity.
+        """
+        if not self._communities:
+            return {}
+
+        community_ids = sorted(set(self._communities.values()))
+        summaries: dict[int, dict] = {}
+
+        for cid in community_ids:
+            members = self.get_community_members(cid)
+            if len(members) < 2:
+                continue
+
+            relationships: list[str] = []
+            for u, v, attrs in self.graph.edges(data=True):
+                if u in members and v in members:
+                    preds = attrs.get("predicates", [])
+                    for p in preds[:3]:
+                        relationships.append(f"{u} {p} {v}")
+
+            if not relationships:
+                continue
+
+            prompt = COMMUNITY_SUMMARY_PROMPT.format(
+                entities=", ".join(members[:20]),
+                relationships="; ".join(relationships[:15]),
+            )
+
+            try:
+                summary_text = llm.generate_response(
+                    prompt=prompt, temperature=0.3, max_tokens=200
+                )
+                summary_text = (summary_text or "").strip()
+            except Exception as e:
+                logger.warning(f"[KG] Community summary LLM failed for community {cid}: {e}")
+                summary_text = ""
+
+            if not summary_text:
+                continue
+
+            entry: dict = {
+                "summary": summary_text,
+                "entities": list(members),
+                "embedding": None,
+            }
+
+            if embedder is not None:
+                try:
+                    vecs = embedder.encode_text([summary_text], task_type="search_document")
+                    if vecs and vecs[0]:
+                        entry["embedding"] = list(vecs[0])
+                except Exception as e:
+                    logger.warning(f"[KG] Community summary embed failed for community {cid}: {e}")
+
+            summaries[cid] = entry
+
+        self._community_summaries = summaries
+        logger.info(f"[KG] Generated {len(summaries)} community summaries")
+        return summaries
+
     def get_community_members(self, community_id: int) -> list[str]:
         """Get all entity names in a specific community."""
         return [node for node, cid in self._communities.items() if cid == community_id]
@@ -236,6 +311,9 @@ class KnowledgeGraph:
             "nodes": {},
             "edges": [],
             "communities": self._communities,
+            "community_summaries": {
+                str(k): v for k, v in getattr(self, "_community_summaries", {}).items()
+            },
         }
 
         for node, attrs in self.graph.nodes(data=True):
@@ -280,6 +358,16 @@ class KnowledgeGraph:
 
             # Restore communities
             self._communities = data.get("communities", {})
+
+            raw_summaries = data.get("community_summaries", {}) or {}
+            self._community_summaries = {}
+            for k, v in raw_summaries.items():
+                try:
+                    cid = int(k)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(v, dict):
+                    self._community_summaries[cid] = v
 
             self._is_built = True
             logger.info(f"[KG] Graph loaded from {path}: {self.num_nodes} nodes, "

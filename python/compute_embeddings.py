@@ -20,6 +20,7 @@ import uuid  # <--- FIX: Import 'uuid' module for generating valid IDs
 from config import (
     LLM_MODEL_NAME,
     EMBEDDING_MODEL_NAME,
+    EMBED_BATCH_SIZE,
     DEFAULT_VECTOR_SIZE,
     QDRANT_HOST,
     QDRANT_PORT,
@@ -32,6 +33,7 @@ from config import (
     RENDERING_DPI,
     # Phase 2
     ENABLE_KNOWLEDGE_GRAPH,
+    ENABLE_COMMUNITY_SUMMARIES,
     INDICES_DIR,
 )
 
@@ -300,7 +302,7 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION, reset=Fals
     try:
         logger.info(f"Processing PDF: {pdf_path} (ID: {pdf_id}) for collection: {collection_name}")
         # Use Ollama embedder (no heavy ML dependencies)
-        embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME)
+        embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME, batch_size=EMBED_BATCH_SIZE)
         client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=30)
 
         # --- CORRECTED Qdrant Collection Check (Includes vector size fix) ---
@@ -587,6 +589,14 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION, reset=Fals
                         kg = KnowledgeGraph()
                         kg.build_from_triples(triples, sources)
                         kg.detect_communities()
+                        if ENABLE_COMMUNITY_SUMMARIES:
+                            logger.info(f"[KG] Generating community summaries for PDF {pdf_id}...")
+                            summary_embedder = OllamaEmbedder(
+                                model_name=EMBEDDING_MODEL_NAME,
+                                batch_size=EMBED_BATCH_SIZE,
+                            )
+                            n_sum = len(kg.generate_community_summaries(kg_llm, embedder=summary_embedder))
+                            logger.info(f"[KG] Generated {n_sum} community summaries for PDF {pdf_id}")
                         kg_path = os.path.join(INDICES_DIR, f"{pdf_id}_graph.json")
                         kg.save(kg_path)
                         summary = kg.get_summary()

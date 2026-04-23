@@ -44,7 +44,7 @@ Keep this table in sync with [README_v2.md](README_v2.md) when a phase changes.
 - **2.5 Graph retrieval full chunk text** — ✅ completed (`chunk_text` now used in graph retrieval with `chunk_text_preview` fallback for legacy graph files).
 - **2.6 Align eval neurosymbolic config with prod** — ✅ completed (evaluation `neurosymbolic` now respects `ENABLE_DECOMPOSITION`, and trace records the effective flag).
 
-**Tier 3 — scale & research depth (multi-day):** **3.1 parallel judge calls** — ✅ `EVAL_MAX_CONCURRENCY` wires up to three concurrent LLM judge calls per run in [python/evaluation/judge.py](python/evaluation/judge.py) (`ThreadPoolExecutor`); set `OLLAMA_NUM_PARALLEL` on the server for real speedup (see [DEPLOYMENT.md](DEPLOYMENT.md)). **3.3 statistical significance** — ✅ paired Wilcoxon + BCa bootstrap 95% CIs now render in [python/evaluation/report.py](python/evaluation/report.py), with `n < 20` automatically flagged as directional. Remaining: ablation CLI (3.2), Adaptive-RAG router (3.4 — no web-tool target), DBSF/LTR fusion (3.5), cross-encoder reranker default-on (3.6a) → ColBERT-v2 for large topM (3.6b), Ollama `num_parallel` + `num_batch` + flash-attention tuning (3.7 — do **not** enable `OLLAMA_KV_CACHE_TYPE` on gemma3 pre-0.12.5 per [upstream #9683](https://github.com/ollama/ollama/issues/9683)), GraphRAG community summaries + global search (3.8), batch ingest `/api/embed` (3.9). Rationale, research citations, and done-criteria live in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
+**Tier 3 — scale & research depth (multi-day):** **3.1 parallel judge calls** — ✅ `EVAL_MAX_CONCURRENCY` wires up to three concurrent LLM judge calls per run in [python/evaluation/judge.py](python/evaluation/judge.py) (`ThreadPoolExecutor`); set `OLLAMA_NUM_PARALLEL` on the server for real speedup (see [DEPLOYMENT.md](DEPLOYMENT.md)). **3.3 statistical significance** — ✅ paired Wilcoxon + BCa bootstrap 95% CIs now render in [python/evaluation/report.py](python/evaluation/report.py), with `n < 20` automatically flagged as directional. **3.6a cross-encoder reranker default-on** — ✅ default `SKIP_RERANKING=false` in [docker-compose.yml](docker-compose.yml); reranking now applies on fused hybrid top-M in [python/local_llm.py](python/local_llm.py) (`RERANK_TOP_M`, default 50, capped at 150), with model selectable via `RERANKER_MODEL`; tests: [python/tests/test_phase6_rerank.py](python/tests/test_phase6_rerank.py). **3.7 Ollama infra tuning** — ✅ per-request `OLLAMA_NUM_BATCH`, optional `OLLAMA_NUM_CTX`, `OLLAMA_KEEP_ALIVE` in [python/llm/ollama_llm.py](python/llm/ollama_llm.py) and [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py); bench CLI [python/evaluation/bench_ollama.py](python/evaluation/bench_ollama.py); host-side knobs + gemma3 KV-cache warning in [DEPLOYMENT.md](DEPLOYMENT.md); tests: [python/tests/test_phase7_ollama_tuning.py](python/tests/test_phase7_ollama_tuning.py). **3.9 batch ingest `/api/embed`** — ✅ [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py) batches chunk texts via `POST /api/embed` (`EMBED_BATCH_SIZE`, default 32); legacy `/api/embeddings` per-item fallback on 404; tests: [python/tests/test_phase5_batch_embed.py](python/tests/test_phase5_batch_embed.py). **3.8 GraphRAG community summaries + global search** — ✅ opt-in `ENABLE_COMMUNITY_SUMMARIES` (default `false`): ingest-time LLM summary per Leiden community + summary embeddings in `_graph.json`; query-time `GraphRetriever.global_search` feeds a 4th RRF list when `route != "specific"` (agent specific-route skips); weight `COMMUNITY_SUMMARY_WEIGHT` (default `0.2`) scales vector/BM25/graph down proportionally; tests: [python/tests/test_phase8_graphrag.py](python/tests/test_phase8_graphrag.py). Remaining: ablation CLI (3.2), Adaptive-RAG router (3.4 — no web-tool target), DBSF/LTR fusion (3.5), ColBERT-v2 for large topM (3.6b). Rationale, research citations, and done-criteria live in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
 
 Agent stack (see §2): [python/agent/](python/agent/) — `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`. Wired in [python/local_llm.py](python/local_llm.py) `main()`: when `ENABLE_AGENT=true`, `AgenticRAG.run(...)` replaces the single-shot generate path; when `ENABLE_DECOMPOSITION=true` as well, complex queries are decomposed and retrieved per sub-query, then RRF-merged. JSON payload shape (`{answer, sources}`) is unchanged.
 
@@ -61,6 +61,14 @@ Active env vars (all in [python/config/models.py](python/config/models.py)):
 - `EVAL_OUTPUT_DIR` — path, default `python/evaluation/reports` (from config file location if unset).
 - `EVAL_JUDGE_TEMPERATURE` — float, default `0.0`. Judge calls use this temperature.
 - `EVAL_MAX_CONCURRENCY` — int, default `1`. Caps concurrent Phase 4 judge LLM calls per run (`min(3, value)`); question/config loop stays serial. Raise only if Ollama can serve parallel generations (`OLLAMA_NUM_PARALLEL`); see [DEPLOYMENT.md](DEPLOYMENT.md).
+- `OLLAMA_NUM_BATCH` — int, default `512`. Passed as Ollama `options.num_batch` on `/api/chat`.
+- `OLLAMA_NUM_CTX` — int, default `0` (omit = model default). When set to a positive value, passed as `options.num_ctx` (smaller values truncate long prompts).
+- `OLLAMA_KEEP_ALIVE` — str, default `5m`. Top-level `keep_alive` on `/api/chat` and embed requests.
+- `EMBED_BATCH_SIZE` — int, default `32`. Max texts per Ollama `POST /api/embed` request in [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py) (ingest + query embedding).
+- `RERANKER_MODEL` — str, default `cross-encoder/ms-marco-MiniLM-L-6-v2`. Cross-encoder model used by [python/reranker/simple_reranker.py](python/reranker/simple_reranker.py); can be overridden (for example `BAAI/bge-reranker-v2-m3`).
+- `RERANK_TOP_M` — int, default `50`, capped at `150`. Fused/vector candidate count before final top-`CONTEXT_RETRIEVAL_LIMIT` rerank in [python/local_llm.py](python/local_llm.py).
+- `ENABLE_COMMUNITY_SUMMARIES` — bool, default `false`. Per-community LLM summaries during ingest (requires `ENABLE_KNOWLEDGE_GRAPH=true`).
+- `COMMUNITY_SUMMARY_WEIGHT` — float, default `0.2`. RRF weight for the community-summary list when summaries exist and the query is not router-`specific`.
 
 ---
 
@@ -84,7 +92,7 @@ Only the files that matter. Start here.
 - [python/reranker/](python/reranker/) — optional cross-encoder reranker.
 - [python/config/models.py](python/config/models.py) — **all tunable knobs**. Read this before changing behaviour.
 - [python/agent/](python/agent/) — Phase 3–3.5: `prompts.py`, `query_router.py`, `grader.py`, `decomposer.py`, `rag_fusion.py`, `control_loop.py`.
-- [python/tests/test_phase2.py](python/tests/test_phase2.py), [python/tests/test_phase3.py](python/tests/test_phase3.py), [python/tests/test_phase4.py](python/tests/test_phase4.py) — pytest suites.
+- [python/tests/test_phase2.py](python/tests/test_phase2.py), [python/tests/test_phase3.py](python/tests/test_phase3.py), [python/tests/test_phase4.py](python/tests/test_phase4.py), [python/tests/test_phase5_batch_embed.py](python/tests/test_phase5_batch_embed.py), [python/tests/test_phase6_rerank.py](python/tests/test_phase6_rerank.py), [python/tests/test_phase7_ollama_tuning.py](python/tests/test_phase7_ollama_tuning.py), [python/tests/test_phase8_graphrag.py](python/tests/test_phase8_graphrag.py) — pytest suites.
 
 ### Backend (Node/Express)
 - [backend/routes/api.js](backend/routes/api.js) — `/upload`, `/query`, `/reset`, `/pdfs`. Spawns Python as subprocess; reads JSON from stdout.
@@ -113,10 +121,15 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 | `VECTOR_WEIGHT` / `BM25_WEIGHT` / `GRAPH_WEIGHT` | 0.4 / 0.3 / 0.3 | RRF fusion weights (α, β, γ) |
 | `RRF_K` | 60 | RRF smoothing constant |
 | `GRAPH_TRAVERSAL_DEPTH` | 2 | BFS depth in graph retrieval |
-| `SKIP_RERANKING` | `true` | Skip cross-encoder to save ~250MB RAM |
+| `ENABLE_COMMUNITY_SUMMARIES` | `false` | Ingest-time GraphRAG-style summaries per Leiden community (extra LLM + embed calls) |
+| `COMMUNITY_SUMMARY_WEIGHT` | `0.2` | RRF weight for community-summary retrieval when enabled and not agent-`specific` |
+| `SKIP_RERANKING` | `false` | Disable cross-encoder reranking when memory-constrained; default keeps reranking on |
 | `USE_DOCLING` | `false` | Use IBM Docling instead of PyMuPDF4LLM |
 | `INDICES_DIR` | `/app/uploads/indices` | Where BM25 `.pkl` and KG `.json` are persisted (per `pdf_id`) |
 | `OLLAMA_HOST_URL` | `http://host.containers.internal:11434` | Must be reachable from inside container |
+| `OLLAMA_NUM_BATCH` | `512` | Ollama `options.num_batch` on `/api/chat` |
+| `OLLAMA_NUM_CTX` | `0` (unset) | Positive value sets `options.num_ctx`; default leaves model context size |
+| `OLLAMA_KEEP_ALIVE` | `5m` | `keep_alive` on `/api/chat` and `/api/embed` |
 | `ENABLE_AGENT` | `false` | Phase 3 master toggle. When true, `local_llm.py` runs the agentic loop instead of a single generate call |
 | `AGENT_MAX_RETRIES` | `2` | Max extra retrieve+generate+grade cycles after the first attempt |
 | `AGENT_CONFIDENCE_THRESHOLD` | `0.5` | Grader score below which a retry is triggered |
@@ -129,6 +142,9 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 | `EVAL_OUTPUT_DIR` | `python/evaluation/reports` (from package path) | Where benchmark JSON + markdown are written |
 | `EVAL_JUDGE_TEMPERATURE` | `0.0` | Judge sampling temperature |
 | `EVAL_MAX_CONCURRENCY` | `1` | Max concurrent judge LLM calls per run (1–3); benchmark loop over questions/configs stays serial |
+| `EMBED_BATCH_SIZE` | `32` | Max chunk texts per Ollama `POST /api/embed` request ([python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py)) |
+| `RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder model for reranking (`BAAI/bge-reranker-v2-m3` supported as an override) |
+| `RERANK_TOP_M` | `50` (cap `150`) | Candidates kept before final rerank to top-5 in [python/local_llm.py](python/local_llm.py) |
 
 ---
 
@@ -142,7 +158,7 @@ docker compose up --build -d
 docker compose logs -f backend
 
 # Run Phase 2 + 3 + 4 unit tests
-cd python && python -m pytest tests/test_phase2.py tests/test_phase3.py tests/test_phase4.py -v
+cd python && python -m pytest tests/test_phase2.py tests/test_phase3.py tests/test_phase4.py tests/test_phase5_batch_embed.py tests/test_phase6_rerank.py tests/test_phase7_ollama_tuning.py tests/test_phase8_graphrag.py -v
 
 # Phase 4 benchmark (needs Ollama + Qdrant; ingests dataset fixture when not skipped)
 cd python && python -m evaluation.run_benchmark --dataset evaluation/datasets/sample.yaml

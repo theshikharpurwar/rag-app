@@ -16,6 +16,12 @@ LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'gemma3:4b')
 # Embedding Model Configuration  
 EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'nomic-embed-text-v2-moe')
 
+# Max texts per Ollama POST /api/embed request (single round-trip per batch)
+EMBED_BATCH_SIZE = int(os.environ.get('EMBED_BATCH_SIZE', '32'))
+# Cross-encoder reranker model and oversampling size before rerank
+RERANKER_MODEL = os.environ.get('RERANKER_MODEL', 'cross-encoder/ms-marco-MiniLM-L-6-v2')
+RERANK_TOP_M = min(int(os.environ.get('RERANK_TOP_M', '50')), 150)
+
 # =============================================================================
 # 📊 MODEL SPECIFICATIONS (Auto-derived from model names)
 # =============================================================================
@@ -45,6 +51,12 @@ DEFAULT_COLLECTION = 'documents'
 # Ollama Configuration
 OLLAMA_HOST_URL = os.environ.get("OLLAMA_HOST_URL", "http://localhost:11434")
 OLLAMA_API_BASE = f"{OLLAMA_HOST_URL}/api"
+
+# Per-request /api/chat and /api/embed tuning (host-side: OLLAMA_NUM_PARALLEL, OLLAMA_FLASH_ATTENTION)
+OLLAMA_NUM_BATCH = int(os.environ.get("OLLAMA_NUM_BATCH", "512"))
+_OLLAMA_NUM_CTX_RAW = int(os.environ.get("OLLAMA_NUM_CTX", "0"))
+OLLAMA_NUM_CTX = _OLLAMA_NUM_CTX_RAW if _OLLAMA_NUM_CTX_RAW > 0 else None
+OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "5m")
 
 # =============================================================================
 # 🎯 RAG PARAMETERS
@@ -76,6 +88,12 @@ GRAPH_WEIGHT = float(os.environ.get('GRAPH_WEIGHT', '0.3'))     # γ — graph t
 
 # Graph traversal
 GRAPH_TRAVERSAL_DEPTH = int(os.environ.get('GRAPH_TRAVERSAL_DEPTH', '2'))
+
+# Community summaries during ingest (requires ENABLE_KNOWLEDGE_GRAPH=true); extra LLM calls per Leiden community
+ENABLE_COMMUNITY_SUMMARIES = (
+    os.environ.get('ENABLE_COMMUNITY_SUMMARIES', 'false').lower() == 'true'
+)
+COMMUNITY_SUMMARY_WEIGHT = float(os.environ.get('COMMUNITY_SUMMARY_WEIGHT', '0.2'))
 
 # Directory for persisted BM25 indexes and knowledge graph files
 INDICES_DIR = os.environ.get('INDICES_DIR', '/app/uploads/indices')
@@ -135,12 +153,20 @@ def print_current_config():
     print("=" * 60)
     print(f"LLM Model:        {LLM_MODEL_NAME}")
     print(f"Embedding Model:  {EMBEDDING_MODEL_NAME}")
+    print(f"Embed batch size: {EMBED_BATCH_SIZE}")
+    print(f"Reranker model:   {RERANKER_MODEL}")
+    print(f"Rerank top-M:     {RERANK_TOP_M}")
     print(f"Vector Size:      {DEFAULT_VECTOR_SIZE}")
     print(f"Ollama Host:      {OLLAMA_HOST_URL}")
+    print(f"Ollama num_batch: {OLLAMA_NUM_BATCH}")
+    print(f"Ollama num_ctx:   {OLLAMA_NUM_CTX or '(model default)'}")
+    print(f"Ollama keep_alive:{OLLAMA_KEEP_ALIVE}")
     print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}")
     print(f"Collection:       {DEFAULT_COLLECTION}")
     print(f"Agent Enabled:    {ENABLE_AGENT}")
     print(f"Decomposition:    {ENABLE_DECOMPOSITION}")
+    print(f"Community sums:   {ENABLE_COMMUNITY_SUMMARIES}")
+    print(f"Community RR wt: {COMMUNITY_SUMMARY_WEIGHT}")
     print(f"Judge LLM:        {JUDGE_LLM_MODEL}")
     print(f"Eval reports dir: {EVAL_OUTPUT_DIR}")
     print("=" * 60)

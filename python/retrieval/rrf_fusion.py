@@ -125,6 +125,8 @@ def hybrid_retrieve(query: str,
                     vector_weight: float = 0.4,
                     bm25_weight: float = 0.3,
                     graph_weight: float = 0.3,
+                    community_results=None,
+                    community_weight: float = 0.0,
                     rrf_k: int = 60,
                     top_k: int = 10) -> list[dict]:
     """
@@ -201,6 +203,11 @@ def hybrid_retrieve(query: str,
             logger.warning(f"[Hybrid] Graph retrieval failed: {e}")
     else:
         logger.info("[Hybrid] Knowledge graph not available, skipping graph path")
+
+    if community_results:
+        ranked_lists.append(community_results)
+        weights.append(community_weight)
+        logger.info(f"[Hybrid] Community summaries: {len(community_results)} results")
 
     # If only vector results, return them directly (no fusion needed)
     if len(ranked_lists) <= 1:

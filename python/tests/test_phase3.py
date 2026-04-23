@@ -209,7 +209,7 @@ def _make_retrieve_fn(contexts_by_query=None, default_ctx="default context"):
     mapping = dict(contexts_by_query or {})
     call_log = []
 
-    def _fn(query, weights):
+    def _fn(query, weights, route=None):
         call_log.append({"query": query, "weights": weights})
         ctx = mapping.get(query, default_ctx)
         sources = [{"id": 1, "text": ctx}]
@@ -474,7 +474,7 @@ class TestRAGFusion:
     def test_single_subquery_preserves_one_chunk(self):
         from agent.rag_fusion import RAGFusion
 
-        def retrieve_fn(query, weights):
+        def retrieve_fn(query, weights, route=None):
             return f"ctx:{query}", [
                 {"text": "chunk", "page": 1, "document": "D", "score": 0.5},
             ]
@@ -488,7 +488,7 @@ class TestRAGFusion:
     def test_overlap_dedupes(self):
         from agent.rag_fusion import RAGFusion
 
-        def retrieve_fn(query, weights):
+        def retrieve_fn(query, weights, route=None):
             if query == "a":
                 return "", [
                     {"text": "overlap text", "page": 1, "document": "D", "score": 0.9},
@@ -504,7 +504,7 @@ class TestRAGFusion:
     def test_disjoint_union(self):
         from agent.rag_fusion import RAGFusion
 
-        def retrieve_fn(query, weights):
+        def retrieve_fn(query, weights, route=None):
             if query == "a":
                 return "", [{"text": "alpha", "page": 1, "document": "D", "score": 0.9}]
             return "", [{"text": "beta", "page": 2, "document": "D", "score": 0.8}]
