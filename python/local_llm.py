@@ -197,11 +197,10 @@ def get_qdrant_client():
     """Initializes and returns a Qdrant client."""
     try:
         client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=20)
-        client.get_collections()
-        logger.info(f"Connected to Qdrant service '{QDRANT_HOST}'")
+        logger.info(f"Qdrant client created for '{QDRANT_HOST}'")
         return client
     except Exception as e:
-        logger.error(f"Failed to connect to Qdrant service '{QDRANT_HOST}': {str(e)}")
+        logger.error(f"Failed to create Qdrant client for '{QDRANT_HOST}': {str(e)}")
         raise ConnectionError(f"Could not connect to Qdrant service '{QDRANT_HOST}'") from e
 
 # --- Core RAG Functions ---
@@ -280,11 +279,8 @@ def format_context_for_llm(results):
     if not results:
         return context_str, sources
     logger.info("Formatting context for LLM...")
-    
-    # Sort results by score to prioritize most relevant contexts
-    sorted_results = sorted(results, key=lambda x: x.score if hasattr(x, 'score') else 0.0, reverse=True)
-    
-    for i, hit in enumerate(sorted_results):
+
+    for i, hit in enumerate(results):
         try:
             payload = hit.payload if isinstance(hit.payload, dict) else {}
             text = payload.get("text", "")
@@ -401,100 +397,6 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
         logger.error(f"LLM generation failed: {e}", exc_info=True)
         return "I encountered an error while processing your question. Please try again."
 
-
-def improve_response_structure(text, query):
-    """Improve the structure of the response without changing the content."""
-    try:
-        logger.info("Improving response structure...")
-        
-        # If response is already well-structured, don't modify it
-        if re.search(r'#+\s+\w+', text) and re.search(r'\n\n', text) and len(text.split('\n\n')) > 2:
-            logger.info("Response already has good structure, keeping as is")
-            return text
-            
-        # Split into paragraphs
-        paragraphs = re.split(r'\n{2,}', text)
-        
-        # Extract potential title from the query
-        query_words = query.lower().split()
-        key_question_words = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'explain', 'describe', 'list']
-        
-        title = None
-        if any(word in query_words for word in key_question_words):
-            # Format query as title if it's a question
-            title = query.strip()
-            if not title.endswith('?'):
-                title = title + '?'
-            title = title[0].upper() + title[1:]
-        else:
-            # Otherwise, use the first few words of the response
-            first_para = paragraphs[0] if paragraphs else text
-            title_words = first_para.split()[:6]
-            title = ' '.join(title_words) + '...'
-        
-        # Build the structured response
-        structured_text = [f"# {title}\n"]
-        
-        # Add introduction
-        if paragraphs and len(paragraphs) >= 1:
-            intro = paragraphs[0]
-            structured_text.append(intro + "\n")
-        
-        # Process the rest of the paragraphs
-        remaining_paragraphs = paragraphs[1:] if len(paragraphs) > 1 else []
-        
-        # Add sections for longer responses
-        if len(remaining_paragraphs) >= 2:
-            # Look for patterns that might indicate list items
-            list_pattern = r'^(\d+\.|\-|\*)\s+'
-            
-            current_section = []
-            for i, para in enumerate(remaining_paragraphs):
-                # Check if this paragraph could be a section heading
-                is_short = len(para.split()) <= 8
-                ends_with_colon = para.strip().endswith(':')
-                has_list_marker = bool(re.match(list_pattern, para.strip()))
-                
-                if (is_short and ends_with_colon) and not has_list_marker and i < len(remaining_paragraphs) - 1:
-                    # This looks like a section heading
-                    if current_section:
-                        structured_text.append('\n'.join(current_section) + "\n")
-                        current_section = []
-                    # Format as a heading
-                    section_title = para.strip().rstrip(':')
-                    structured_text.append(f"\n## {section_title}\n")
-                elif has_list_marker:
-                    # Preserve list formatting
-                    if current_section:
-                        structured_text.append('\n'.join(current_section) + "\n")
-                        current_section = []
-                    structured_text.append(para + "\n")
-                else:
-                    current_section.append(para)
-            
-            # Add any remaining section content
-            if current_section:
-                structured_text.append('\n'.join(current_section))
-        else:
-            # For shorter responses, just add the remaining paragraphs
-            structured_text.extend(remaining_paragraphs)
-        
-        # Join everything with appropriate spacing
-        result = '\n\n'.join([p for p in structured_text if p])
-        
-        # Ensure consistent spacing for list items
-        result = re.sub(r'(\n\s*\n)(\d+\.|\-|\*)\s+', r'\n\n\2 ', result)
-        
-        # Clean up any excessive newlines
-        result = re.sub(r'\n{3,}', '\n\n', result)
-        
-        logger.info("Response structure improved")
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error improving response structure: {e}")
-        # If anything goes wrong, return the original text
-        return text
 # --- End Core RAG Functions ---
 
 

@@ -9,6 +9,7 @@ to query-relevant entities.
 
 import logging
 import re
+from collections import deque
 
 import numpy as np
 
@@ -58,13 +59,14 @@ class GraphRetriever:
         if embedder is not None and any(s.get("embedding") for s in summaries.values()):
             try:
                 query_vec = embedder.encode_text([query], task_type="search_query")[0]
+                q = np.asarray(query_vec, dtype=np.float64)
+                q_norm = float(np.linalg.norm(q))
                 for cid, entry in summaries.items():
                     emb = entry.get("embedding")
                     if not emb:
                         continue
-                    q = np.asarray(query_vec, dtype=np.float64)
                     s = np.asarray(emb, dtype=np.float64)
-                    denom = float(np.linalg.norm(q) * np.linalg.norm(s))
+                    denom = q_norm * float(np.linalg.norm(s))
                     sim = float(np.dot(q, s) / denom) if denom > 0 else 0.0
                     scored.append((cid, entry, sim))
             except Exception as e:
@@ -276,10 +278,10 @@ def _bfs_levels(graph, start, max_depth):
     BFS yielding (node, depth) tuples up to max_depth.
     """
     visited = {start}
-    queue = [(start, 0)]
+    queue = deque([(start, 0)])
 
     while queue:
-        node, depth = queue.pop(0)
+        node, depth = queue.popleft()
         yield node, depth
 
         if depth >= max_depth:
