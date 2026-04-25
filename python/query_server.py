@@ -156,6 +156,13 @@ def _format_sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _phase_event(phase: str, detail: str | None = None) -> dict:
+    event = {"phase": phase}
+    if detail:
+        event["detail"] = detail
+    return event
+
+
 @app.route("/query/stream", methods=["POST"])
 def handle_query_stream():
     _ensure_init()
@@ -195,6 +202,15 @@ def handle_query_stream():
 
             retrieve_fn, _qclient = _get_pipeline(pdf_id, collection_name)
             base_weights = (VECTOR_WEIGHT, BM25_WEIGHT, GRAPH_WEIGHT)
+
+            phase_queue: list[dict] = []
+
+            def enqueue_phase(phase: str, detail: str | None = None):
+                phase_queue.append(_phase_event(phase, detail))
+
+            def drain_phases():
+                while phase_queue:
+                    yield _format_sse(phase_queue.pop(0))
 
             if ENABLE_AGENT:
                 from agent import (
@@ -237,7 +253,9 @@ def handle_query_stream():
                     query_text,
                     history,
                     lambda q, c, h: generate_rag_response_stream(q, c, h),
+                    on_phase=enqueue_phase,
                 ):
+                    yield from drain_phases()
                     if ev.get("done"):
                         ev = dict(ev)
                         ev["answer"] = _postprocess_rag_answer(
@@ -249,7 +267,10 @@ def handle_query_stream():
                     yield _format_sse(ev)
             else:
                 yield _format_sse({"phase": "retrieving"})
-                context_str, sources = retrieve_fn(query_text, base_weights)
+                context_str, sources = retrieve_fn(
+                    query_text, base_weights, None, enqueue_phase
+                )
+                yield from drain_phases()
                 yield _format_sse({"phase": "generating"})
                 acc = []
                 for token in generate_rag_response_stream(

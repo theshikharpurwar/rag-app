@@ -22,6 +22,75 @@ export const uploadPDF = async (file) => {
   }
 };
 
+export const uploadPDFStream = async (file, callbacks = {}) => {
+  const {
+    onPhase = () => { },
+    onStatus = () => { },
+    onDone = () => { },
+    onError = () => { },
+  } = callbacks;
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await fetch(`${API_URL}/upload/stream`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let msg = `Upload failed (${response.status})`;
+      try {
+        const j = await response.json();
+        if (j.message) msg = j.message;
+      } catch (_e) {
+        /* keep msg */
+      }
+      onError(msg);
+      return { success: false, message: msg };
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+      }
+      const { events, rest } = parseSseBlocks(buffer);
+      buffer = rest;
+      for (const data of events) {
+        if (data.error) {
+          onError(data.error);
+          return { success: false, message: data.error };
+        }
+        if (data.phase) {
+          onPhase(data.phase, data.detail, data);
+        }
+        if (data.status) {
+          onStatus(data.status, data);
+        }
+        if (data.done) {
+          onDone(data);
+          return { success: true, pdf: data.pdf, result: data.result };
+        }
+      }
+      if (done) break;
+    }
+    const msg = 'Upload stream ended without completion';
+    onError(msg);
+    return { success: false, message: msg };
+  } catch (error) {
+    console.error('Error streaming PDF upload:', error);
+    const msg = error.message || 'Error uploading file';
+    onError(msg);
+    return { success: false, message: msg };
+  }
+};
+
 // Fetch all PDFs
 export const fetchPDFs = async () => {
   try {
@@ -63,11 +132,11 @@ function parseSseBlocks(buffer) {
  */
 export const queryRAGStream = async (pdfId, query, history = [], callbacks = {}) => {
   const {
-    onToken = () => {},
-    onPhase = () => {},
-    onStatus = () => {},
-    onDone = () => {},
-    onError = () => {},
+    onToken = () => { },
+    onPhase = () => { },
+    onStatus = () => { },
+    onDone = () => { },
+    onError = () => { },
   } = callbacks;
 
   let streamCompleted = false;
@@ -171,7 +240,7 @@ export const queryRAGStream = async (pdfId, query, history = [], callbacks = {})
 export const queryRAG = async (pdfId, query, history = []) => {
   try {
     console.log(`Sending query to backend: ${query} for PDF: ${pdfId}`);
-    
+
     const response = await fetch(`${API_URL}/query`, {
       method: 'POST',
       headers: {
@@ -186,7 +255,7 @@ export const queryRAG = async (pdfId, query, history = []) => {
 
     const data = await response.json();
     console.log('Received response from backend:', data);
-    
+
     if (data.success) {
       return {
         answer: data.answer,

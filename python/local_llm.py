@@ -469,10 +469,15 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
             knowledge_graph = None
             graph_retriever = None
 
-    def _retrieve_and_format(query_text, weights, route=None):
+    def _retrieve_and_format(query_text, weights, route=None, on_phase=None):
+        def emit_phase(phase, detail=None):
+            if on_phase:
+                on_phase(phase, detail)
+
         v_w, b_w, g_w = weights
         has_hybrid_local = bm25_index is not None or graph_retriever is not None
         vector_limit = RERANK_TOP_M if (has_hybrid_local and reranker) else CONTEXT_RETRIEVAL_LIMIT
+        emit_phase("vector_search", f"top {vector_limit}")
         retrieved = retrieve_context(
             qdrant_client,
             collection_name,
@@ -496,6 +501,7 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
                     and knowledge_graph is not None
                     and knowledge_graph.community_summaries
                 ):
+                    emit_phase("community_search")
                     community_results = graph_retriever.global_search(
                         query_text, embedder=embedder, top_k=3
                     )
@@ -507,6 +513,11 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
                         b_adj *= scale
                         g_adj *= scale
 
+                if bm25_index is not None:
+                    emit_phase("bm25_search")
+                if graph_retriever is not None and knowledge_graph is not None:
+                    emit_phase("graph_search")
+                emit_phase("fusing")
                 fused = hybrid_retrieve(
                     query=query_text,
                     pdf_id=pdf_id,
@@ -523,6 +534,7 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
                     top_k=vector_limit,
                 )
                 if reranker and len(fused) > CONTEXT_RETRIEVAL_LIMIT:
+                    emit_phase("reranking", f"{len(fused)} candidates")
                     logger.info(
                         f"[Hybrid] Reranking fused results {len(fused)} -> {CONTEXT_RETRIEVAL_LIMIT}"
                     )

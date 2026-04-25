@@ -1,10 +1,10 @@
 // FILE: frontend/src/components/PDFUploader.js (Full Code)
 
 import React, { useState, useRef } from 'react';
-import { uploadPDF } from '../api'; // Assumes api.js handles the fetch
+import { uploadPDFStream } from '../api';
 import './PDFUploader.css';
 
-const PDFUploader = ({ onUpload }) => {
+const PDFUploader = ({ onUpload, onPipelineEvent }) => {
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
@@ -15,14 +15,14 @@ const PDFUploader = ({ onUpload }) => {
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile && selectedFile.type === "application/pdf") {
-        setFile(selectedFile);
-        setError(null); // Clear error on new file selection
+      setFile(selectedFile);
+      setError(null); // Clear error on new file selection
     } else {
-        setFile(null);
-        setError("Please select a valid PDF file.");
-        if (fileInputRef.current) {
-            fileInputRef.current.value = ''; // Clear the input field
-        }
+      setFile(null);
+      setError("Please select a valid PDF file.");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''; // Clear the input field
+      }
     }
   };
 
@@ -37,8 +37,20 @@ const PDFUploader = ({ onUpload }) => {
     // Remove progress simulation - backend handles the wait now
 
     try {
-      // uploadPDF now waits for backend processing
-      const response = await uploadPDF(file);
+      const response = await uploadPDFStream(file, {
+        onPhase: (phase, detail, event) => {
+          if (onPipelineEvent) onPipelineEvent({ type: 'ingest', phase, detail, event });
+        },
+        onStatus: (status, event) => {
+          if (onPipelineEvent) onPipelineEvent({ type: 'ingest', status, event });
+        },
+        onDone: (event) => {
+          if (onPipelineEvent) onPipelineEvent({ type: 'ingest', phase: 'ingest_done', event });
+        },
+        onError: (message) => {
+          if (onPipelineEvent) onPipelineEvent({ type: 'ingest', phase: 'error', detail: message });
+        },
+      });
 
       if (response.success && response.pdf) {
         logger.info(`Upload and processing successful for ${response.pdf.originalName}`);
@@ -68,9 +80,9 @@ const PDFUploader = ({ onUpload }) => {
 
   // Helper logger (can be removed if console is sufficient)
   const logger = {
-      info: console.log,
-      warn: console.warn,
-      error: console.error
+    info: console.log,
+    warn: console.warn,
+    error: console.error
   };
 
   return (

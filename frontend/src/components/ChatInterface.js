@@ -13,7 +13,7 @@ const PHASE_LABELS = {
 };
 
 // *** REMOVED model prop ***
-const ChatInterface = ({ pdf }) => {
+const ChatInterface = ({ pdf, onPipelineEvent }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -79,14 +79,27 @@ const ChatInterface = ({ pdf }) => {
       },
     ]);
 
+    if (onPipelineEvent) {
+      onPipelineEvent({ type: 'query', phase: 'question', query: currentInput });
+    }
+
     await queryRAGStream(pdf._id, currentInput, history, {
       onPhase: (phase) => {
+        if (onPipelineEvent) {
+          onPipelineEvent({ type: 'query', phase, query: currentInput });
+        }
         setStreamPhase(PHASE_LABELS[phase] || phase);
       },
       onStatus: (msg) => {
+        if (onPipelineEvent) {
+          onPipelineEvent({ type: 'query', phase: 'refining', detail: msg, query: currentInput });
+        }
         setStreamPhase(msg || PHASE_LABELS.refining);
       },
       onToken: (token) => {
+        if (onPipelineEvent) {
+          onPipelineEvent({ type: 'query', phase: 'generating', token, query: currentInput });
+        }
         setMessages((prev) => {
           const next = [...prev];
           const last = next.length - 1;
@@ -99,6 +112,9 @@ const ChatInterface = ({ pdf }) => {
         });
       },
       onDone: ({ sources, answer }) => {
+        if (onPipelineEvent) {
+          onPipelineEvent({ type: 'query', phase: 'answer', done: true, answer, sources, query: currentInput });
+        }
         setIsStreaming(false);
         setStreamPhase(null);
         setMessages((prev) => {
@@ -119,6 +135,9 @@ const ChatInterface = ({ pdf }) => {
         });
       },
       onError: (msg) => {
+        if (onPipelineEvent) {
+          onPipelineEvent({ type: 'query', phase: 'error', detail: msg, query: currentInput });
+        }
         setIsStreaming(false);
         setStreamPhase(null);
         setMessages((prev) => {
@@ -220,27 +239,27 @@ const ChatInterface = ({ pdf }) => {
                 !msg.streaming &&
                 msg.sources &&
                 msg.sources.length > 0 && (
-                <div className="message-sources">
-                  <div className="sources-header">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" /></svg>
-                    <span>Sources:</span>
+                  <div className="message-sources">
+                    <div className="sources-header">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" /></svg>
+                      <span>Sources:</span>
+                    </div>
+                    <ul className="sources-list">
+                      {msg.sources.map((source, idx) => (
+                        <li key={idx} className="source-item" title={`Score: ${source.score?.toFixed(3) ?? 'N/A'}`}>
+                          <span className="source-page">Page {source.page}</span>
+                          <span className="source-document">{source.document || pdfName}</span>
+                          {/* Optional: Visual score indicator */}
+                          {source.score !== undefined && source.score !== null && (
+                            <span className="source-score">
+                              <div className="score-bar" style={{ width: `${Math.max(0, Math.min(source.score * 100, 100))}%` }}></div>
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <ul className="sources-list">
-                    {msg.sources.map((source, idx) => (
-                      <li key={idx} className="source-item" title={`Score: ${source.score?.toFixed(3) ?? 'N/A'}`}>
-                        <span className="source-page">Page {source.page}</span>
-                        <span className="source-document">{source.document || pdfName}</span>
-                        {/* Optional: Visual score indicator */}
-                        {source.score !== undefined && source.score !== null && (
-                          <span className="source-score">
-                            <div className="score-bar" style={{ width: `${Math.max(0, Math.min(source.score * 100, 100))}%` }}></div>
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                )}
             </div>
           </div>
         ))}

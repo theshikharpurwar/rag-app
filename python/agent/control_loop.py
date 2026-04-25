@@ -147,6 +147,7 @@ class AgenticRAG:
         query: str,
         chat_history: list,
         generate_fn_stream: Callable[[str, str, list], Iterator[str]],
+        on_phase: Optional[Callable[[str, Optional[str]], None]] = None,
     ) -> Iterator[dict]:
         """
         Like run(), but the last attempt's generation is streamed (token events).
@@ -177,17 +178,19 @@ class AgenticRAG:
             yield {"phase": "retrieving"}
             sub_trace: List[str] = []
             if decomposer and fusion:
+                if on_phase:
+                    on_phase("decomposing", None)
                 sub_queries = decomposer.decompose(current_query)
                 if len(sub_queries) > 1:
                     context_str, sources = fusion.retrieve(sub_queries, weights, route)
                     sub_trace = list(sub_queries)
                 else:
                     context_str, sources = self.retrieve_fn(
-                        current_query, weights, route
+                        current_query, weights, route, on_phase
                     )
             else:
                 context_str, sources = self.retrieve_fn(
-                    current_query, weights, route
+                    current_query, weights, route, on_phase
                 )
 
             yield {"phase": "generating"}

@@ -1,10 +1,11 @@
-﻿/* DOCUVERSE - RAG Interface Styles */
+/* DOCUVERSE - RAG Interface Styles */
 
 .docuverse-app {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
+  overflow: hidden;
 }
 
 .app-header {
@@ -22,6 +23,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
 }
 
 .brand {
@@ -66,22 +68,73 @@
   margin-top: 0.25rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-tabs {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+}
+
+.app-tabs button {
+  min-width: 92px;
+  padding: 0.65rem 1rem;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 700;
+  transition: var(--transition-fast);
+}
+
+.app-tabs button:hover {
+  color: var(--text-primary);
+}
+
+.app-tabs button.active {
+  background: var(--gradient-primary);
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
 .main-content {
   flex: 1;
-  padding: 2rem 0;
+  padding: 1.5rem 0;
+  overflow: hidden;
+}
+
+.main-content .container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .content-grid {
   display: grid;
   grid-template-columns: 380px 1fr;
-  gap: 2rem;
-  min-height: calc(100vh - 200px);
+  gap: 1.5rem;
+  flex: 1;
+  min-height: 0;
+  transition: all 0.3s ease;
+}
+
+.content-grid.sidebar-closed {
+  grid-template-columns: 1fr;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 0.5rem;
 }
 
 .upload-card {
@@ -283,6 +336,28 @@
   display: flex;
   flex-direction: column;
   animation: fadeIn 0.5s ease-out 0.2s backwards;
+  height: 100%;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.tab-panels {
+  position: relative;
+}
+
+.tab-panel {
+  display: none;
+  min-height: 100%;
+}
+
+.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.pipeline-card {
+  min-height: 100%;
 }
 
 .empty-chat-card {
@@ -352,6 +427,20 @@
 }
 
 @media (max-width: 968px) {
+  .header-content,
+  .header-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .app-tabs {
+    width: 100%;
+  }
+
+  .app-tabs button {
+    flex: 1;
+  }
+
   .content-grid {
     grid-template-columns: 1fr;
   }
