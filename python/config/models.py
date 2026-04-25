@@ -11,10 +11,10 @@ import os
 # =============================================================================
 
 # LLM Model Configuration
-LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'gemma3:4b')
+LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'qwen3.5:0.8b')
 
 # Embedding Model Configuration  
-EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'nomic-embed-text-v2-moe')
+EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'embeddinggemma')
 
 # Max texts per Ollama POST /api/embed request (single round-trip per batch)
 EMBED_BATCH_SIZE = int(os.environ.get('EMBED_BATCH_SIZE', '32'))
@@ -37,6 +37,8 @@ EMBEDDING_VECTOR_SIZES = {
     'nomic-embed-text-v2-moe': 768,   # MoE v2 — multilingual, same dim as v1.5
     'all-MiniLM-L6-v2': 384,
     'sentence-transformers/all-MiniLM-L6-v2': 384,
+    'all-minilm': 384,
+    'embeddinggemma': 768,
 }
 
 # Auto-detect vector size based on embedding model

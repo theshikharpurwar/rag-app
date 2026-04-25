@@ -15,7 +15,7 @@ import os
 import sys
 from functools import lru_cache
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request, stream_with_context
 
 logging.basicConfig(
     level=logging.INFO,
@@ -150,6 +150,141 @@ def handle_query():
             ),
             500,
         )
+
+
+def _format_sse(data: dict) -> str:
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+@app.route("/query/stream", methods=["POST"])
+def handle_query_stream():
+    _ensure_init()
+
+    data = request.get_json(force=True)
+    query_text = (data or {}).get("query", "").strip()
+    pdf_id = (data or {}).get("pdf_id", "")
+    collection_name = (data or {}).get("collection_name", "documents")
+    history = (data or {}).get("history", [])
+
+    if not query_text or not pdf_id:
+        return jsonify({"message": "Missing query or pdf_id"}), 400
+
+    @stream_with_context
+    def event_stream():
+        try:
+            from local_llm import (
+                _postprocess_rag_answer,
+                generate_rag_response,
+                generate_rag_response_stream,
+                llm,
+            )
+            from config import (
+                VECTOR_WEIGHT,
+                BM25_WEIGHT,
+                GRAPH_WEIGHT,
+                CONTEXT_RETRIEVAL_LIMIT,
+                ENABLE_AGENT,
+                ENABLE_DECOMPOSITION,
+                AGENT_MAX_RETRIES,
+                AGENT_CONFIDENCE_THRESHOLD,
+                AGENT_ROUTER_WEIGHT_BOOST,
+                AGENT_DECOMP_MAX_SUBQUERIES,
+                AGENT_DECOMP_MIN_WORDS,
+                AGENT_FUSION_RRF_K,
+            )
+
+            retrieve_fn, _qclient = _get_pipeline(pdf_id, collection_name)
+            base_weights = (VECTOR_WEIGHT, BM25_WEIGHT, GRAPH_WEIGHT)
+
+            if ENABLE_AGENT:
+                from agent import (
+                    QueryRouter,
+                    AnswerGrader,
+                    AgenticRAG,
+                    QueryDecomposer,
+                    RAGFusion,
+                )
+
+                decomposer = None
+                fusion = None
+                if ENABLE_DECOMPOSITION:
+                    decomposer = QueryDecomposer(
+                        llm,
+                        max_subqueries=AGENT_DECOMP_MAX_SUBQUERIES,
+                        min_words=AGENT_DECOMP_MIN_WORDS,
+                    )
+                    fusion = RAGFusion(
+                        retrieve_fn,
+                        rrf_k=AGENT_FUSION_RRF_K,
+                        top_k=CONTEXT_RETRIEVAL_LIMIT,
+                    )
+                agent = AgenticRAG(
+                    llm=llm,
+                    router=QueryRouter(llm, weight_boost=AGENT_ROUTER_WEIGHT_BOOST),
+                    grader=AnswerGrader(
+                        llm, threshold=AGENT_CONFIDENCE_THRESHOLD
+                    ),
+                    retrieve_fn=retrieve_fn,
+                    generate_fn=lambda q, ctx, hist: generate_rag_response(
+                        q, ctx, hist
+                    ),
+                    max_retries=AGENT_MAX_RETRIES,
+                    base_weights=base_weights,
+                    decomposer=decomposer,
+                    fusion=fusion,
+                )
+                for ev in agent.run_stream(
+                    query_text,
+                    history,
+                    lambda q, c, h: generate_rag_response_stream(q, c, h),
+                ):
+                    if ev.get("done"):
+                        ev = dict(ev)
+                        ev["answer"] = _postprocess_rag_answer(
+                            ev.pop("raw_answer", "")
+                        )
+                        logger.info(
+                            "[QueryServer] Agent trace: %s", ev.get("trace")
+                        )
+                    yield _format_sse(ev)
+            else:
+                yield _format_sse({"phase": "retrieving"})
+                context_str, sources = retrieve_fn(query_text, base_weights)
+                yield _format_sse({"phase": "generating"})
+                acc = []
+                for token in generate_rag_response_stream(
+                    query_text, context_str, history
+                ):
+                    acc.append(token)
+                    yield _format_sse({"token": token})
+                full = "".join(acc)
+                yield _format_sse(
+                    {
+                        "done": True,
+                        "sources": sources,
+                        "trace": {},
+                        "answer": _postprocess_rag_answer(full),
+                    }
+                )
+        except Exception as e:
+            logger.error(
+                f"[QueryServer] stream error: {e}", exc_info=True
+            )
+            yield _format_sse(
+                {
+                    "error": "An error occurred while processing your question. Please try again.",
+                }
+            )
+
+    return Response(
+        event_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.route("/cache/clear", methods=["POST"])

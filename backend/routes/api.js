@@ -10,7 +10,7 @@ const PDFModel = require('../models/pdf');
 const logger = console;
 
 // Persistent Python query server (replaces subprocess-per-query)
-const PYTHON_QUERY_URL = process.env.PYTHON_QUERY_URL || 'http://localhost:5001';
+const PYTHON_QUERY_URL = process.env.PYTHON_QUERY_URL || 'http://127.0.0.1:5001';
 
 // Multer setup with file validation
 const uploadsDir = path.resolve(__dirname, '../uploads');
@@ -217,6 +217,123 @@ router.post('/query', async (req, res) => {
   } catch (err) {
     logger.error('Query Route Error:', err.message || err);
     res.status(500).json({ success: false, message: 'Server Error: ' + (err.message || 'Unknown') });
+  }
+});
+
+router.post('/query/stream', async (req, res) => {
+  logger.info('Received streaming query request.');
+  try {
+    const { pdfId, query, history } = req.body;
+
+    if (!pdfId || !query) {
+      return res.status(400).json({
+        success: false,
+        message: 'PDF ID and query are required',
+      });
+    }
+
+    if (typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query must be a non-empty string',
+      });
+    }
+
+    if (query.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Query too long. Maximum 1000 characters.',
+      });
+    }
+
+    const pdf = await PDFModel.findById(pdfId, { processed: 1 });
+    if (!pdf) {
+      return res.status(404).json({ success: false, message: 'PDF not found' });
+    }
+    if (pdf.processed !== true) {
+      return res
+        .status(400)
+        .json({ success: false, message: 'PDF is still processing or failed.' });
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') {
+      res.flushHeaders();
+    }
+
+    const fetch = (await import('node-fetch')).default;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const onClose = () => {
+      if (controller) {
+        try {
+          controller.abort();
+        } catch (_e) {
+          /* ignore */
+        }
+      }
+    };
+    req.on('close', onClose);
+
+    const pyRes = await fetch(`${PYTHON_QUERY_URL}/query/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        pdf_id: pdfId,
+        collection_name: 'documents',
+        history: (history && Array.isArray(history)) ? history : [],
+      }),
+      timeout: 300000,
+      signal: controller ? controller.signal : undefined,
+    });
+
+    if (!pyRes.ok) {
+      let msg = 'Query processing failed';
+      try {
+        const errBody = await pyRes.text();
+        const parsed = errBody && JSON.parse(errBody);
+        if (parsed && (parsed.message || parsed.answer)) {
+          msg = parsed.message || parsed.answer;
+        } else if (errBody) {
+          msg = errBody.slice(0, 200);
+        }
+      } catch (_p) {
+        /* keep default */
+      }
+      res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+      res.end();
+      return;
+    }
+
+    if (pyRes.body) {
+      pyRes.body.on('error', (err) => {
+        logger.error('Python stream read error:', err);
+        if (!res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`);
+          res.end();
+        }
+      });
+      pyRes.body.pipe(res);
+    } else {
+      res.write(
+        `data: ${JSON.stringify({ error: 'No response body from query server' })}\n\n`,
+      );
+      res.end();
+    }
+  } catch (err) {
+    logger.error('Query stream route error:', err.message || err);
+    if (!res.headersSent) {
+      return res
+        .status(500)
+        .json({ success: false, message: 'Server Error: ' + (err.message || 'Unknown') });
+    }
+    res.write(
+      `data: ${JSON.stringify({ error: err.message || 'Server error' })}\n\n`,
+    );
+    res.end();
   }
 });
 // --- END /query route ---

@@ -2,7 +2,7 @@
 Benchmark Ollama generation and embedding throughput (standalone CLI; stdout OK).
 
 Usage:
-  cd python && python -m evaluation.bench_ollama gen --model gemma3:4b --prompts 20 --concurrency 2
+  cd python && python -m evaluation.bench_ollama gen --model qwen3.5:0.8b --prompts 20 --concurrency 2
   cd python && python -m evaluation.bench_ollama embed --model nomic-embed-text-v2-moe --items 200 --batch 32
 """
 
@@ -259,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     g = sub.add_parser("gen", help="Benchmark /api/chat streaming generation")
-    g.add_argument("--model", default=os.environ.get("LLM_MODEL", "gemma3:4b"))
+    g.add_argument("--model", default=os.environ.get("LLM_MODEL", "qwen3.5:0.8b"))
     g.add_argument("--prompts", type=int, default=10)
     g.add_argument("--concurrency", type=int, default=1)
     g.add_argument("--max-tokens", type=int, default=64)

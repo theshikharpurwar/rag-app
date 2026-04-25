@@ -1,5 +1,6 @@
 # D:\rag-app\python\llm\ollama_llm.py
 
+import json
 import logging
 import os
 
@@ -7,9 +8,23 @@ import requests
 
 from config.models import OLLAMA_KEEP_ALIVE, OLLAMA_NUM_BATCH, OLLAMA_NUM_CTX
 
+import re
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Match non-streaming behaviour in generate_response: strip thinking leaks from Qwen3 etc.
+_REDACTED_THINKING_BLOCK = re.compile(
+    r"<think>[\s\S]*?</think>", re.IGNORECASE
+)
+
+def _visible_prefix_after_think_strip(accum: str) -> str:
+    s = _REDACTED_THINKING_BLOCK.sub("", accum)
+    i = s.find("<redacted_thinking")
+    if i != -1:
+        s = s[:i]
+    return s
 
 class OllamaLLM:
     """
@@ -28,7 +43,7 @@ class OllamaLLM:
             keep_alive (str, optional): Top-level keep_alive for /api/chat (default OLLAMA_KEEP_ALIVE)
         """
         # Get model from environment variable or use the provided one or default to phi2
-        self.model_name = model_name or os.environ.get('LLM_MODEL', 'phi2')
+        self.model_name = model_name or os.environ.get('LLM_MODEL', 'qwen3.5:0.8b')
         self.num_batch = int(num_batch if num_batch is not None else OLLAMA_NUM_BATCH)
         if num_ctx is not None:
             self.num_ctx = int(num_ctx) if int(num_ctx) > 0 else None
@@ -61,7 +76,7 @@ class OllamaLLM:
             logger.error(f"Error checking Ollama API: {str(e)}")
             logger.warning(f"Make sure Ollama is running at {self.api_base}")
 
-    def generate_response(self, prompt, context=None, max_tokens=1000, temperature=0.7, messages=None):
+    def generate_response(self, prompt, context=None, max_tokens=1000, temperature=0.7, messages=None, response_format=None):
         """
         Generate a response using the Ollama /api/chat endpoint with structured messages.
         Uses role-based message format that chat-tuned models (like qwen2.5vl) understand best.
@@ -72,6 +87,7 @@ class OllamaLLM:
             max_tokens (int, optional): Maximum number of tokens to generate
             temperature (float, optional): Sampling temperature
             messages (list, optional): Full conversation as [{"role": ..., "content": ...}]
+            response_format (str, optional): 'json' to force Ollama to return valid JSON
 
         Returns:
             str: The generated response
@@ -97,16 +113,29 @@ class OllamaLLM:
                 "model": self.model_name,
                 "messages": chat_messages,
                 "stream": False,
+                "think": False,
                 "options": options,
                 "keep_alive": self.keep_alive,
             }
+            if response_format == "json":
+                payload["format"] = "json"
 
             logger.info(f"Sending request to: {self.api_base}/chat")
             response = requests.post(f"{self.api_base}/chat", json=payload, timeout=120)
 
             if response.status_code == 200:
                 result = response.json()
-                full_response = result.get("message", {}).get("content", "")
+                msg = result.get("message", {}) or {}
+                full_response = (msg.get("content") or "").strip()
+                if not full_response and (msg.get("thinking") or "").strip():
+                    full_response = (msg.get("thinking") or "").strip()
+                    logger.warning(
+                        "LLM returned empty content but non-empty thinking; "
+                        "upgrade Ollama or use a model that respects think=false."
+                    )
+                # Qwen3 thinking models leak <think>...</think> into content even
+                # with think:false on some Ollama versions — strip it before returning.
+                full_response = _REDACTED_THINKING_BLOCK.sub("", full_response).strip()
                 logger.info(f"Successfully generated response: {full_response[:50]}...")
                 return full_response
             else:
@@ -128,6 +157,87 @@ class OllamaLLM:
             error_msg = f"Error generating response: {str(e)}"
             logger.error(error_msg)
             return f"Sorry, I encountered an error: {error_msg}"
+
+    def generate_response_stream(
+        self, prompt, context=None, max_tokens=1000, temperature=0.7, messages=None, response_format=None
+    ):
+        """
+        Yields text deltas from Ollama /api/chat with stream: true, with the same
+        <think> span stripping as generate_response. On connection or
+        HTTP errors, falls back to a single yield from non-streaming generate_response.
+        """
+        if not prompt and not messages:
+            logger.warning("Empty prompt provided to generate_response_stream")
+            yield "Please provide a question or prompt."
+            return
+
+        chat_messages = messages if messages else [{"role": "user", "content": prompt}]
+
+        if response_format == "json":
+            yield "Sorry, streaming does not support JSON response format."
+            return
+
+        options = {
+            "num_predict": max_tokens,
+            "temperature": temperature,
+            "num_batch": self.num_batch,
+        }
+        if self.num_ctx is not None:
+            options["num_ctx"] = self.num_ctx
+        payload = {
+            "model": self.model_name,
+            "messages": chat_messages,
+            "stream": True,
+            "think": False,
+            "options": options,
+            "keep_alive": self.keep_alive,
+        }
+
+        def fallback_iter():
+            yield self.generate_response(
+                None,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=chat_messages,
+                response_format=None,
+            )
+
+        accum = ""
+        last_visible = ""
+        try:
+            with requests.post(
+                f"{self.api_base}/chat", json=payload, stream=True, timeout=300
+            ) as response:
+                if response.status_code != 200:
+                    err = f"API error: {response.status_code} - {response.text[:500]}"
+                    logger.error(err)
+                    yield from fallback_iter()
+                    return
+                for raw in response.iter_lines(decode_unicode=True):
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    msg = (obj or {}).get("message") or {}
+                    part = msg.get("content") or ""
+                    if not part and (msg.get("thinking") or "").strip():
+                        part = (msg.get("thinking") or "").strip()
+                    accum += part
+                    visible = _visible_prefix_after_think_strip(accum)
+                    delta = visible[len(last_visible) :]
+                    last_visible = visible
+                    if delta:
+                        yield delta
+                    if (obj or {}).get("done"):
+                        return
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            logger.error("Streaming to Ollama failed: %s, falling back", e)
+            yield from fallback_iter()
+        except Exception as e:
+            logger.error("Streaming error: %s, falling back", e, exc_info=True)
+            yield from fallback_iter()
 
     def generate_answer(self, query, retrieved_contexts):
         """

@@ -37,7 +37,7 @@ class AnswerGrader:
 
         try:
             raw = self.llm.generate_response(
-                prompt=prompt, temperature=0.0, max_tokens=120
+                prompt=prompt, temperature=0.0, max_tokens=120, response_format="json"
             )
         except Exception as e:
             print(f"[Agent] grader LLM call failed: {e}", file=sys.stderr)

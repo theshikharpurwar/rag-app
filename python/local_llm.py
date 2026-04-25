@@ -303,37 +303,31 @@ def _strip_leading_list_marker(text: str) -> str:
     return text
 
 
-def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
-    """Generates a response using the LLM /api/chat with structured message roles."""
-    if not llm:
-        raise RuntimeError("LLM is not initialized.")
+def _postprocess_rag_answer(text: str) -> str:
+    if not text:
+        return text
+    text = re.sub(r"^(ANSWER:?|Answer:?)\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"User:.*$", "", text, flags=re.DOTALL).strip()
+    text = re.sub(r"Human:.*$", "", text, flags=re.DOTALL).strip()
+    text = _strip_leading_list_marker(text)
+    return text.strip()
 
-    # Handle missing context
-    if not context_str:
-        logger.warning("No context provided to LLM.")
-        return "I couldn't find relevant information in the document to answer this question. Could you try rephrasing or asking about something else from the document?"
 
-    # Truncate if too long
+def _build_rag_messages(query, context_str, chat_history):
     if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
-        logger.warning(f"Context length ({len(context_str)}) exceeds limit, truncating.")
         context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT]
-
-    # Build structured messages list for /api/chat
-    messages = []
-
-    # System message: role + document context
-    messages.append({
-        "role": "system",
-        "content": (
-            "You are a helpful assistant that answers questions about documents. "
-            "Answer only from the provided document extracts. Be concise and accurate. "
-            "Reply in plain prose — do not begin the answer with a numbered list marker "
-            "(for example '1.') or a bullet ('-', '*'), and do not wrap a single fact in a list.\n\n"
-            f"Document extracts:\n{context_str}"
-        )
-    })
-
-    # Inject chat history as real user/assistant turns (most recent MAX_HISTORY_TOKENS worth)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that answers questions about documents. "
+                "Answer only from the provided document extracts. Be concise and accurate. "
+                "Reply in plain prose — do not begin the answer with a numbered list marker "
+                "(for example '1.') or a bullet ('-', '*'), and do not wrap a single fact in a list.\n\n"
+                f"Document extracts:\n{context_str}"
+            ),
+        }
+    ]
     if chat_history:
         token_count = 0
         valid_turns = []
@@ -345,13 +339,28 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
                 break
             valid_turns.insert(0, turn)
             token_count += turn_tokens
-
         for turn in valid_turns:
-            messages.append({"role": "user",      "content": turn.get("user", "")})
-            messages.append({"role": "assistant",  "content": turn.get("assistant", "")})
-
-    # Current user question
+            messages.append({"role": "user", "content": turn.get("user", "")})
+            messages.append({"role": "assistant", "content": turn.get("assistant", "")})
     messages.append({"role": "user", "content": query})
+    return messages
+
+
+def generate_rag_response(query, context_str, chat_history=None, system_instruction=None):
+    """Generates a response using the LLM /api/chat with structured message roles."""
+    if not llm:
+        raise RuntimeError("LLM is not initialized.")
+
+    # Handle missing context
+    if not context_str:
+        logger.warning("No context provided to LLM.")
+        return "I couldn't find relevant information in the document to answer this question. Could you try rephrasing or asking about something else from the document?"
+
+    if len(context_str) > MAX_CONTEXT_CHAR_LIMIT:
+        logger.warning(f"Context length ({len(context_str)}) exceeds limit, truncating.")
+        context_str = context_str[:MAX_CONTEXT_CHAR_LIMIT]
+
+    messages = _build_rag_messages(query, context_str, chat_history)
 
     logger.info(f"Sending {len(messages)} messages to LLM (system + {len(chat_history or [])} history turns + query)")
 
@@ -368,16 +377,42 @@ def generate_rag_response(query, context_str, chat_history=None, system_instruct
             return "I wasn't able to generate a proper response. Please try again with a different question."
 
         logger.info("Received response from LLM.")
-        # Clean up artefacts
-        response = re.sub(r'^(ANSWER:?|Answer:?)\s*', '', response, flags=re.IGNORECASE)
-        response = re.sub(r'User:.*$', '', response, flags=re.DOTALL).strip()
-        response = re.sub(r'Human:.*$', '', response, flags=re.DOTALL).strip()
-        response = _strip_leading_list_marker(response)
-        return response.strip()
+        return _postprocess_rag_answer(response)
 
     except Exception as e:
         logger.error(f"LLM generation failed: {e}", exc_info=True)
         return "I encountered an error while processing your question. Please try again."
+
+
+def generate_rag_response_stream(query, context_str, chat_history=None, system_instruction=None):
+    """
+    Yields raw text deltas from the LLM. Caller applies _postprocess_rag_answer to the
+    joined string for the final answer (e.g. SSE done event).
+    """
+    if not llm:
+        raise RuntimeError("LLM is not initialized.")
+    if not context_str:
+        logger.warning("No context provided to LLM (stream).")
+        yield (
+            "I couldn't find relevant information in the document to answer this question. "
+            "Could you try rephrasing or asking about something else from the document?"
+        )
+        return
+    ctx = context_str
+    if len(ctx) > MAX_CONTEXT_CHAR_LIMIT:
+        logger.warning("Context length (%s) exceeds limit, truncating.", len(ctx))
+        ctx = ctx[:MAX_CONTEXT_CHAR_LIMIT]
+    messages = _build_rag_messages(query, ctx, chat_history)
+    try:
+        for chunk in llm.generate_response_stream(
+            prompt=query, messages=messages, max_tokens=2000, temperature=0.7
+        ):
+            if chunk:
+                yield chunk
+    except Exception as e:
+        logger.error("LLM streaming failed: %s", e, exc_info=True)
+        yield "I encountered an error while processing your question. Please try again."
+
 
 # --- End Core RAG Functions ---
 

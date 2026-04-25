@@ -47,50 +47,79 @@ def _normalize_entity(entity: str) -> str:
     return entity.strip()
 
 
-def _parse_triples_response(response: str) -> list[tuple]:
+def _extract_triples_from_parsed(parsed) -> list[tuple]:
     """
-    Parse LLM response into a list of (subject, predicate, object) tuples.
-    Handles various response formats robustly.
+    Recursively extract (subject, predicate, object) tuples from any nested
+    JSON structure the LLM might return:
+      - [[\"A\",\"B\",\"C\"]] or [{\"subject\":...}] (standard)
+      - [[{\"subject\":...}]] or [[[\"A\",\"B\",\"C\"]]] (extra nesting from small models)
     """
     triples = []
 
-    # Try to extract JSON array from the response
-    # First, try direct JSON parse
+    if not isinstance(parsed, list):
+        return triples
+
+    for item in parsed:
+        if isinstance(item, dict):
+            # Direct dict: {"subject": ..., "predicate": ..., "object": ...}
+            s = item.get('subject', item.get('s', ''))
+            p = item.get('predicate', item.get('p', item.get('relation', '')))
+            o = item.get('object', item.get('o', ''))
+            if s and p and o:
+                triples.append((str(s), str(p), str(o)))
+        elif isinstance(item, (list, tuple)):
+            if len(item) >= 3 and all(isinstance(x, str) for x in item[:3]):
+                # Flat string triple: ["A", "B", "C"]
+                triples.append((str(item[0]), str(item[1]), str(item[2])))
+            else:
+                # Nested: recurse to unwrap [[{...}]] or [[["A","B","C"]]]
+                triples.extend(_extract_triples_from_parsed(item))
+
+    return triples
+
+
+def _parse_triples_response(response: str) -> list[tuple]:
+    """
+    Parse LLM response into a list of (subject, predicate, object) tuples.
+    Handles any nesting depth, markdown fences, and truncated JSON.
+    """
+    if not response:
+        return []
+
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    text = re.sub(r"```(?:json)?\s*", "", response).strip()
+    text = text.replace("```", "").strip()
+
+    # Try direct JSON parse first
     try:
-        parsed = json.loads(response.strip())
-        if isinstance(parsed, list):
-            for item in parsed:
-                if isinstance(item, (list, tuple)) and len(item) >= 3:
-                    triples.append((str(item[0]), str(item[1]), str(item[2])))
-                elif isinstance(item, dict):
-                    s = item.get('subject', item.get('s', ''))
-                    p = item.get('predicate', item.get('p', item.get('relation', '')))
-                    o = item.get('object', item.get('o', ''))
-                    if s and p and o:
-                        triples.append((str(s), str(p), str(o)))
-            return triples
+        parsed = json.loads(text)
+        result = _extract_triples_from_parsed(parsed)
+        if result:
+            return result
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON array in the response using regex (greedy to get outer array)
-    json_match = re.search(r'\[[\s\S]*\]', response)
+    # Fall back: locate the outermost JSON array via regex
+    json_match = re.search(r'\[[\s\S]*\]', text)
     if json_match:
         try:
             parsed = json.loads(json_match.group())
-            if isinstance(parsed, list):
-                for item in parsed:
-                    if isinstance(item, (list, tuple)) and len(item) >= 3:
-                        triples.append((str(item[0]), str(item[1]), str(item[2])))
-                    elif isinstance(item, dict):
-                        s = item.get('subject', item.get('s', ''))
-                        p = item.get('predicate', item.get('p', item.get('relation', '')))
-                        o = item.get('object', item.get('o', ''))
-                        if s and p and o:
-                            triples.append((str(s), str(p), str(o)))
+            result = _extract_triples_from_parsed(parsed)
+            if result:
+                return result
         except json.JSONDecodeError:
             pass
 
-    return triples
+    # Last resort: extract individual ["s","p","o"] triples via regex
+    # (handles truncated JSON where the outer array is broken)
+    triple_pattern = re.compile(
+        r'\[\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\]'
+    )
+    matches = triple_pattern.findall(text)
+    if matches:
+        return [(s.strip(), p.strip(), o.strip()) for s, p, o in matches]
+
+    return []
 
 
 class EntityExtractor:
@@ -134,13 +163,16 @@ class EntityExtractor:
             response = self.llm.generate_response(
                 prompt=prompt,
                 max_tokens=500,
-                temperature=0.1  # Low temperature for structured output
+                temperature=0.1,  # Low temperature for structured output
+                response_format="json"
             )
 
             if not response:
                 return []
 
             raw_triples = _parse_triples_response(response)
+            if not raw_triples:
+                logger.debug(f"[EntityExtractor] 0 triples parsed. Raw response (first 300 chars): {response[:300]!r}")
             return _normalize_triples(raw_triples)
 
         except Exception as e:
@@ -164,22 +196,27 @@ class EntityExtractor:
             truncated = text[:1500] if len(text) > 1500 else text
             combined_text += f"--- CHUNK {i+1} ---\n{truncated}\n\n"
 
-        prompt = f"""You are an expert at extracting structured knowledge from text.
-Extract all important entities and their relationships from the following text chunks.
+        prompt = f"""Extract entity relationships from the text below.
+Output a JSON array. Each item must be exactly ["subject", "predicate", "object"].
 
-Return ONLY a JSON array of triples, where each triple is [subject, predicate, object].
-- Subject and Object should be noun phrases (people, concepts, methods, technologies, etc.)
-- Predicate should be the relationship between them (uses, is_a, part_of, causes, etc.)
-- Extract triples from ALL chunks combined, up to 15 triples maximum.
-- If no meaningful relationships exist, return an empty array: []
+Example output:
+[["Alice","works_at","Google"],["Google","is_a","Company"],["Alice","knows","Python"]]
 
+Rules:
+- subject and object: short noun phrases only (person, technology, place, concept)
+- predicate: a short verb phrase (works_at, uses, is_a, part_of, studied_at, created)
+- maximum 15 triples total
+- return [] if no clear relationships exist
+- no explanation, no markdown, just the JSON array
+
+Text:
 {combined_text}
-RESPONSE (JSON array only, no markdown, no explanation):"""
+JSON:"""
 
         try:
             response = self.llm.generate_response(
                 prompt=prompt,
-                max_tokens=800,
+                max_tokens=500,
                 temperature=0.1
             )
 
@@ -187,7 +224,12 @@ RESPONSE (JSON array only, no markdown, no explanation):"""
                 return []
 
             raw_triples = _parse_triples_response(response)
-            return _normalize_triples(raw_triples)
+            logger.info(f"[EntityExtractor] Raw parse: {len(raw_triples)} triples from response ({len(response)} chars)")
+            if not raw_triples:
+                logger.info(f"[EntityExtractor] Batch 0 triples parsed. Raw response (first 500 chars): {response[:500]!r}")
+            normalized = _normalize_triples(raw_triples)
+            logger.info(f"[EntityExtractor] After normalize: {len(normalized)} triples")
+            return normalized
 
         except Exception as e:
             logger.error(f"[EntityExtractor] Batch extraction failed: {e}")

@@ -1,15 +1,25 @@
 // FILE: frontend/src/components/ChatInterface.js
 
 import React, { useState, useRef, useEffect } from 'react';
-import { queryRAG } from '../api';
+import { queryRAGStream } from '../api';
 import './ChatInterface.css';
+
+const PHASE_LABELS = {
+  routing: 'Routing…',
+  retrieving: 'Retrieving…',
+  generating: 'Generating…',
+  grading: 'Checking answer…',
+  refining: 'Refining answer…',
+};
 
 // *** REMOVED model prop ***
 const ChatInterface = ({ pdf }) => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamPhase, setStreamPhase] = useState(null);
   const messagesEndRef = useRef(null);
+
   const [showCommands, setShowCommands] = useState(false);
   const sampleCommands = [
     { text: "Summarize this document", description: "Get a complete summary" },
@@ -35,45 +45,108 @@ const ChatInterface = ({ pdf }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim() || !pdf || isTyping) return; // Prevent multi-submit
+    if (!input.trim() || !pdf || isStreaming) return;
 
     const userMessage = { role: 'user', content: input, timestamp: Date.now() };
-    setMessages(prev => [...prev, userMessage]);
-    const currentInput = input; // Capture input before clearing
+    const currentInput = input;
     setInput('');
-    setIsTyping(true);
+    setIsStreaming(true);
+    setStreamPhase(null);
     setShowCommands(false);
 
-    try {
-      // Build history from past messages (pair user+assistant turns)
-      const history = [];
-      for (let i = 0; i < messages.length - 1; i++) {
-        if (messages[i].role === 'user' && messages[i + 1]?.role === 'assistant') {
-          history.push({ user: messages[i].content, assistant: messages[i + 1].content });
-          i++; // skip the assistant message we just paired
-        }
-      }
-
-      const response = await queryRAG(pdf._id, currentInput, history);
-      const assistantMessage = {
-        role: 'assistant',
-        content: response.answer || "I couldn't generate an answer for that query.",
-        timestamp: Date.now(),
-        sources: response.sources || []
-      };
-      setMessages(prev => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error('Error processing query:', error);
-      const errorMessage = {
-        role: 'assistant',
-        content: "Sorry, I encountered an error processing your query. Please check the server logs.",
-        timestamp: Date.now(),
-        sources: [] // Ensure sources is an empty array on error
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsTyping(false);
+    const history = [];
+    for (let i = 0; i < messages.length; i++) {
+      if (messages[i].role !== 'user') continue;
+      const asst = messages[i + 1];
+      if (!asst || asst.role !== 'assistant') continue;
+      if (asst.streaming) continue;
+      history.push({
+        user: messages[i].content,
+        assistant: asst.content || '',
+      });
+      i++;
     }
+
+    setMessages((prev) => [
+      ...prev,
+      userMessage,
+      {
+        role: 'assistant',
+        content: '',
+        streaming: true,
+        timestamp: Date.now(),
+        sources: [],
+      },
+    ]);
+
+    await queryRAGStream(pdf._id, currentInput, history, {
+      onPhase: (phase) => {
+        setStreamPhase(PHASE_LABELS[phase] || phase);
+      },
+      onStatus: (msg) => {
+        setStreamPhase(msg || PHASE_LABELS.refining);
+      },
+      onToken: (token) => {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (last < 0 || next[last].role !== 'assistant') return next;
+          next[last] = {
+            ...next[last],
+            content: (next[last].content || '') + token,
+          };
+          return next;
+        });
+      },
+      onDone: ({ sources, answer }) => {
+        setIsStreaming(false);
+        setStreamPhase(null);
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (last < 0 || next[last].role !== 'assistant') return next;
+          const text =
+            answer != null && answer !== ''
+              ? answer
+              : next[last].content || '';
+          next[last] = {
+            ...next[last],
+            content: text,
+            streaming: false,
+            sources: sources || [],
+          };
+          return next;
+        });
+      },
+      onError: (msg) => {
+        setIsStreaming(false);
+        setStreamPhase(null);
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next.length - 1;
+          if (last >= 0 && next[last].role === 'assistant') {
+            next[last] = {
+              ...next[last],
+              content:
+                next[last].content ||
+                `Error: ${msg || 'Something went wrong'}`,
+              streaming: false,
+              sources: [],
+            };
+            return next;
+          }
+          return [
+            ...next,
+            {
+              role: 'assistant',
+              content: `Error: ${msg || 'Something went wrong'}`,
+              timestamp: Date.now(),
+              sources: [],
+            },
+          ];
+        });
+      },
+    });
   };
 
   const handleCommandClick = (command) => {
@@ -127,12 +200,26 @@ const ChatInterface = ({ pdf }) => {
               {/* Use dangerouslySetInnerHTML ONLY if you trust the LLM output or sanitize it first.
                   Otherwise, render as plain text to prevent XSS.
                   For simplicity, rendering as plain text here. Replace if markdown needed. */}
-              <div className="message-text" style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+              <div
+                className={`message-text${msg.streaming ? ' streaming' : ''}`}
+                style={{ whiteSpace: 'pre-wrap' }}
+              >
+                {msg.content}
+              </div>
+              {msg.role === 'assistant' &&
+                msg.streaming &&
+                streamPhase &&
+                index === messages.length - 1 && (
+                  <div className="stream-phase">{streamPhase}</div>
+                )}
               <div className="message-meta">
                 <span className="timestamp">{formatTime(msg.timestamp)}</span>
               </div>
               {/* Source Display */}
-              {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+              {msg.role === 'assistant' &&
+                !msg.streaming &&
+                msg.sources &&
+                msg.sources.length > 0 && (
                 <div className="message-sources">
                   <div className="sources-header">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z" /></svg>
@@ -157,14 +244,6 @@ const ChatInterface = ({ pdf }) => {
             </div>
           </div>
         ))}
-        {isTyping && (
-          <div className="message assistant typing">
-            <div className="message-avatar">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7H14A7,7 0 0,1 21,14H22A1,1 0 0,1 23,15V18A1,1 0 0,1 22,19H21V20A2,2 0 0,1 19,22H5A2,2 0 0,1 3,20V19H2A1,1 0 0,1 1,18V15A1,1 0 0,1 2,14H3A7,7 0 0,1 10,7H11V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2M7.5,13A2.5,2.5 0 0,0 5,15.5A2.5,2.5 0 0,0 7.5,18A2.5,2.5 0 0,0 10,15.5A2.5,2.5 0 0,0 7.5,13M16.5,13A2.5,2.5 0 0,0 14,15.5A2.5,2.5 0 0,0 16.5,18A2.5,2.5 0 0,0 19,15.5A2.5,2.5 0 0,0 16.5,13Z" /></svg>
-            </div>
-            <div className="message-content"><div className="typing-indicator"><span></span><span></span><span></span></div></div>
-          </div>
-        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -179,7 +258,7 @@ const ChatInterface = ({ pdf }) => {
             onFocus={() => setShowCommands(true)}
             onBlur={() => setTimeout(() => setShowCommands(false), 150)} // Hide dropdown on blur
             required
-            disabled={!pdf || isTyping} // Disable input during typing
+            disabled={!pdf || isStreaming}
           />
           <button
             type="button"
@@ -205,7 +284,7 @@ const ChatInterface = ({ pdf }) => {
             ))}
           </div>
         )}
-        <button type="submit" className="send-button" disabled={!input.trim() || isTyping || !pdf}>
+        <button type="submit" className="send-button" disabled={!input.trim() || isStreaming || !pdf}>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M2,21L23,12L2,3V10L17,12L2,14V21Z" /></svg>
         </button>
       </form>

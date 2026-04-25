@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app/python"
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # Copy Python requirements first
 COPY python/requirements.txt ./python_requirements.txt

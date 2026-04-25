@@ -19,7 +19,7 @@ services:
       - "5000:5000"
     volumes:
       # Mount uploads volume for persistent storage
-      - uploads_data:/app/uploads
+      - uploads_data:/app/backend/uploads
       # Cache HuggingFace models so reranker is only downloaded once
       - hf_cache:/root/.cache/huggingface
     environment:
@@ -31,11 +31,11 @@ services:
       # - OLLAMA_NUM_CTX=4096
       # - OLLAMA_KEEP_ALIVE=10m
       # Models defined in python/config/models.py - keep in sync
-      - LLM_MODEL=gemma3:4b
-      - EMBEDDING_MODEL=nomic-embed-text-v2-moe
+      - LLM_MODEL=qwen3.5:0.8b
+      - EMBEDDING_MODEL=embeddinggemma
       - NODE_ENV=production
       # Persistent Python query server (inside same container)
-      - PYTHON_QUERY_URL=http://localhost:5001
+      - PYTHON_QUERY_URL=http://127.0.0.1:5001
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       # Cache HuggingFace models in the mounted volume
@@ -58,19 +58,19 @@ services:
       - BM25_WEIGHT=0.3
       - GRAPH_WEIGHT=0.3
       - RRF_K=60
-      - FUSION_METHOD=${FUSION_METHOD:-rrf}
+      - FUSION_METHOD=${FUSION_METHOD:-dbsf}
       - GRAPH_TRAVERSAL_DEPTH=2
-      - INDICES_DIR=/app/uploads/indices
-      - ENABLE_COMMUNITY_SUMMARIES=${ENABLE_COMMUNITY_SUMMARIES:-false}
+      - INDICES_DIR=/app/backend/uploads/indices
+      - ENABLE_COMMUNITY_SUMMARIES=${ENABLE_COMMUNITY_SUMMARIES:-true}
       - COMMUNITY_SUMMARY_WEIGHT=${COMMUNITY_SUMMARY_WEIGHT:-0.2}
       # Phase 3: Agentic self-correction (opt-in; worst-case ~9–12 LLM calls with decomposition)
       # Override from shell: `ENABLE_AGENT=true docker compose up -d backend`
-      - ENABLE_AGENT=${ENABLE_AGENT:-false}
+      - ENABLE_AGENT=${ENABLE_AGENT:-true}
       - AGENT_MAX_RETRIES=${AGENT_MAX_RETRIES:-2}
       - AGENT_CONFIDENCE_THRESHOLD=${AGENT_CONFIDENCE_THRESHOLD:-0.5}
       - AGENT_ROUTER_WEIGHT_BOOST=${AGENT_ROUTER_WEIGHT_BOOST:-0.15}
       # Phase 3.5: decomposition + RAG-Fusion (requires ENABLE_AGENT=true)
-      - ENABLE_DECOMPOSITION=${ENABLE_DECOMPOSITION:-false}
+      - ENABLE_DECOMPOSITION=${ENABLE_DECOMPOSITION:-true}
       - AGENT_DECOMP_MAX_SUBQUERIES=${AGENT_DECOMP_MAX_SUBQUERIES:-3}
       - AGENT_DECOMP_MIN_WORDS=${AGENT_DECOMP_MIN_WORDS:-8}
       - AGENT_FUSION_RRF_K=${AGENT_FUSION_RRF_K:-60}

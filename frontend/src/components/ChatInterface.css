@@ -159,6 +159,33 @@
   color: var(--text-primary);
   line-height: 1.6;
   white-space: pre-wrap;
+  transition: opacity 0.25s ease;
+}
+
+.message-text.streaming::after {
+  content: '▌';
+  display: inline-block;
+  color: var(--accent-primary);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: stream-cursor-blink 0.85s step-end infinite;
+}
+
+@keyframes stream-cursor-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.stream-phase {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 0.5rem;
+  padding: 0.25rem 0;
 }
 
 .message-meta {

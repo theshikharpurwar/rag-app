@@ -75,6 +75,7 @@ def test_chat_payload_carries_options_and_keep_alive(monkeypatch):
     assert p["options"]["num_predict"] == 100
     assert p["options"]["temperature"] == 0.4
     assert p["stream"] is False
+    assert p.get("think") is False
 
 
 def test_chat_num_ctx_omitted_when_not_set(monkeypatch):

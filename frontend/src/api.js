@@ -34,6 +34,139 @@ export const fetchPDFs = async () => {
   }
 };
 
+function parseSseBlocks(buffer) {
+  const events = [];
+  let rest = buffer;
+  let idx;
+  while ((idx = rest.indexOf('\n\n')) !== -1) {
+    const block = rest.slice(0, idx).trim();
+    rest = rest.slice(idx + 2);
+    if (!block) continue;
+    const lines = block.split('\n');
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith('data:')) continue;
+      const jsonStr = t.slice(5).trim();
+      if (!jsonStr) continue;
+      try {
+        events.push(JSON.parse(jsonStr));
+      } catch (_e) {
+        /* skip malformed chunk */
+      }
+    }
+  }
+  return { events, rest };
+}
+
+/**
+ * POST /api/query/stream — streams SSE events: phase, token, done, error.
+ */
+export const queryRAGStream = async (pdfId, query, history = [], callbacks = {}) => {
+  const {
+    onToken = () => {},
+    onPhase = () => {},
+    onStatus = () => {},
+    onDone = () => {},
+    onError = () => {},
+  } = callbacks;
+
+  let streamCompleted = false;
+  const markDone = (payload) => {
+    streamCompleted = true;
+    onDone(payload);
+  };
+
+  try {
+    const response = await fetch(`${API_URL}/query/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pdfId, query, history }),
+    });
+
+    if (!response.ok) {
+      let msg = `Request failed (${response.status})`;
+      try {
+        const j = await response.json();
+        if (j.message) msg = j.message;
+      } catch (_e) {
+        /* keep msg */
+      }
+      onError(msg);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (value) {
+        buffer += decoder.decode(value, { stream: true });
+      }
+      const { events, rest } = parseSseBlocks(buffer);
+      buffer = rest;
+      for (const data of events) {
+        if (data.error) {
+          onError(data.error);
+          return;
+        }
+        if (data.token != null && data.token !== '') {
+          onToken(data.token);
+        }
+        if (data.phase) {
+          onPhase(data.phase);
+        }
+        if (data.status) {
+          onStatus(data.message || '', data);
+        }
+        if (data.done) {
+          markDone({
+            sources: data.sources || [],
+            trace: data.trace || {},
+            answer: data.answer,
+          });
+          return;
+        }
+      }
+      if (done) {
+        break;
+      }
+    }
+    if (buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        const t = line.trim();
+        if (!t.startsWith('data:')) continue;
+        const jsonStr = t.slice(5).trim();
+        if (!jsonStr) continue;
+        try {
+          const data = JSON.parse(jsonStr);
+          if (data.error) {
+            onError(data.error);
+            return;
+          }
+          if (data.done) {
+            markDone({
+              sources: data.sources || [],
+              trace: data.trace || {},
+              answer: data.answer,
+            });
+            return;
+          }
+        } catch (_e) {
+          /* ignore */
+        }
+      }
+    }
+    if (!streamCompleted) {
+      onError('Stream ended without a complete response');
+    }
+  } catch (error) {
+    console.error('queryRAGStream:', error);
+    onError(error.message || 'Network error');
+  }
+};
+
 // Query the RAG model
 export const queryRAG = async (pdfId, query, history = []) => {
   try {
