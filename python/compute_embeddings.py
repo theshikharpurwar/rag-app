@@ -6,6 +6,7 @@ import sys
 import json
 import argparse
 import logging
+import time
 import fitz  # PyMuPDF
 from PIL import Image
 import io
@@ -34,6 +35,13 @@ from config import (
     # Phase 2
     ENABLE_KNOWLEDGE_GRAPH,
     ENABLE_COMMUNITY_SUMMARIES,
+    KG_EXTRACTION_MODE,
+    KG_NP_EXTRACTOR,
+    KG_TRIPLE_BATCH_SIZE,
+    KG_EXTRACT_CONCURRENCY,
+    KG_EXTRACT_MAX_CHARS,
+    KG_STORAGE_PRETTY,
+    KG_LLM_MODEL,
     INDICES_DIR,
 )
 
@@ -292,6 +300,35 @@ def extract_with_docling(pdf_path):
         return []
 
 
+def _kg_mode_log_line() -> str:
+    if KG_EXTRACTION_MODE == "llm_triples":
+        return (
+            f"[KG] mode=llm_triples model={KG_LLM_MODEL} batch={KG_TRIPLE_BATCH_SIZE} "
+            f"concurrency={KG_EXTRACT_CONCURRENCY} max_chars={KG_EXTRACT_MAX_CHARS} "
+            f"storage={'pretty' if KG_STORAGE_PRETTY else 'compact'}"
+        )
+    if KG_EXTRACTION_MODE == "noun_phrase_cooccurrence":
+        return (
+            f"[KG] mode=noun_phrase_cooccurrence extractor={KG_NP_EXTRACTOR} "
+            f"storage={'pretty' if KG_STORAGE_PRETTY else 'compact'}"
+        )
+    return "[KG] mode=disabled (graph retrieval will be skipped)"
+
+
+def _write_kg_audit_artifact(pdf_id: str, audit_data: dict) -> str | None:
+    try:
+        diagnostics_dir = os.path.join(INDICES_DIR, "diagnostics")
+        os.makedirs(diagnostics_dir, exist_ok=True)
+        path = os.path.join(diagnostics_dir, f"{pdf_id}_kg_audit.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(audit_data, f, indent=2, default=str)
+        logger.info("[KG] Audit artifact saved: %s", path)
+        return path
+    except Exception as e:
+        logger.warning("[KG] Failed to write audit artifact for %s: %s", pdf_id, e)
+        return None
+
+
 # Using process_pdf function name, includes pdf_id argument
 def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION, reset=False):
     """Process PDF, extract text & images, compute embeddings, store in Qdrant with pdf_id."""
@@ -301,6 +338,7 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION, reset=Fals
 
     try:
         logger.info(f"Processing PDF: {pdf_path} (ID: {pdf_id}) for collection: {collection_name}")
+        logger.info(_kg_mode_log_line())
         # Use Ollama embedder (no heavy ML dependencies)
         embedder = OllamaEmbedder(model_name=EMBEDDING_MODEL_NAME, batch_size=EMBED_BATCH_SIZE)
         client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=30)
@@ -574,40 +612,105 @@ def process_pdf(pdf_path, pdf_id, collection_name=DEFAULT_COLLECTION, reset=Fals
                 logger.error(f"[BM25] Failed to build index for PDF {pdf_id}: {e}", exc_info=True)
 
             # ── Knowledge Graph (gated by ENABLE_KNOWLEDGE_GRAPH) ─────────────
-            if ENABLE_KNOWLEDGE_GRAPH:
+            if ENABLE_KNOWLEDGE_GRAPH and KG_EXTRACTION_MODE != "disabled":
                 try:
                     from llm.ollama_llm import OllamaLLM
-                    from retrieval.entity_extractor import EntityExtractor
+                    from retrieval.entity_extractor import EntityExtractor, NounPhraseCooccurrenceExtractor
                     from retrieval.knowledge_graph import KnowledgeGraph
 
                     logger.info(f"[KG] Starting entity extraction for PDF {pdf_id} ({len(all_text_chunks)} chunks)...")
-                    kg_llm = OllamaLLM(model_name=LLM_MODEL_NAME, api_base=OLLAMA_API_BASE)
-                    extractor = EntityExtractor(kg_llm)
-                    triples, sources = extractor.extract_from_chunks(bm25_chunks)
+                    extraction_started = time.time()
+                    kg_llm = None
+                    if KG_EXTRACTION_MODE == "llm_triples":
+                        kg_llm = OllamaLLM(model_name=KG_LLM_MODEL, api_base=OLLAMA_API_BASE)
+                        extractor = EntityExtractor(
+                            kg_llm,
+                            batch_size=KG_TRIPLE_BATCH_SIZE,
+                            max_chars=KG_EXTRACT_MAX_CHARS,
+                            concurrency=KG_EXTRACT_CONCURRENCY,
+                        )
+                    elif KG_EXTRACTION_MODE == "noun_phrase_cooccurrence":
+                        extractor = NounPhraseCooccurrenceExtractor(extractor_name=KG_NP_EXTRACTOR)
+                    else:
+                        raise ValueError(f"Unsupported KG_EXTRACTION_MODE: {KG_EXTRACTION_MODE}")
+
+                    triples, sources, extraction_audit = extractor.extract_from_chunks(bm25_chunks)
+                    extraction_elapsed = time.time() - extraction_started
 
                     if triples:
                         kg = KnowledgeGraph()
+                        kg.set_metadata(
+                            kg_mode=KG_EXTRACTION_MODE,
+                            np_extractor=KG_NP_EXTRACTOR if KG_EXTRACTION_MODE == "noun_phrase_cooccurrence" else None,
+                            storage_pretty=KG_STORAGE_PRETTY,
+                            kg_llm_model=KG_LLM_MODEL if KG_EXTRACTION_MODE == "llm_triples" else None,
+                            triple_batch_size=KG_TRIPLE_BATCH_SIZE,
+                            extract_concurrency=KG_EXTRACT_CONCURRENCY,
+                            extract_max_chars=KG_EXTRACT_MAX_CHARS,
+                        )
+                        build_started = time.time()
                         kg.build_from_triples(triples, sources)
+                        build_elapsed = time.time() - build_started
+                        community_started = time.time()
                         kg.detect_communities()
+                        community_elapsed = time.time() - community_started
                         if ENABLE_COMMUNITY_SUMMARIES:
                             logger.info(f"[KG] Generating community summaries for PDF {pdf_id}...")
                             summary_embedder = OllamaEmbedder(
                                 model_name=EMBEDDING_MODEL_NAME,
                                 batch_size=EMBED_BATCH_SIZE,
                             )
-                            n_sum = len(kg.generate_community_summaries(kg_llm, embedder=summary_embedder))
+                            n_sum = len(kg.generate_community_summaries(kg_llm, embedder=summary_embedder)) if kg_llm else 0
                             logger.info(f"[KG] Generated {n_sum} community summaries for PDF {pdf_id}")
                         kg_path = os.path.join(INDICES_DIR, f"{pdf_id}_graph.json")
+                        save_started = time.time()
                         kg.save(kg_path)
+                        save_elapsed = time.time() - save_started
+                        graph_json_size_bytes = os.path.getsize(kg_path) if os.path.exists(kg_path) else 0
                         summary = kg.get_summary()
                         logger.info(f"[KG] Graph saved for PDF {pdf_id}: {summary['nodes']} nodes, "
                                      f"{summary['edges']} edges, {summary['communities']} communities")
+                        audit_payload = {
+                            "pdf_id": pdf_id,
+                            "kg_mode": KG_EXTRACTION_MODE,
+                            "np_extractor": KG_NP_EXTRACTOR if KG_EXTRACTION_MODE == "noun_phrase_cooccurrence" else None,
+                            "kg_llm_model": KG_LLM_MODEL if KG_EXTRACTION_MODE == "llm_triples" else None,
+                            "storage_pretty": KG_STORAGE_PRETTY,
+                            "chunk_count": len(bm25_chunks),
+                            "graph_summary": summary,
+                            "graph_json_size_bytes": graph_json_size_bytes,
+                            "timings": {
+                                "extraction_seconds": extraction_elapsed,
+                                "graph_build_seconds": build_elapsed,
+                                "community_detection_seconds": community_elapsed,
+                                "save_seconds": save_elapsed,
+                            },
+                            "extraction_audit": extraction_audit,
+                        }
+                        _write_kg_audit_artifact(pdf_id, audit_payload)
                     else:
                         logger.warning(f"[KG] No triples extracted for PDF {pdf_id}")
+                        _write_kg_audit_artifact(
+                            pdf_id,
+                            {
+                                "pdf_id": pdf_id,
+                                "kg_mode": KG_EXTRACTION_MODE,
+                                "chunk_count": len(bm25_chunks),
+                                "graph_summary": {"nodes": 0, "edges": 0, "communities": 0},
+                                "graph_json_size_bytes": 0,
+                                "timings": {
+                                    "extraction_seconds": extraction_elapsed,
+                                    "graph_build_seconds": 0.0,
+                                    "community_detection_seconds": 0.0,
+                                    "save_seconds": 0.0,
+                                },
+                                "extraction_audit": extraction_audit,
+                            },
+                        )
                 except Exception as e:
                     logger.error(f"[KG] Failed to build knowledge graph for PDF {pdf_id}: {e}", exc_info=True)
             else:
-                logger.info("[KG] Knowledge graph disabled (ENABLE_KNOWLEDGE_GRAPH=false)")
+                logger.info("[KG] Knowledge graph disabled")
 
         result = {
             "success": True,
