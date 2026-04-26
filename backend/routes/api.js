@@ -568,8 +568,9 @@ router.post('/reset', async (req, res) => {
       else {
         files.forEach(file => {
           if (file !== '.gitkeep') {
-            fs.unlink(path.join(uploadsDir, file), err => {
-              if (err) logger.error(`Error deleting file ${file}:`, err);
+            const targetPath = path.join(uploadsDir, file);
+            fs.rm(targetPath, { recursive: true, force: true }, err => {
+              if (err) logger.error(`Error deleting path ${file}:`, err);
             });
           }
         });
