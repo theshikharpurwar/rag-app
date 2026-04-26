@@ -119,7 +119,7 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 | Variable | Default | Effect |
 |---|---|---|
 | `LLM_MODEL` | `gemma3:4b` | Ollama model name for generation |
-| `EMBEDDING_MODEL` | `nomic-embed-text-v2-moe` | 768-dim embedder |
+| `EMBEDDING_MODEL` | `nomic-embed-text:v1.5` | 768-dim embedder (testing default; override for v2-moe / other) |
 | `ENABLE_KNOWLEDGE_GRAPH` | `true` | Toggle KG extraction during ingest (expensive — many LLM calls) |
 | `VECTOR_WEIGHT` / `BM25_WEIGHT` / `GRAPH_WEIGHT` | 0.4 / 0.3 / 0.3 | Hybrid fusion weights (α, β, γ) for RRF or DBSF |
 | `RRF_K` | 60 | RRF smoothing constant (used only when `FUSION_METHOD=rrf`) |

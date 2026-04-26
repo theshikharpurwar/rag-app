@@ -354,7 +354,7 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | Variable | Default | Description |
 |---|---|---|
 | `LLM_MODEL` | `gemma3:4b` | Ollama model for answer generation |
-| `EMBEDDING_MODEL` | `nomic-embed-text-v2-moe` | Ollama model for text embeddings |
+| `EMBEDDING_MODEL` | `nomic-embed-text:v1.5` | Ollama model for text embeddings |
 | `OLLAMA_HOST_URL` | `http://host.containers.internal:11434` | Ollama API endpoint |
 | `QDRANT_HOST` | `qdrant` | Qdrant service hostname |
 | `QDRANT_PORT` | `6333` | Qdrant service port |
