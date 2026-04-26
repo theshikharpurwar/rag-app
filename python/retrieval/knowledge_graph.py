@@ -10,6 +10,7 @@ Persists as GraphML for cross-session use.
 import json
 import logging
 import os
+import re
 
 import networkx as nx
 
@@ -88,7 +89,13 @@ class KnowledgeGraph:
         self.graph = nx.DiGraph()
         self._communities = {}
         self._community_summaries: dict[int, dict] = {}
+        self._chunk_catalog: dict[str, str] = {}
+        self.metadata: dict = {}
         self._is_built = False
+
+    @property
+    def chunk_catalog(self) -> dict[str, str]:
+        return getattr(self, "_chunk_catalog", {}) or {}
 
     @property
     def community_summaries(self) -> dict[int, dict]:
@@ -107,6 +114,12 @@ class KnowledgeGraph:
         if not self._communities:
             return 0
         return len(set(self._communities.values()))
+
+    def set_metadata(self, **kwargs) -> None:
+        self.metadata.update(kwargs)
+
+    def get_mode(self) -> str | None:
+        return self.metadata.get("kg_mode")
 
     def build_from_triples(self, triples: list[tuple], triple_sources: list[dict] = None) -> None:
         """
@@ -152,6 +165,41 @@ class KnowledgeGraph:
 
         self._is_built = True
         logger.info(f"[KG] Built graph: {self.num_nodes} nodes, {self.num_edges} edges")
+
+    def _make_chunk_ref(self, source: dict) -> str:
+        source_name = str(source.get("source", ""))
+        page = str(source.get("page", ""))
+        chunk_index = str(source.get("chunk_index", ""))
+        return f"{source_name}::{page}::{chunk_index}"
+
+    def _compact_source(self, source: dict) -> dict:
+        source = dict(source or {})
+        chunk_key = self._make_chunk_ref(source)
+        chunk_text = source.get("chunk_text", "") or ""
+        preview = source.get("chunk_text_preview")
+        if preview is None:
+            preview = re.sub(r"\s+", " ", chunk_text.strip())[:200]
+        if chunk_text and chunk_key not in self._chunk_catalog:
+            self._chunk_catalog[chunk_key] = chunk_text
+        compact = {
+            "source": source.get("source", "Unknown"),
+            "page": source.get("page", "N/A"),
+            "chunk_index": source.get("chunk_index", 0),
+            "chunk_key": chunk_key,
+            "chunk_text_preview": preview,
+        }
+        return compact
+
+    def _restore_source(self, source: dict) -> dict:
+        restored = dict(source or {})
+        chunk_key = restored.get("chunk_key") or self._make_chunk_ref(restored)
+        restored["chunk_key"] = chunk_key
+        if not restored.get("chunk_text"):
+            restored["chunk_text"] = self.chunk_catalog.get(chunk_key, "")
+        if not restored.get("chunk_text_preview"):
+            text = restored.get("chunk_text", "")
+            restored["chunk_text_preview"] = re.sub(r"\s+", " ", text.strip())[:200]
+        return restored
 
     def detect_communities(self) -> dict:
         """
@@ -308,33 +356,48 @@ class KnowledgeGraph:
 
         # Serialize to a JSON-friendly format
         data = {
+            "metadata": dict(self.metadata),
             "nodes": {},
             "edges": [],
             "communities": self._communities,
             "community_summaries": {
                 str(k): v for k, v in getattr(self, "_community_summaries", {}).items()
             },
+            "chunk_catalog": {},
         }
 
         for node, attrs in self.graph.nodes(data=True):
-            # Convert sources to serializable format
             serializable_attrs = {}
             for k, v in attrs.items():
-                serializable_attrs[k] = v
+                if k == "sources":
+                    serializable_attrs[k] = [self._compact_source(src) for src in v]
+                else:
+                    serializable_attrs[k] = v
             data["nodes"][node] = serializable_attrs
 
         for u, v, attrs in self.graph.edges(data=True):
             edge_data = {"source": u, "target": v}
             for k, val in attrs.items():
-                edge_data[k] = val
+                if k == "sources":
+                    edge_data[k] = [self._compact_source(src) for src in val]
+                else:
+                    edge_data[k] = val
             data["edges"].append(edge_data)
 
+        data["chunk_catalog"] = dict(self._chunk_catalog)
+
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, default=str)
+            json.dump(
+                data,
+                f,
+                indent=2 if self.metadata.get("storage_pretty", True) else None,
+                separators=None if self.metadata.get("storage_pretty", True) else (",", ":"),
+                default=str,
+            )
 
         logger.info(f"[KG] Graph saved to {path} ({self.num_nodes} nodes, {self.num_edges} edges)")
 
-    def load(self, path: str) -> bool:
+    def load(self, path: str, expected_mode: str | None = None) -> bool:
         """Load a knowledge graph from a JSON file. Returns True if successful."""
         if not os.path.exists(path):
             logger.warning(f"[KG] Graph file not found: {path}")
@@ -345,16 +408,34 @@ class KnowledgeGraph:
                 data = json.load(f)
 
             self.graph = nx.DiGraph()
+            self.metadata = data.get("metadata", {}) or {}
+            self._chunk_catalog = data.get("chunk_catalog", {}) or {}
+
+            stored_mode = self.metadata.get("kg_mode")
+            if expected_mode and stored_mode and stored_mode != expected_mode:
+                logger.warning(
+                    "[KG] Stored graph mode %s does not match runtime mode %s for %s",
+                    stored_mode,
+                    expected_mode,
+                    path,
+                )
+                return False
 
             # Restore nodes
             for node, attrs in data.get("nodes", {}).items():
+                attrs = dict(attrs)
+                if "sources" in attrs:
+                    attrs["sources"] = [self._restore_source(src) for src in attrs.get("sources", [])]
                 self.graph.add_node(node, **attrs)
 
             # Restore edges
             for edge in data.get("edges", []):
-                u = edge.pop("source")
-                v = edge.pop("target")
-                self.graph.add_edge(u, v, **edge)
+                edge_copy = dict(edge)
+                u = edge_copy.pop("source")
+                v = edge_copy.pop("target")
+                if "sources" in edge_copy:
+                    edge_copy["sources"] = [self._restore_source(src) for src in edge_copy.get("sources", [])]
+                self.graph.add_edge(u, v, **edge_copy)
 
             # Restore communities
             self._communities = data.get("communities", {})

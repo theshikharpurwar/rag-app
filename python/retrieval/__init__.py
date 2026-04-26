@@ -7,7 +7,7 @@ graph-based retrieval, and Reciprocal Rank Fusion.
 """
 
 from .bm25_search import BM25Index
-from .entity_extractor import EntityExtractor
+from .entity_extractor import EntityExtractor, NounPhraseCooccurrenceExtractor
 from .knowledge_graph import KnowledgeGraph
 from .graph_retrieval import GraphRetriever
 from .rrf_fusion import rrf_fuse, hybrid_retrieve
@@ -15,6 +15,7 @@ from .rrf_fusion import rrf_fuse, hybrid_retrieve
 __all__ = [
     'BM25Index',
     'EntityExtractor',
+    'NounPhraseCooccurrenceExtractor',
     'KnowledgeGraph',
     'GraphRetriever',
     'rrf_fuse',
