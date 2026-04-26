@@ -35,6 +35,7 @@ from config import (
     GRAPH_WEIGHT,
     GRAPH_TRAVERSAL_DEPTH,
     COMMUNITY_SUMMARY_WEIGHT,
+    KG_EXTRACTION_MODE,
     INDICES_DIR,
     # Phase 3: Agentic self-correction
     ENABLE_AGENT,
@@ -451,7 +452,7 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
             from retrieval.graph_retrieval import GraphRetriever
 
             knowledge_graph = KnowledgeGraph()
-            if knowledge_graph.load(kg_path):
+            if knowledge_graph.load(kg_path, expected_mode=KG_EXTRACTION_MODE):
                 graph_retriever = GraphRetriever(
                     knowledge_graph,
                     llm=llm,
@@ -463,7 +464,9 @@ def make_retrieve_pipeline(pdf_id: str, collection_name: str = DEFAULT_COLLECTIO
                 )
             else:
                 knowledge_graph = None
-                logger.info(f"[Hybrid] No KG for PDF {pdf_id}, skipping graph path")
+                logger.info(
+                    f"[Hybrid] No compatible KG for PDF {pdf_id}, skipping graph path"
+                )
         except Exception as e:
             logger.warning(f"[Hybrid] KG load failed: {e}")
             knowledge_graph = None
