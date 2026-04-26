@@ -13,7 +13,7 @@ A **Neuro-Symbolic Agentic RAG** system for local document Q&A. Three layers:
 2. **Hybrid knowledge store** — Qdrant vectors + NetworkX knowledge graph.
 3. **Fusion retrieval** — Weighted RRF over vector + BM25 + graph traversal.
 
-Runs entirely locally on 8GB RAM: Ollama (`gemma3:4b` + `nomic-embed-text-v2-moe`), Qdrant, MongoDB, React frontend, Node/Express backend, Python ML scripts. No cloud APIs.
+Runs entirely locally on 8GB RAM: Ollama, Qdrant, MongoDB, React frontend, Node/Express backend, and Python ML scripts. Current dev-compose defaults are `qwen3.5:0.8b` for generation and `nomic-embed-text:v1.5` for embeddings; `llm_triples` is still supported, but the practical local KG default is now regex-based `noun_phrase_cooccurrence`. No cloud APIs.
 
 ---
 
@@ -43,6 +43,7 @@ Keep this table in sync with [README_v2.md](README_v2.md) when a phase changes.
 - **2.4 Ingest idempotency** — ✅ completed (`compute_embeddings.py --reset` deletes existing Qdrant points for the `pdf_id` before upsert; `evaluation/run_benchmark.py --reset` now forwards that flag during fixture ingest. Backend `/upload` still omits `--reset` — wire in a follow-up for UI re-upload idempotency).
 - **2.5 Graph retrieval full chunk text** — ✅ completed (`chunk_text` now used in graph retrieval with `chunk_text_preview` fallback for legacy graph files).
 - **2.6 Align eval neurosymbolic config with prod** — ✅ completed (evaluation `neurosymbolic` now respects `ENABLE_DECOMPOSITION`, and trace records the effective flag).
+- **KG mode defaults + diagnostics** — ✅ completed: graph JSON now persists KG mode metadata plus compact chunk references; query-time graph loading skips incompatible mode files until re-ingest; ingest writes audit artifacts to `INDICES_DIR/diagnostics/{pdf_id}_kg_audit.json`.
 
 **Tier 3 — scale & research depth (multi-day):** **3.1 parallel judge calls** — ✅ `EVAL_MAX_CONCURRENCY` wires up to three concurrent LLM judge calls per run in [python/evaluation/judge.py](python/evaluation/judge.py) (`ThreadPoolExecutor`); set `OLLAMA_NUM_PARALLEL` on the server for real speedup (see [DEPLOYMENT.md](DEPLOYMENT.md)). **3.4 Adaptive-RAG router** — ✅ 3-way `QueryRouter` (`specific` / `broad` / `multi_hop`): `multi_hop` keeps RRF weights balanced and **auto-enables** query decomposition + RAG-Fusion for that run even when `ENABLE_DECOMPOSITION=false`; trace includes `auto_decompose`; tests: [python/tests/test_phase9_adaptive_router.py](python/tests/test_phase9_adaptive_router.py). **3.3 statistical significance** — ✅ paired Wilcoxon + BCa bootstrap 95% CIs now render in [python/evaluation/report.py](python/evaluation/report.py), with `n < 20` automatically flagged as directional. **3.6a cross-encoder reranker default-on** — ✅ default `SKIP_RERANKING=false` in [docker-compose.yml](docker-compose.yml); reranking now applies on fused hybrid top-M in [python/local_llm.py](python/local_llm.py) (`RERANK_TOP_M`, default 50, capped at 150), with model selectable via `RERANKER_MODEL`; tests: [python/tests/test_phase6_rerank.py](python/tests/test_phase6_rerank.py). **3.6b ColBERT-v2 reranker** — ✅ optional `RERANKER_TYPE=colbert` via `get_reranker()` in [python/reranker/__init__.py](python/reranker/__init__.py) and [python/reranker/colbert_reranker.py](python/reranker/colbert_reranker.py) (ragatouille); `COLBERT_MODEL` env; falls back to cross-encoder if import/init fails; tests: [python/tests/test_phase11_colbert.py](python/tests/test_phase11_colbert.py). **3.7 Ollama infra tuning** — ✅ per-request `OLLAMA_NUM_BATCH`, optional `OLLAMA_NUM_CTX`, `OLLAMA_KEEP_ALIVE` in [python/llm/ollama_llm.py](python/llm/ollama_llm.py) and [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py); bench CLI [python/evaluation/bench_ollama.py](python/evaluation/bench_ollama.py); host-side knobs + gemma3 KV-cache warning in [DEPLOYMENT.md](DEPLOYMENT.md); tests: [python/tests/test_phase7_ollama_tuning.py](python/tests/test_phase7_ollama_tuning.py). **3.9 batch ingest `/api/embed`** — ✅ [python/embeddings/ollama_embed.py](python/embeddings/ollama_embed.py) batches chunk texts via `POST /api/embed` (`EMBED_BATCH_SIZE`, default 32); legacy `/api/embeddings` per-item fallback on 404; tests: [python/tests/test_phase5_batch_embed.py](python/tests/test_phase5_batch_embed.py). **3.8 GraphRAG community summaries + global search** — ✅ opt-in `ENABLE_COMMUNITY_SUMMARIES` (default `false`): ingest-time LLM summary per Leiden community + summary embeddings in `_graph.json`; query-time `GraphRetriever.global_search` feeds a 4th RRF list when `route != "specific"` (agent specific-route skips); weight `COMMUNITY_SUMMARY_WEIGHT` (default `0.2`) scales vector/BM25/graph down proportionally; tests: [python/tests/test_phase8_graphrag.py](python/tests/test_phase8_graphrag.py). **3.5 DBSF fusion** — ✅ `FUSION_METHOD=dbsf` uses μ±3σ score normalization + weighted sum in [python/retrieval/dbsf_fusion.py](python/retrieval/dbsf_fusion.py); default `rrf` unchanged; [python/retrieval/rrf_fusion.py](python/retrieval/rrf_fusion.py) `hybrid_retrieve` dispatches; tests: [python/tests/test_phase10_dbsf.py](python/tests/test_phase10_dbsf.py). Remaining: ablation CLI (3.2). Rationale, research citations, and done-criteria live in [README_v2.md § Future Plans](README_v2.md#future-plans--tier-2--tier-3-post-phase-4-baseline).
 
@@ -71,6 +72,13 @@ Active env vars (all in [python/config/models.py](python/config/models.py)):
 - `RERANK_TOP_M` — int, default `50`, capped at `150`. Fused/vector candidate count before final top-`CONTEXT_RETRIEVAL_LIMIT` rerank in [python/local_llm.py](python/local_llm.py).
 - `ENABLE_COMMUNITY_SUMMARIES` — bool, default `false`. Per-community LLM summaries during ingest (requires `ENABLE_KNOWLEDGE_GRAPH=true`).
 - `COMMUNITY_SUMMARY_WEIGHT` — float, default `0.2`. RRF weight for the community-summary list when summaries exist and the query is not router-`specific`.
+- `KG_EXTRACTION_MODE` — str, default `llm_triples` in config; dev compose overrides to `noun_phrase_cooccurrence`. Supported modes: `llm_triples`, `noun_phrase_cooccurrence`.
+- `KG_NP_EXTRACTOR` — str, default `regex`. Fast-mode noun phrase extractor implementation.
+- `KG_TRIPLE_BATCH_SIZE` — int, default `3`. Batch size for `llm_triples` extraction calls.
+- `KG_EXTRACT_CONCURRENCY` — int, default `1`. Parallel extraction workers for `llm_triples`.
+- `KG_EXTRACT_MAX_CHARS` — int, default `1200`. Max chunk characters passed to one `llm_triples` extraction prompt.
+- `KG_STORAGE_PRETTY` — bool, default `false`. Pretty-print persisted `_graph.json` instead of compact storage.
+- `KG_LLM_MODEL` — str, default same as `LLM_MODEL`. LLM used only for `llm_triples` extraction and community summaries.
 - `FUSION_METHOD` — str, default `rrf`. Set `dbsf` for distribution-based score fusion in hybrid retrieve; `RRF_K` applies only to RRF.
 
 ---
@@ -118,27 +126,34 @@ Defined in [python/config/models.py](python/config/models.py) and surfaced throu
 
 | Variable | Default | Effect |
 |---|---|---|
-| `LLM_MODEL` | `gemma3:4b` | Ollama model name for generation |
-| `EMBEDDING_MODEL` | `nomic-embed-text:v1.5` | 768-dim embedder (testing default; override for v2-moe / other) |
+| `LLM_MODEL` | `qwen3.5:0.8b` in dev compose (`qwen3.5:0.8b` in config) | Ollama model name for generation |
+| `EMBEDDING_MODEL` | `nomic-embed-text:v1.5` | 768-dim embedder (current dev default; override if preferred) |
 | `ENABLE_KNOWLEDGE_GRAPH` | `true` | Toggle KG extraction during ingest (expensive — many LLM calls) |
+| `KG_EXTRACTION_MODE` | `noun_phrase_cooccurrence` in dev compose (`llm_triples` in config) | Select KG extraction path: fast regex co-occurrence vs LLM triples |
+| `KG_NP_EXTRACTOR` | `regex` | Fast-mode noun phrase extractor implementation |
+| `KG_TRIPLE_BATCH_SIZE` | `3` | Batch size for `llm_triples` extraction |
+| `KG_EXTRACT_CONCURRENCY` | `1` | Parallelism for `llm_triples` extraction |
+| `KG_EXTRACT_MAX_CHARS` | `1200` | Max chunk text passed to one `llm_triples` prompt |
+| `KG_STORAGE_PRETTY` | `false` | Pretty-print persisted `_graph.json` instead of compact JSON |
+| `KG_LLM_MODEL` | same as `LLM_MODEL` | LLM used for `llm_triples` extraction/community summaries |
 | `VECTOR_WEIGHT` / `BM25_WEIGHT` / `GRAPH_WEIGHT` | 0.4 / 0.3 / 0.3 | Hybrid fusion weights (α, β, γ) for RRF or DBSF |
 | `RRF_K` | 60 | RRF smoothing constant (used only when `FUSION_METHOD=rrf`) |
-| `FUSION_METHOD` | `rrf` | `rrf` (rank fusion) or `dbsf` (μ±3σ score normalization + weighted sum) |
+| `FUSION_METHOD` | `dbsf` in dev compose (`rrf` in config) | `rrf` (rank fusion) or `dbsf` (μ±3σ score normalization + weighted sum) |
 | `GRAPH_TRAVERSAL_DEPTH` | 2 | BFS depth in graph retrieval |
 | `ENABLE_COMMUNITY_SUMMARIES` | `false` | Ingest-time GraphRAG-style summaries per Leiden community (extra LLM + embed calls) |
 | `COMMUNITY_SUMMARY_WEIGHT` | `0.2` | RRF weight for community-summary retrieval when enabled and not agent-`specific` |
 | `SKIP_RERANKING` | `false` | Disable cross-encoder reranking when memory-constrained; default keeps reranking on |
 | `USE_DOCLING` | `false` | Use IBM Docling instead of PyMuPDF4LLM |
-| `INDICES_DIR` | `/app/uploads/indices` | Where BM25 `.pkl` and KG `.json` are persisted (per `pdf_id`) |
+| `INDICES_DIR` | `/app/backend/uploads/indices` in dev compose (`/app/uploads/indices` in config) | Where BM25 `.pkl`, KG `.json`, and `diagnostics/{pdf_id}_kg_audit.json` are persisted |
 | `OLLAMA_HOST_URL` | `http://host.containers.internal:11434` | Must be reachable from inside container |
 | `OLLAMA_NUM_BATCH` | `512` | Ollama `options.num_batch` on `/api/chat` |
 | `OLLAMA_NUM_CTX` | `0` (unset) | Positive value sets `options.num_ctx`; default leaves model context size |
 | `OLLAMA_KEEP_ALIVE` | `5m` | `keep_alive` on `/api/chat` and `/api/embed` |
-| `ENABLE_AGENT` | `false` | Phase 3 master toggle. When true, `local_llm.py` runs the agentic loop instead of a single generate call |
+| `ENABLE_AGENT` | `true` in dev compose (`false` in config) | Phase 3 master toggle. When true, `local_llm.py` runs the agentic loop instead of a single generate call |
 | `AGENT_MAX_RETRIES` | `2` | Max extra retrieve+generate+grade cycles after the first attempt |
 | `AGENT_CONFIDENCE_THRESHOLD` | `0.5` | Grader score below which a retry is triggered |
 | `AGENT_ROUTER_WEIGHT_BOOST` | `0.15` | How much the router shifts RRF weight between BM25 and graph |
-| `ENABLE_DECOMPOSITION` | `false` | When `ENABLE_AGENT=true`, run query decomposition + RAG-Fusion for complex queries |
+| `ENABLE_DECOMPOSITION` | `true` in dev compose (`false` in config) | When `ENABLE_AGENT=true`, run query decomposition + RAG-Fusion for complex queries |
 | `AGENT_DECOMP_MAX_SUBQUERIES` | `3` | Max sub-questions from the decomposer LLM (original query is always retrieved too) |
 | `AGENT_DECOMP_MIN_WORDS` | `8` | Below this word count (and no multi-part triggers), skip decomposition |
 | `AGENT_FUSION_RRF_K` | `60` | RRF smoothing for merging results across sub-queries |
@@ -176,8 +191,8 @@ curl -X POST http://localhost:5000/api/reset
 curl -X DELETE http://localhost:6333/collections/documents
 
 # Required Ollama models (on host)
-ollama pull gemma3:4b
-ollama pull nomic-embed-text-v2-moe
+ollama pull qwen3.5:0.8b
+ollama pull nomic-embed-text:v1.5
 ```
 
 Endpoints: frontend `:3000`, backend `:5000`, Qdrant dashboard `:6333/dashboard`.
@@ -192,8 +207,11 @@ Endpoints: frontend `:3000`, backend `:5000`, Qdrant dashboard `:6333/dashboard`
 4. **Hybrid graceful degradation.** At query time, `local_llm.py` tries to load `{pdf_id}_bm25.pkl` and `{pdf_id}_graph.json` from `INDICES_DIR`. If either/both are missing (e.g. legacy PDF ingested before Phase 2), retrieval falls back cleanly to vector-only. Do not remove these try/except paths.
 5. **Ollama connectivity from containers.** Must use `host.containers.internal` (Podman/Docker Desktop). Plain `localhost` will not reach the host Ollama.
 6. **Vector-size coupling.** Qdrant collection `documents` is created with `DEFAULT_VECTOR_SIZE` from config. Changing `EMBEDDING_MODEL` to a different-dimension model requires deleting and recreating the collection (old vectors are incompatible).
-7. **KG extraction is the slowest step** on ingest (many LLM calls per chunk). The in-progress `batch_size=3` change in `entity_extractor.py` is the fix — keep it.
-8. **Agent loop inflates LLM calls.** With defaults (`AGENT_MAX_RETRIES=2`), worst-case ≈ **1 router + 3×(decompose + generate + grade) + 2 rewrites** (up to **12** LLM calls when decomposition runs every attempt). Without `ENABLE_DECOMPOSITION`, decompose calls are skipped. Tail latency on gemma3:4b can reach many minutes on the exhaust path. `ENABLE_AGENT=false` by default — flip it on once you're OK with the cost.
+7. **KG mode matters more than batching now.** `llm_triples` is still supported, but on small local models it is expensive and can add tens of seconds per ingest. The current local default is `KG_EXTRACTION_MODE=noun_phrase_cooccurrence` with `KG_NP_EXTRACTOR=regex`, which is dramatically faster but noisier. Turn `ENABLE_COMMUNITY_SUMMARIES=true` only when you want the extra recall enough to justify the ingest-time LLM + embed cost.
+8. **Graph mode metadata is persisted.** `_graph.json` now stores KG mode metadata plus compact chunk references. Query-time graph loading skips incompatible graph files until the PDF is re-ingested in the active mode.
+9. **KG audits are always nearby.** Ingest writes `INDICES_DIR/diagnostics/{pdf_id}_kg_audit.json` with timings, counts, and mode-specific extraction details. Use that before guessing about KG quality or latency.
+10. **Reset is recursive now.** `/api/reset` clears upload subdirectories recursively before resetting Qdrant/Mongo, so stale `EISDIR` errors from unlinking `images/` or `indices/` should be gone after a rebuild.
+11. **Agent loop inflates LLM calls.** With defaults (`AGENT_MAX_RETRIES=2`), worst-case ≈ **1 router + 3×(decompose + generate + grade) + 2 rewrites** (up to **12** LLM calls when decomposition runs every attempt). Without `ENABLE_DECOMPOSITION`, decompose calls are skipped. Tail latency on small local models can still reach many minutes on the exhaust path. Tune the dev-compose defaults before assuming this is a bug.
 
 ---
 

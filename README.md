@@ -81,7 +81,7 @@ The system operates entirely locally on consumer hardware (8GB RAM minimum, no c
 │   │                │              │                         │      │
 │   │  768-dim embeds │              │  Entity Nodes           │      │
 │   │  Cosine search  │              │  Relation Edges         │      │
-│   │  nomic-v2-moe  │              │  Leiden Communities     │      │
+│   │  nomic-embed-text:v1.5 │      │  Leiden Communities     │      │
 │   └───────┬────────┘              └───────────┬─────────────┘      │
 │           │                                   │                     │
 ├───────────┼───────────────────────────────────┼─────────────────────┤
@@ -110,9 +110,9 @@ The core retrieval-augmented generation pipeline is fully implemented and operat
 |---|---|---|
 | **PDF Ingestion** | `pymupdf4llm` | Structure-preserving Markdown extraction (tables, headers, lists) |
 | **Text Chunking** | Custom `chunk_text()` | Semantic chunking with paragraph/sentence boundary awareness and configurable overlap |
-| **Embedding** | `nomic-embed-text-v2-moe` | 768-dimensional Mixture-of-Experts embeddings via Ollama (multilingual) |
+| **Embedding** | `nomic-embed-text:v1.5` | 768-dimensional Ollama embeddings via the current dev-compose default |
 | **Vector Store** | Qdrant | Cosine similarity search with pdf_id filtering and batch upsert |
-| **LLM** | `gemma3:4b` | Google's 2025 multimodal model via Ollama `/api/chat` endpoint |
+| **LLM** | `qwen3.5:0.8b` | Current dev-compose default for local answer generation via Ollama `/api/chat` |
 | **Chat History** | Structured messages | Real `user`/`assistant` role turns passed to the LLM (not raw text concatenation) |
 | **Reranking** | Cross-encoder (optional) | `cross-encoder/ms-marco-MiniLM-L-6-v2` for result refinement (toggle via `SKIP_RERANKING`) |
 | **Frontend** | React SPA | PDF upload, real-time chat interface, conversation history management |
@@ -125,7 +125,7 @@ The core retrieval-augmented generation pipeline is fully implemented and operat
 |---|---|---|
 | BM25 Keyword Search | ✅ Implemented | Sparse retrieval for exact-match queries |
 | RRF Fusion | ✅ Implemented | Merging BM25 + Vector scores with weighted RRF |
-| Entity Extraction | ✅ Implemented | LLM-powered triple extraction `(Subject, Predicate, Object)` |
+| Entity Extraction | ✅ Implemented | Dual-mode path: `llm_triples` or regex-based `noun_phrase_cooccurrence` |
 | Knowledge Graph | ✅ Implemented | NetworkX graph with Leiden community detection |
 | Graph Traversal | ✅ Implemented | BFS/Dijkstra scoring for multi-hop reasoning |
 
@@ -164,9 +164,9 @@ PDF File Upload
             │
             ▼
 ┌─────────────────────────┐
-│  nomic-embed-text-v2-moe │  768-dimensional vectors
-│  via Ollama API          │  MoE architecture
-│  Batch encoding          │  task_type: search_document
+│  nomic-embed-text:v1.5   │  768-dimensional vectors
+│  via Ollama API          │  Batch encoding
+│  task_type: search_document │
 └───────────┬─────────────┘
             │
             ▼
@@ -174,6 +174,13 @@ PDF File Upload
 │  Qdrant Vector DB        │  Cosine similarity index
 │  Batch upsert (50/batch) │  Metadata: page, source,
 │  Collection: documents   │  chunk_index, extractor
+└─────────────────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│  BM25 + Knowledge Graph  │  BM25 is always built
+│  Configurable KG mode    │  `llm_triples` or regex
+│  Compact `_graph.json`   │  Metadata + chunk refs
 └─────────────────────────┘
 ```
 
@@ -184,7 +191,7 @@ User Question + Chat History
     │
     ▼
 ┌─────────────────────────┐
-│  nomic-embed-text-v2-moe │  Encode query
+│  nomic-embed-text:v1.5    │  Encode query
 │  task_type: search_query │  768-dim vector
 └───────────┬─────────────┘
             │
@@ -214,7 +221,7 @@ User Question + Chat History
             │
             ▼
 ┌─────────────────────────┐
-│  gemma3:4b via Ollama    │  /api/chat endpoint
+│  qwen3.5:0.8b via Ollama │  /api/chat endpoint
 │  Streaming response      │  Role-based messages
 │  Temperature: 0.7        │  Max 2000 tokens
 └───────────┬─────────────┘
@@ -241,8 +248,8 @@ User Question + Chat History
 
 | Model | Provider | Role | Size |
 |---|---|---|---|
-| `gemma3:4b` | Google (2025) | LLM for answer generation | ~3.3GB RAM |
-| `nomic-embed-text-v2-moe` | Nomic AI | Text embedding (768-dim, multilingual) | ~1.2GB RAM |
+| `qwen3.5:0.8b` | Qwen | Current local generation default | lightweight local profile |
+| `nomic-embed-text:v1.5` | Nomic AI | Text embedding (768-dim) | ~1.2GB RAM |
 | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Microsoft | Search result reranking | ~250MB RAM |
 
 ### Data Stores
@@ -316,10 +323,10 @@ rag-app/
 
 ```bash
 # LLM model
-ollama pull gemma3:4b
+ollama pull qwen3.5:0.8b
 
 # Embedding model
-ollama pull nomic-embed-text-v2-moe
+ollama pull nomic-embed-text:v1.5
 ```
 
 ### Step 2: Clone and Launch
@@ -353,16 +360,35 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_MODEL` | `gemma3:4b` | Ollama model for answer generation |
+| `LLM_MODEL` | `qwen3.5:0.8b` in dev compose | Ollama model for answer generation |
 | `EMBEDDING_MODEL` | `nomic-embed-text:v1.5` | Ollama model for text embeddings |
+| `KG_EXTRACTION_MODE` | `noun_phrase_cooccurrence` in dev compose (`llm_triples` in config) | Select KG extraction mode: `llm_triples` or fast regex `noun_phrase_cooccurrence` |
+| `KG_NP_EXTRACTOR` | `regex` | Fast-mode noun phrase extractor implementation |
+| `KG_TRIPLE_BATCH_SIZE` | `3` | Batch size for `llm_triples` extraction |
+| `KG_EXTRACT_CONCURRENCY` | `1` | Parallel `llm_triples` extraction workers |
+| `KG_EXTRACT_MAX_CHARS` | `1200` | Max chunk characters passed to a single triple-extraction prompt |
+| `KG_STORAGE_PRETTY` | `false` | Pretty-print persisted `_graph.json` instead of compact JSON |
+| `KG_LLM_MODEL` | same as `LLM_MODEL` | LLM used for `llm_triples` extraction and community summaries |
 | `OLLAMA_HOST_URL` | `http://host.containers.internal:11434` | Ollama API endpoint |
 | `QDRANT_HOST` | `qdrant` | Qdrant service hostname |
 | `QDRANT_PORT` | `6333` | Qdrant service port |
 | `MONGODB_URI` | `mongodb://mongo:27017/rag_db` | MongoDB connection string |
 | `USE_DOCLING` | `false` | Enable IBM Docling for ML-powered extraction |
-| `SKIP_RERANKING` | `true` | Disable cross-encoder reranking (saves ~250MB RAM) |
+| `SKIP_RERANKING` | `${SKIP_RERANKING:-false}` in dev compose | Disable cross-encoder reranking (saves ~250MB RAM) |
 | `SKIP_IMAGES` | `true` | Skip image embedding (text-only embedder) |
 | `HF_HOME` | `/root/.cache/huggingface` | HuggingFace model cache (Docker volume) |
+| `ENABLE_KNOWLEDGE_GRAPH` | `true` | Toggle KG extraction during PDF ingestion |
+| `VECTOR_WEIGHT` | `0.4` | Vector similarity weight in hybrid fusion |
+| `BM25_WEIGHT` | `0.3` | BM25 keyword weight in hybrid fusion |
+| `GRAPH_WEIGHT` | `0.3` | Graph traversal weight in hybrid fusion |
+| `RRF_K` | `60` | RRF smoothing constant (`FUSION_METHOD=rrf` only) |
+| `FUSION_METHOD` | `${FUSION_METHOD:-dbsf}` in dev compose (`rrf` in config) | `rrf` or `dbsf` score-normalized fusion |
+| `GRAPH_TRAVERSAL_DEPTH` | `2` | BFS depth limit for graph traversal |
+| `ENABLE_COMMUNITY_SUMMARIES` | `false` | Generate per-community LLM summaries (+ embeddings) during ingest |
+| `COMMUNITY_SUMMARY_WEIGHT` | `0.2` | RRF weight for community-summary global search when summaries exist |
+| `INDICES_DIR` | `/app/backend/uploads/indices` in dev compose | Directory for BM25/KG persistence files and `diagnostics/{pdf_id}_kg_audit.json` |
+| `ENABLE_AGENT` | `${ENABLE_AGENT:-true}` in dev compose (`false` in config) | Run the agentic self-correction loop instead of a single generate call |
+| `ENABLE_DECOMPOSITION` | `${ENABLE_DECOMPOSITION:-true}` in dev compose (`false` in config) | Enable query decomposition + RAG-Fusion when the agent runs |
 
 ### Performance Profiles
 
@@ -371,6 +397,13 @@ All configuration is centralized in `docker-compose.yml` and `python/config/mode
 | **Lean (8GB)** | `true` | `false` | ~5.5GB | Development, demos |
 | **Balanced (12GB)** | `false` | `false` | ~6.5GB | Production (text PDFs) |
 | **Full (16GB+)** | `false` | `true` | ~7.5GB | Complex PDFs with tables |
+
+### KG Modes
+
+- `llm_triples`: higher semantic intent and cleaner predicates when it behaves well, but much slower on small local models and prone to malformed or noisy relations.
+- `noun_phrase_cooccurrence`: deterministic, very fast, and now the recommended local default in `docker-compose.yml`; it trades semantic richness for speed and can over-connect entities until further filtering is added.
+
+Each ingest writes a KG audit file to `uploads/indices/diagnostics/{pdf_id}_kg_audit.json`. Use that artifact to compare extraction time, graph density, and entity quality across modes.
 
 ---
 
@@ -435,7 +468,7 @@ A standardized evaluation comparing:
 1. **Naive RAG** (vector-only, no history, no reranking)
 2. **Neuro-Symbolic RAG** (hybrid retrieval + agent + graph)
 
-Using 10+ multi-hop questions designed to expose single-strategy weaknesses (keyword-specific, cross-page connections, numerical queries).
+Using 10+ multi-hop questions designed to expose single-strategy weaknesses (keyword-specific, cross-page connections, numerical queries). Hybrid evaluation now compares both retrieval behavior and KG mode tradeoffs; source-label cleanup is still being polished separately.
 
 ---
 
@@ -445,9 +478,9 @@ Using 10+ multi-hop questions designed to expose single-strategy weaknesses (key
 Phase 1: Foundation RAG ██████████████████████████████ 100%
 ├─ PDF extraction (PyMuPDF4LLM)              ✅
 ├─ Semantic chunking                          ✅
-├─ Vector embedding (nomic-v2-moe)            ✅
+├─ Vector embedding (nomic-embed-text:v1.5)    ✅
 ├─ Qdrant storage + retrieval                 ✅
-├─ LLM generation (gemma3:4b /api/chat)       ✅
+├─ LLM generation (qwen3.5:0.8b /api/chat)    ✅
 ├─ Chat history (structured messages)         ✅
 ├─ Cross-encoder reranking (optional)         ✅
 ├─ Docling integration (optional)             ✅
@@ -456,8 +489,8 @@ Phase 1: Foundation RAG ██████████████████�
 Phase 2: Hybrid Retrieval ██████████████████████████████ 100%
 ├─ BM25 keyword search                       ✅
 ├─ RRF fusion algorithm                      ✅
-├─ Entity extraction (LLM triples)            ✅
-├─ NetworkX knowledge graph                   ✅
+├─ Entity extraction (`llm_triples` + regex co-occurrence) ✅
+├─ NetworkX knowledge graph + compact JSON    ✅
 ├─ Leiden community detection                 ✅
 └─ Graph traversal scoring                    ✅
 
@@ -499,7 +532,8 @@ This project draws from and adapts the following research:
 | "Model not found" warning | Ollama stores `model:latest` | Run `ollama pull <model-name>` |
 | Slow LLM responses | RAM pressure (>8GB total usage) | Set `SKIP_RERANKING=true` and `USE_DOCLING=false` |
 | 0 results from Qdrant | Embedding model mismatch | Clear Qdrant collection and re-upload PDFs |
-| Reset button fails | Config import error | Fixed: `print_current_config` now exported |
+| Reset button leaves stale files or logs directory errors | Old reset route used `unlink` on directories | Rebuild the backend; `/api/reset` now clears upload subdirectories recursively before resetting storage |
+| KG ingest is unexpectedly slow | `llm_triples` or community summaries are enabled | Prefer `KG_EXTRACTION_MODE=noun_phrase_cooccurrence` and keep `ENABLE_COMMUNITY_SUMMARIES=false` for local testing |
 
 ---
 
@@ -729,8 +763,8 @@ Daily standup updates tracking progress, blockers, and planned work.
     ┌────────▼───────┐
     │    OLLAMA      │
     │   (Host)       │
-    │  gemma3:4b     │
-    │  nomic-v2-moe  │
+    │  qwen3.5:0.8b  │
+    │  nomic:v1.5    │
     └────────────────┘
 ```
 
@@ -739,7 +773,7 @@ Daily standup updates tracking progress, blockers, and planned work.
 | Feature | Component | Key File(s) |
 |---|---|---|
 | **Structure-preserving extraction** | Python ML | `compute_embeddings.py` — `pymupdf4llm.to_markdown()` |
-| **MoE embedding** | Python ML → Ollama | `embeddings/ollama_embed.py` — `encode_text()` |
+| **Local embedding** | Python ML → Ollama | `embeddings/ollama_embed.py` — `encode_text()` |
 | **Chat history** | Frontend → Backend → Python | `ChatInterface.js` → `api.js` → `local_llm.py` → `ollama_llm.py` |
 | **Structured LLM interaction** | Python ML → Ollama | `llm/ollama_llm.py` — `/api/chat` with role-based messages |
 | **Resource-aware orchestration** | Docker Compose | `docker-compose.yml` — `SKIP_RERANKING`, `USE_DOCLING`, `SKIP_IMAGES` |
@@ -748,8 +782,8 @@ Daily standup updates tracking progress, blockers, and planned work.
 #### Data Flow
 
 ```
-Upload: PDF → PyMuPDF4LLM → Chunks → nomic-v2-moe → Qdrant
-Query:  Question → nomic-v2-moe → Qdrant Search → [Rerank] → gemma3:4b → Answer
+Upload: PDF → PyMuPDF4LLM → Chunks → nomic-embed-text:v1.5 → Qdrant + BM25 + Knowledge Graph
+Query:  Question → nomic-embed-text:v1.5 → [Vector Search + BM25 + Graph Traversal] → Fusion → [Rerank] → qwen3.5:0.8b → Answer
 ```
 
 ---
@@ -782,7 +816,7 @@ Query:  Question → nomic-v2-moe → Qdrant Search → [Rerank] → gemma3:4b �
 |---|---|---|---|---|---|
 | TC-201 | 8GB RAM operation | `SKIP_RERANKING=true`, `USE_DOCLING=false` | 1. Start app 2. Upload PDF 3. Ask 5 questions | All operations complete without OOM or disk swapping | ✅ Pass |
 | TC-202 | Model cache persistence | HF models previously downloaded | 1. `docker compose down` 2. `docker compose up -d` | No model download at startup, logs show immediate model load | ✅ Pass |
-| TC-203 | Ollama connectivity | Ollama running on host | 1. Start containers | Logs show `Model nomic-embed-text-v2-moe is available` (no false warning) | ✅ Pass |
+| TC-203 | Ollama connectivity | Ollama running on host | 1. Start containers | Logs show `Model nomic-embed-text:v1.5 is available` (no false warning) | ✅ Pass |
 | TC-204 | Qdrant collection reset | Documents exist in Qdrant | 1. Call reset endpoint or `curl -X DELETE .../collections/documents` | Collection deleted and recreated with correct vector size (768) | ✅ Pass |
 
 ---
@@ -799,7 +833,7 @@ Query:  Question → nomic-v2-moe → Qdrant Search → [Rerank] → gemma3:4b �
 | 4 | **Structure Preservation** | Tables and headers in PDFs are correctly understood by the LLM | Live demo: Upload a PDF with tables, ask about specific tabular data |
 | 5 | **Resource-Aware Configuration** | Toggle components on/off for different RAM profiles | Live demo: Show `docker-compose.yml` flags, demonstrate lean vs full mode |
 | 6 | **Docling Integration** | Alternative ML extraction with automatic fallback | Live demo: Enable `USE_DOCLING=true`, rebuild, show Docling logs |
-| 7 | **Model Upgrades** | LLM (`gemma3:4b`), Embedder (`nomic-v2-moe`), Extractor (`pymupdf4llm`) | Show before/after comparison of answer quality |
+| 7 | **Model Upgrades** | LLM (`qwen3.5:0.8b`), Embedder (`nomic-embed-text:v1.5`), Extractor (`pymupdf4llm`) | Show before/after comparison of answer quality |
 
 #### Demo Script
 
