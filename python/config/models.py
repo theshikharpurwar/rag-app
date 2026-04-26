@@ -14,7 +14,7 @@ import os
 LLM_MODEL_NAME = os.environ.get('LLM_MODEL', 'qwen3.5:0.8b')
 
 # Embedding Model Configuration  
-EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'embeddinggemma')
+EMBEDDING_MODEL_NAME = os.environ.get('EMBEDDING_MODEL', 'nomic-embed-text:v1.5')
 
 # Max texts per Ollama POST /api/embed request (single round-trip per batch)
 EMBED_BATCH_SIZE = int(os.environ.get('EMBED_BATCH_SIZE', '32'))
@@ -101,6 +101,15 @@ ENABLE_COMMUNITY_SUMMARIES = (
 )
 COMMUNITY_SUMMARY_WEIGHT = float(os.environ.get('COMMUNITY_SUMMARY_WEIGHT', '0.2'))
 
+# KG extraction strategy and diagnostics
+KG_EXTRACTION_MODE = os.environ.get('KG_EXTRACTION_MODE', 'llm_triples').lower().strip()
+KG_NP_EXTRACTOR = os.environ.get('KG_NP_EXTRACTOR', 'regex').lower().strip()
+KG_TRIPLE_BATCH_SIZE = int(os.environ.get('KG_TRIPLE_BATCH_SIZE', '3'))
+KG_EXTRACT_CONCURRENCY = max(1, int(os.environ.get('KG_EXTRACT_CONCURRENCY', '1')))
+KG_EXTRACT_MAX_CHARS = int(os.environ.get('KG_EXTRACT_MAX_CHARS', '1200'))
+KG_STORAGE_PRETTY = os.environ.get('KG_STORAGE_PRETTY', 'false').lower() == 'true'
+KG_LLM_MODEL = os.environ.get('KG_LLM_MODEL', LLM_MODEL_NAME)
+
 # Directory for persisted BM25 indexes and knowledge graph files
 INDICES_DIR = os.environ.get('INDICES_DIR', '/app/uploads/indices')
 
@@ -172,6 +181,13 @@ def print_current_config():
     print(f"Qdrant Host:      {QDRANT_HOST}:{QDRANT_PORT}")
     print(f"Collection:       {DEFAULT_COLLECTION}")
     print(f"Fusion method:    {FUSION_METHOD}")
+    print(f"KG mode:          {KG_EXTRACTION_MODE}")
+    print(f"KG NP extractor:  {KG_NP_EXTRACTOR}")
+    print(f"KG batch size:    {KG_TRIPLE_BATCH_SIZE}")
+    print(f"KG concurrency:   {KG_EXTRACT_CONCURRENCY}")
+    print(f"KG max chars:     {KG_EXTRACT_MAX_CHARS}")
+    print(f"KG pretty JSON:   {KG_STORAGE_PRETTY}")
+    print(f"KG LLM model:     {KG_LLM_MODEL}")
     print(f"Agent Enabled:    {ENABLE_AGENT}")
     print(f"Decomposition:    {ENABLE_DECOMPOSITION}")
     print(f"Community sums:   {ENABLE_COMMUNITY_SUMMARIES}")
