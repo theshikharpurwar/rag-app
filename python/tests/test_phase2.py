@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -98,7 +99,7 @@ class TestBM25Index:
 class MockLLM:
     """Mock LLM that returns predictable triple outputs."""
 
-    def generate_response(self, prompt="", max_tokens=500, temperature=0.1, messages=None):
+    def generate_response(self, prompt="", max_tokens=500, temperature=0.1, messages=None, **kwargs):
         if "Extract" in prompt or "extract" in prompt:
             return json.dumps([
                 ["machine learning", "is_subset_of", "artificial intelligence"],
@@ -138,9 +139,11 @@ class TestEntityExtractor:
             {"text": "AI is powerful.", "page": 2, "source": "test.pdf", "chunk_index": 1},
         ]
 
-        triples, sources = extractor.extract_from_chunks(chunks)
+        triples, sources, audit = extractor.extract_from_chunks(chunks)
         assert len(triples) > 0
         assert len(triples) == len(sources)
+        assert audit["mode"] == "llm_triples"
+        assert audit["chunks_processed"] == 2
 
     def test_empty_input(self):
         from retrieval.entity_extractor import EntityExtractor
@@ -155,6 +158,69 @@ class TestEntityExtractor:
         assert _normalize_entity("The Algorithm") == "algorithm"
         assert _normalize_entity("  A  Neural  Network  ") == "neural network"
         assert _normalize_entity("an entity.") == "entity"
+
+    def test_triple_quality_golden(self):
+        from retrieval.entity_extractor import EntityExtractor
+
+        extractor = EntityExtractor(MockLLM(), batch_size=1, max_chars=1200)
+        triples, _, _ = extractor.extract_from_chunks(
+            [{"text": "Machine learning is a subset of artificial intelligence.", "page": 1, "source": "g.pdf", "chunk_index": 0}]
+        )
+
+        assert ("machine learning", "is_subset_of", "artificial intelligence") in triples
+
+
+class TestCooccurrenceExtractor:
+    def test_deterministic_edges(self):
+        from retrieval.entity_extractor import NounPhraseCooccurrenceExtractor
+
+        chunks = [
+            {
+                "text": "Graph Neural Network uses BM25 and queryRouter with LLM and RAG.",
+                "page": 1,
+                "source": "test.pdf",
+                "chunk_index": 0,
+            }
+        ]
+        extractor = NounPhraseCooccurrenceExtractor("regex")
+        triples1, _, audit1 = extractor.extract_from_chunks(chunks)
+        triples2, _, audit2 = extractor.extract_from_chunks(chunks)
+
+        assert triples1 == triples2
+        assert audit1["triples_after_dedup"] == audit2["triples_after_dedup"]
+        assert all(t[1] == "co_occurs_with" for t in triples1)
+
+    def test_spacy_stub_raises(self):
+        from retrieval.entity_extractor import NounPhraseCooccurrenceExtractor
+
+        with pytest.raises(NotImplementedError):
+            NounPhraseCooccurrenceExtractor("spacy")
+
+
+def test_kg_audit_artifact_shape(tmp_path, monkeypatch):
+    import compute_embeddings
+
+    monkeypatch.setattr(compute_embeddings, "INDICES_DIR", str(tmp_path))
+    payload = {
+        "pdf_id": "abc",
+        "kg_mode": "llm_triples",
+        "graph_summary": {"nodes": 1, "edges": 2, "communities": 1},
+        "graph_json_size_bytes": 123,
+        "timings": {"extraction_seconds": 1.2, "graph_build_seconds": 0.1, "community_detection_seconds": 0.2, "save_seconds": 0.05},
+        "extraction_audit": {
+            "mode": "llm_triples",
+            "batches": [{"response": "not-json", "parser_errors": 1}],
+            "parser_error_count": 1,
+            "truncation_count": 0,
+        },
+    }
+    out = compute_embeddings._write_kg_audit_artifact("abc", payload)
+    assert out is not None
+    data = json.loads(Path(out).read_text(encoding="utf-8"))
+    assert data["pdf_id"] == "abc"
+    assert "graph_summary" in data
+    assert "timings" in data
+    assert data["extraction_audit"]["batches"][0]["response"] == "not-json"
 
 
 # =============================================================================
@@ -228,6 +294,7 @@ class TestKnowledgeGraph:
         kg = KnowledgeGraph()
         kg.build_from_triples(sample_triples, sample_sources)
         kg.detect_communities()
+        kg.set_metadata(kg_mode="llm_triples", storage_pretty=False)
 
         save_path = str(tmp_path / "test_graph.json")
         kg.save(save_path)
@@ -236,6 +303,8 @@ class TestKnowledgeGraph:
         assert loaded.load(save_path)
         assert loaded.num_nodes == kg.num_nodes
         assert loaded.num_edges == kg.num_edges
+        assert loaded.get_mode() == "llm_triples"
+        assert loaded.get_chunks_for_entities(["machine learning"])[0]["chunk_text"] == "ML text"
 
     def test_empty_graph(self):
         from retrieval.knowledge_graph import KnowledgeGraph
@@ -246,6 +315,36 @@ class TestKnowledgeGraph:
         assert kg.num_nodes == 0
         assert kg.num_edges == 0
         assert kg.get_entity_neighbors("anything") == []
+
+    def test_mode_mismatch_returns_false(self, sample_triples, sample_sources, tmp_path):
+        from retrieval.knowledge_graph import KnowledgeGraph
+
+        kg = KnowledgeGraph()
+        kg.build_from_triples(sample_triples, sample_sources)
+        kg.set_metadata(kg_mode="noun_phrase_cooccurrence", storage_pretty=False)
+        save_path = str(tmp_path / "mismatch_graph.json")
+        kg.save(save_path)
+
+        loaded = KnowledgeGraph()
+        assert loaded.load(save_path, expected_mode="llm_triples") is False
+
+    def test_compact_storage_smaller_than_pretty(self, sample_triples, sample_sources, tmp_path):
+        from retrieval.knowledge_graph import KnowledgeGraph
+
+        pretty_path = tmp_path / "pretty_graph.json"
+        compact_path = tmp_path / "compact_graph.json"
+
+        pretty = KnowledgeGraph()
+        pretty.build_from_triples(sample_triples, sample_sources)
+        pretty.set_metadata(kg_mode="llm_triples", storage_pretty=True)
+        pretty.save(str(pretty_path))
+
+        compact = KnowledgeGraph()
+        compact.build_from_triples(sample_triples, sample_sources)
+        compact.set_metadata(kg_mode="llm_triples", storage_pretty=False)
+        compact.save(str(compact_path))
+
+        assert compact_path.stat().st_size < pretty_path.stat().st_size
 
 
 # =============================================================================
