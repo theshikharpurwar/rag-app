@@ -32,7 +32,7 @@ services:
       # - OLLAMA_KEEP_ALIVE=10m
       # Models defined in python/config/models.py - keep in sync
       - LLM_MODEL=qwen3.5:0.8b
-      - EMBEDDING_MODEL=embeddinggemma
+      - EMBEDDING_MODEL=nomic-embed-text:v1.5
       - NODE_ENV=production
       # Persistent Python query server (inside same container)
       - PYTHON_QUERY_URL=http://127.0.0.1:5001
@@ -54,6 +54,8 @@ services:
       - SKIP_IMAGES=true
       # Phase 2: Hybrid Retrieval & Knowledge Graphs
       - ENABLE_KNOWLEDGE_GRAPH=true
+      - KG_EXTRACTION_MODE=${KG_EXTRACTION_MODE:-noun_phrase_cooccurrence}
+      - KG_NP_EXTRACTOR=${KG_NP_EXTRACTOR:-regex}
       - VECTOR_WEIGHT=0.4
       - BM25_WEIGHT=0.3
       - GRAPH_WEIGHT=0.3
@@ -61,7 +63,7 @@ services:
       - FUSION_METHOD=${FUSION_METHOD:-dbsf}
       - GRAPH_TRAVERSAL_DEPTH=2
       - INDICES_DIR=/app/backend/uploads/indices
-      - ENABLE_COMMUNITY_SUMMARIES=${ENABLE_COMMUNITY_SUMMARIES:-true}
+      - ENABLE_COMMUNITY_SUMMARIES=${ENABLE_COMMUNITY_SUMMARIES:-false}
       - COMMUNITY_SUMMARY_WEIGHT=${COMMUNITY_SUMMARY_WEIGHT:-0.2}
       # Phase 3: Agentic self-correction (opt-in; worst-case ~9–12 LLM calls with decomposition)
       # Override from shell: `ENABLE_AGENT=true docker compose up -d backend`
